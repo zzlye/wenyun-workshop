@@ -20,7 +20,7 @@ export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
   { model: DEFAULT_IMAGES_MODEL, label: DEFAULT_IMAGES_MODEL, requestModel: DEFAULT_IMAGES_MODEL, unitCostText: 'HUHN 0.06' },
   { model: GPT_IMAGE_2_4K_MODEL, label: GPT_IMAGE_2_4K_MODEL, requestModel: GPT_IMAGE_2_4K_REQUEST_MODEL, unitCostText: 'HUHN 0.09' },
   { model: 'Nano-Banana-2', label: 'Nano Banana 2', requestModel: 'nano-banana-2', unitCostText: 'HUHN 0.09' },
-  { model: 'Nano-Banana-Pro', label: 'Nano Banana Pro', requestModel: 'nano-banana-pro', unitCostText: 'HUHN 0.18' },
+  { model: 'Nano-Banana-Pro', label: 'Nano Banana Pro', requestModel: 'nano-banana-pro', unitCostText: 'HUHN 0.15' },
 ]
 
 export const FIXED_IMAGE_MODEL_OPTIONS = FIXED_IMAGE_MODEL_PRICING.map((item) => ({

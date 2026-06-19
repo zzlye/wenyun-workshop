@@ -681,7 +681,7 @@ describe('custom providers', () => {
     expect(getFixedImageModelUnitCostText(DEFAULT_IMAGES_MODEL)).toBe('HUHN 0.06')
     expect(getFixedImageModelUnitCostText('gpt-image-2-4k')).toBe('HUHN 0.09')
     expect(getFixedImageModelUnitCostText('Nano-Banana-2')).toBe('HUHN 0.09')
-    expect(getFixedImageModelUnitCostText('Nano-Banana-Pro')).toBe('HUHN 0.18')
+    expect(getFixedImageModelUnitCostText('Nano-Banana-Pro')).toBe('HUHN 0.15')
     expect(getFixedImageRequestModel('gpt-image-2-4k')).toBe('gpt-image-2-vip')
     expect(getBananaPricedImageModel('nano-banana-pro')).toBe('nano-banana-pro')
   })
