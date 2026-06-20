@@ -77,7 +77,7 @@ export function normalizeImageSizeForMaxTier(size: string, maxTier: SizeTier) {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return normalized
   if (width * height <= TIER_PIXEL_BUDGET[maxTier]) return normalized
 
-  // 公益站只能使用 1K 档位时，保留原比例，把过大的历史尺寸压回允许的档位。
+  // 保留原比例，把超过指定档位的历史尺寸压回允许范围。
   return normalizeImageSize(calculateImageSize(maxTier, `${width}:${height}`) || normalized)
 }
 

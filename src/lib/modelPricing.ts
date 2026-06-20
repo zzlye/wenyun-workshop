@@ -76,9 +76,8 @@ export function getImageModelSubmitCostText(model: string): string {
 }
 
 export function getImageModelOptionsForProfile(profileId: string) {
-  return profileId === 'public-site'
-    ? FIXED_IMAGE_MODEL_OPTIONS.filter((option) => option.value === DEFAULT_IMAGES_MODEL)
-    : [...FIXED_IMAGE_MODEL_OPTIONS]
+  void profileId
+  return [...FIXED_IMAGE_MODEL_OPTIONS]
 }
 
 export function buildFixedModelPriceRows(profileId: string, extraModels: Array<string | undefined> = []): ModelPriceRow[] {
@@ -95,8 +94,6 @@ export function buildFixedModelPriceRows(profileId: string, extraModels: Array<s
       priceText: pricing?.unitCostText ?? 'HUHN --',
     }
   })
-
-  if (profileId === 'public-site') return rows
 
   // 文字和视频模型也放在同一个弹窗里，但没有图片扣费时展示占位。
   for (const model of extraModels) {

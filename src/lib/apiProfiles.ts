@@ -20,7 +20,7 @@ import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_STREAM_PARTIAL_IMAGES } from '..
 import { normalizeBaseUrl, shouldUseApiProxyForBaseUrl } from './devProxy'
 import { readRuntimeEnv } from './runtimeEnv'
 import { isImportableConfigUrl } from './customProviderConfigUrl'
-import { calculateImageSize, normalizeImageSizeForMaxTier, type SizeTier } from './size'
+import type { SizeTier } from './size'
 import {
   DEFAULT_IMAGES_MODEL,
   FIXED_IMAGE_MODEL_OPTIONS,
@@ -69,31 +69,20 @@ export const DEFAULT_OPENAI_PROFILE_ID = LOCKED_WENYUN_PROFILE_ID
 export const DEFAULT_API_TIMEOUT = 600
 
 export function normalizeImageModelForProfile(model: string, profileId: string): string {
-  if (profileId === LOCKED_PUBLIC_PROFILE_ID) return DEFAULT_IMAGES_MODEL
+  void profileId
   return normalizeFixedImageModel(model)
 }
 
-export function getImageSizeTiersForProfile(profileId: string): SizeTier[] {
-  return profileId === LOCKED_PUBLIC_PROFILE_ID ? ['1K'] : ['1K', '2K', '4K']
+export function getImageSizeTiersForProfile(_profileId: string): SizeTier[] {
+  return ['1K', '2K', '4K']
 }
 
-export function allowsCustomImageRatioForProfile(profileId: string): boolean {
-  return profileId !== LOCKED_PUBLIC_PROFILE_ID
+export function allowsCustomImageRatioForProfile(_profileId: string): boolean {
+  return true
 }
 
-const PUBLIC_IMAGE_RATIO_PRESETS = ['1:1', '3:2', '2:3', '16:9', '9:16', '4:3', '3:4', '21:9'] as const
-
-function normalizePublicImageSize(size: string): string {
-  const normalized = normalizeImageSizeForMaxTier(size, '1K')
-  const fixedPreset = PUBLIC_IMAGE_RATIO_PRESETS
-    .map((ratio) => calculateImageSize('1K', ratio))
-    .find((preset) => preset === normalized)
-
-  return fixedPreset || calculateImageSize('1K', '1:1') || '1024x1024'
-}
-
-export function normalizeImageSizeForProfile(size: string, profileId: string): string {
-  return profileId === LOCKED_PUBLIC_PROFILE_ID ? normalizePublicImageSize(size) : size
+export function normalizeImageSizeForProfile(size: string, _profileId: string): string {
+  return size
 }
 
 export function getApiModelUnitCostText(_settings: AppSettings, _profileId: string, model: string): string | null {
@@ -270,7 +259,7 @@ function createLockedOpenAIProfile(definition: typeof LOCKED_OPENAI_PROFILE_DEFI
     provider: 'openai',
     baseUrl: definition.baseUrl,
     apiKey: typeof overrides.apiKey === 'string' ? overrides.apiKey : '',
-    model: definition.id === LOCKED_PUBLIC_PROFILE_ID ? DEFAULT_IMAGES_MODEL : normalizeFixedImageModel(overrides.model),
+    model: normalizeFixedImageModel(overrides.model),
     timeout: normalizeApiTimeout(overrides.timeout),
     apiMode: 'images',
     codexCli: false,

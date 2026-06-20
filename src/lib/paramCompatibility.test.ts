@@ -51,13 +51,13 @@ describe('parameter compatibility', () => {
     expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: 'auto' }, settings, { hasInputImages: true }).size).toBe('auto')
   })
 
-  it('limits public site image size to 1K', () => {
+  it('keeps public site image size options the same as Wenyun', () => {
     const settings = normalizeSettings({
       ...DEFAULT_SETTINGS,
       activeProfileId: LOCKED_PUBLIC_PROFILE_ID,
     })
 
-    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: '3840x2160' }, settings).size).toBe('1280x720')
-    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: '2048x2048' }, settings).size).toBe('1024x1024')
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: '3840x2160' }, settings).size).toBe('3840x2160')
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: '2048x2048' }, settings).size).toBe('2048x2048')
   })
 })

@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback, useState, useMemo, useLayoutEffect, typ
 import { createPortal } from 'react-dom'
 import { useStore, submitTask, submitAgentMessage, stopAgentResponse, addImageFromFile, createInputImageFromFile, deleteImageIfUnreferenced, updateTaskInStore, removeMultipleTasks, getCachedImage, ensureImageCached, getActiveAgentRounds } from '../store'
 import { DEFAULT_PARAMS } from '../types'
-import { DEFAULT_IMAGES_MODEL, FIXED_IMAGE_MODEL_OPTIONS, allowsCustomImageRatioForProfile, getActiveApiProfile, getImageModelSubmitCostText, getImageSizeTiersForProfile, isBananaImageModel, LOCKED_PUBLIC_PROFILE_ID, normalizeImageSizeForProfile, normalizeSettings } from '../lib/apiProfiles'
+import { FIXED_IMAGE_MODEL_OPTIONS, allowsCustomImageRatioForProfile, getActiveApiProfile, getImageModelSubmitCostText, getImageSizeTiersForProfile, normalizeImageSizeForProfile, normalizeSettings } from '../lib/apiProfiles'
 import { getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
 import { normalizeImageSize } from '../lib/size'
@@ -632,16 +632,8 @@ export default function InputBar() {
   const displaySize = normalizedDisplaySize === 'auto' ? DEFAULT_PARAMS.size : normalizedDisplaySize || DEFAULT_PARAMS.size
   const imageSizeTiers = getImageSizeTiersForProfile(activeProfile.id)
   const allowCustomImageRatio = allowsCustomImageRatioForProfile(activeProfile.id)
-  const modelOptions = activeProfile.id === LOCKED_PUBLIC_PROFILE_ID
-    ? FIXED_IMAGE_MODEL_OPTIONS.filter((option) => option.value === DEFAULT_IMAGES_MODEL)
-    : [...FIXED_IMAGE_MODEL_OPTIONS]
+  const modelOptions = [...FIXED_IMAGE_MODEL_OPTIONS]
   const selectedModelOption = modelOptions.find((option) => option.value === activeProfile.model)
-
-  useEffect(() => {
-    if (activeProfile.id === LOCKED_PUBLIC_PROFILE_ID && isBananaImageModel(activeProfile.model)) {
-      setSettings({ model: DEFAULT_IMAGES_MODEL })
-    }
-  }, [activeProfile.id, activeProfile.model, setSettings])
 
   useEffect(() => {
     const nextSize = normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id)
