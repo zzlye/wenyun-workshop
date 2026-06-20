@@ -81,12 +81,34 @@ function getApiRoot(baseUrl: string): string {
   return trimTrailingSlash(baseUrl).replace(/\/v1$/i, '')
 }
 
-async function fetchJson(url: string, apiKey?: string): Promise<unknown> {
-  const response = await fetch(getLockedNewApiProxyUrl(url) ?? url, {
+function withNoCacheParam(url: string): string {
+  // 手动查余额必须绕过浏览器、代理和上游缓存，避免第二次点击直接复用旧响应。
+  const cacheKey = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  try {
+    const parsed = new URL(url)
+    parsed.searchParams.set('_t', cacheKey)
+    return parsed.toString()
+  } catch {
+    const separator = url.includes('?') ? '&' : '?'
+    return `${url}${separator}_t=${encodeURIComponent(cacheKey)}`
+  }
+}
+
+function buildRequestHeaders(apiKey?: string, noCache = false): HeadersInit | undefined {
+  const headers: Record<string, string> = {}
+  if (apiKey?.trim()) headers.Authorization = `Bearer ${apiKey.trim()}`
+  if (noCache) {
+    headers['Cache-Control'] = 'no-cache, no-store, max-age=0'
+    headers.Pragma = 'no-cache'
+  }
+  return Object.keys(headers).length ? headers : undefined
+}
+
+async function fetchJson(url: string, apiKey?: string, options: { noCache?: boolean } = {}): Promise<unknown> {
+  const requestUrl = options.noCache ? withNoCacheParam(url) : url
+  const response = await fetch(getLockedNewApiProxyUrl(requestUrl) ?? requestUrl, {
     cache: 'no-store',
-    headers: apiKey?.trim()
-      ? { Authorization: `Bearer ${apiKey.trim()}` }
-      : undefined,
+    headers: buildRequestHeaders(apiKey, options.noCache),
   })
   if (!response.ok) throw new HttpStatusError(response.status)
   return response.json()
@@ -338,15 +360,15 @@ export async function queryNewApiBalance(profile: ApiProfile): Promise<NewApiBal
   const status = await fetchNewApiStatus(apiRoot, origin)
 
   const attempts: Array<() => Promise<string | null>> = [
-    async () => parseUserBalance(await fetchJson(`${origin}/api/user/self`, profile.apiKey), status),
+    async () => parseUserBalance(await fetchJson(`${origin}/api/user/self`, profile.apiKey, { noCache: true }), status),
     async () => {
       const [subscription, usage] = await Promise.all([
-        fetchJson(`${apiRoot}/dashboard/billing/subscription`, profile.apiKey),
-        fetchJson(`${apiRoot}/dashboard/billing/usage`, profile.apiKey),
+        fetchJson(`${apiRoot}/dashboard/billing/subscription`, profile.apiKey, { noCache: true }),
+        fetchJson(`${apiRoot}/dashboard/billing/usage`, profile.apiKey, { noCache: true }),
       ])
       return parseSubscriptionBalance(subscription, usage, status)
     },
-    async () => parseCreditGrantBalance(await fetchJson(`${apiRoot}/dashboard/billing/credit_grants`, profile.apiKey), status),
+    async () => parseCreditGrantBalance(await fetchJson(`${apiRoot}/dashboard/billing/credit_grants`, profile.apiKey, { noCache: true }), status),
   ]
 
   let lastError: unknown = null

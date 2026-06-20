@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS } from './apiProfiles'
-import { queryNewApiModelUnitCost, queryNewApiPriceTable } from './newApi'
+import { queryNewApiBalance, queryNewApiModelUnitCost, queryNewApiPriceTable } from './newApi'
 
 describe('newApi model unit cost', () => {
   afterEach(() => {
@@ -158,5 +158,75 @@ describe('newApi model unit cost', () => {
 
     expect(result).toMatchObject({ found: false, items: [] })
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('newApi balance', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('always sends a fresh balance request for repeated manual queries', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          'general_setting.custom_currency_symbol': 'HUHN',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          quota: 50_000,
+          used_quota: 10_000,
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          'general_setting.custom_currency_symbol': 'HUHN',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          quota: 40_000,
+          used_quota: 20_000,
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+
+    const profile = {
+      ...DEFAULT_SETTINGS.profiles[0],
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'test-key',
+    }
+
+    const first = await queryNewApiBalance(profile)
+    const second = await queryNewApiBalance(profile)
+    const balanceUrls = fetchMock.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.includes('/api/user/self'))
+
+    expect(first.text).toBe('可用 HUHN 0.1 / 已用 HUHN 0.02')
+    expect(second.text).toBe('可用 HUHN 0.08 / 已用 HUHN 0.04')
+    expect(balanceUrls).toHaveLength(2)
+    expect(balanceUrls[0]).not.toBe(balanceUrls[1])
+    expect(balanceUrls.every((url) => url.includes('_t='))).toBe(true)
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      cache: 'no-store',
+      headers: expect.objectContaining({
+        Authorization: 'Bearer test-key',
+        'Cache-Control': 'no-cache, no-store, max-age=0',
+        Pragma: 'no-cache',
+      }),
+    })
   })
 })
