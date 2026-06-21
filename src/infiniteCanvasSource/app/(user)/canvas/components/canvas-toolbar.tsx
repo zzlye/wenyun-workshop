@@ -1,7 +1,7 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
 import { useRef, useState } from "react";
 import { Button, Segmented, Switch } from "antd";
-import { CircleDot, Eraser, FolderOpen, Grid2x2, Hand, Image as ImageIcon, Info, Library, Moon, MousePointer2, Palette, Redo2, Settings2, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
+import { CircleDot, Eraser, FolderOpen, Grid2x2, Hand, Image as ImageIcon, Info, Library, Moon, MousePointer2, Paintbrush, Palette, Redo2, Settings2, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { canvasThemes, type CanvasBackgroundMode, type CanvasColorTheme, type CanvasTheme } from "@/lib/canvas-theme";
@@ -23,6 +23,7 @@ export function CanvasToolbar({
     onUndo,
     onRedo,
     onUpload,
+    onOpenSketch,
     onDelete,
     onClear,
     onBackgroundModeChange,
@@ -44,6 +45,7 @@ export function CanvasToolbar({
     onUndo: () => void;
     onRedo: () => void;
     onUpload: () => void;
+    onOpenSketch: () => void;
     onDelete: () => void;
     onClear: () => void;
     onBackgroundModeChange: (mode: CanvasBackgroundMode) => void;
@@ -101,6 +103,9 @@ export function CanvasToolbar({
                 </ToolbarButton>
                 <ToolbarButton id="tool-upload" label="上传图片" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onUpload}>
                     <Upload className="size-4.5" />
+                </ToolbarButton>
+                <ToolbarButton id="tool-sketch" label="画笔" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onOpenSketch}>
+                    <Paintbrush className="size-4.5" />
                 </ToolbarButton>
                 <Divider theme={theme} />
                 <ToolbarButton id="tool-library" label="画布" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onOpenAssetLibrary}>
@@ -294,6 +299,7 @@ function toolLabel(id: string) {
     if (id === "tool-video") return "视频";
     if (id === "tool-config") return "生成配置";
     if (id === "tool-upload") return "上传图片";
+    if (id === "tool-sketch") return "画笔";
     if (id === "tool-library") return "画布";
     if (id === "tool-assets") return "我的素材";
     if (id === "tool-style") return "画布外观";

@@ -43,6 +43,7 @@ import { InfiniteCanvas } from "../components/infinite-canvas";
 import { Minimap } from "../components/canvas-mini-map";
 import { CanvasNode } from "../components/canvas-node";
 import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "../components/canvas-node-prompt-panel";
+import { CanvasSketchDialog } from "../components/canvas-sketch-dialog";
 import { CanvasToolbar } from "../components/canvas-toolbar";
 import { CanvasGroupFrame } from "../components/canvas-group-frame";
 import { AssetPickerModal, type AssetPickerTab, type InsertAssetPayload } from "../components/asset-picker-modal";
@@ -78,6 +79,10 @@ type PendingConnectionCreate = {
 };
 
 type QuickNodeCreateMenuState = {
+    position: Position;
+};
+
+type SketchDialogState = {
     position: Position;
 };
 
@@ -344,6 +349,7 @@ function InfiniteCanvasPage() {
     const [connectionTargetNodeId, setConnectionTargetNodeId] = useState<string | null>(null);
     const [pendingConnectionCreate, setPendingConnectionCreate] = useState<PendingConnectionCreate | null>(null);
     const [quickNodeCreateMenu, setQuickNodeCreateMenu] = useState<QuickNodeCreateMenuState | null>(null);
+    const [sketchDialog, setSketchDialog] = useState<SketchDialogState | null>(null);
     const [mouseWorld, setMouseWorld] = useState<Position>({ x: 0, y: 0 });
     const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -930,6 +936,48 @@ function InfiniteCanvasPage() {
             if (type !== CanvasNodeType.Text) setDialogNodeId(newNode.id);
         },
         [effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, getCanvasCenter],
+    );
+
+    const openSketchDialog = useCallback(
+        (position?: Position) => {
+            setSketchDialog({ position: position || getCanvasCenter() });
+            setContextMenu(null);
+            setQuickNodeCreateMenu(null);
+            setPendingConnectionCreate(null);
+            setConnecting(null);
+        },
+        [getCanvasCenter, setConnecting],
+    );
+
+    const saveSketchToCanvas = useCallback(
+        async (dataUrl: string) => {
+            try {
+                const image = await uploadImage(dataUrl);
+                const size = fitNodeSize(image.width, image.height);
+                const position = sketchDialog?.position || getCanvasCenter();
+                const id = `image-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+                const newNode: CanvasNodeData = {
+                    id,
+                    type: CanvasNodeType.Image,
+                    title: "画笔参考图",
+                    position: { x: position.x - size.width / 2, y: position.y - size.height / 2 },
+                    width: size.width,
+                    height: size.height,
+                    metadata: imageMetadata(image),
+                };
+
+                setNodes((prev) => [...prev, newNode]);
+                setSelectedNodeIds(new Set([id]));
+                setSelectedGroupId(null);
+                setSelectedConnectionId(null);
+                setDialogNodeId(id);
+                setSketchDialog(null);
+                message.success("画笔参考图已添加到画布");
+            } catch (error) {
+                message.error(error instanceof Error ? error.message : "保存画笔参考图失败");
+            }
+        },
+        [getCanvasCenter, message, sketchDialog?.position],
     );
 
     const handleCanvasDoubleClick = useCallback(
@@ -1725,6 +1773,7 @@ function InfiniteCanvasPage() {
                 setEditingNodeId(null);
                 setInfoNodeId(null);
                 setCropNodeId(null);
+                setSketchDialog(null);
                 setPendingConnectionCreate(null);
             }
         };
@@ -3044,6 +3093,10 @@ function InfiniteCanvasPage() {
                                 handleUploadRequest(undefined, contextMenu.position);
                                 setContextMenu(null);
                             }}
+                            onSketch={() => {
+                                if (contextMenu.type !== "canvas") return;
+                                openSketchDialog(contextMenu.position);
+                            }}
                             onAddNode={() => {
                                 if (contextMenu.type !== "canvas") return;
                                 setQuickNodeCreateMenu({ position: contextMenu.position });
@@ -3126,6 +3179,7 @@ function InfiniteCanvasPage() {
                     onUndo={undoCanvas}
                     onRedo={redoCanvas}
                     onUpload={() => handleUploadRequest()}
+                    onOpenSketch={() => openSketchDialog()}
                     onDelete={() => deleteNodes(new Set(selectedNodeIds))}
                     onClear={() => setClearConfirmOpen(true)}
                     onBackgroundModeChange={setBackgroundMode}
@@ -3153,6 +3207,8 @@ function InfiniteCanvasPage() {
                 {cropNode?.metadata?.content ? <CanvasNodeCropDialog dataUrl={cropNode.metadata.content} open={Boolean(cropNode)} onClose={() => setCropNodeId(null)} onConfirm={(crop) => void cropImageNode(cropNode!, crop)} /> : null}
 
                 {angleNode?.metadata?.content ? <CanvasNodeAngleDialog dataUrl={angleNode.metadata.content} open={Boolean(angleNode)} onClose={() => setAngleNodeId(null)} onConfirm={(params) => void generateAngleNode(angleNode!, params)} /> : null}
+
+                <CanvasSketchDialog open={Boolean(sketchDialog)} onClose={() => setSketchDialog(null)} onSave={saveSketchToCanvas} />
 
                 <Modal
                     title="图片详情"

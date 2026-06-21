@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import type { ReactNode } from "react";
-import { Clipboard, Copy, Download, Eye, ImagePlus, Layers, Plus, Redo2, Save, Trash2, Undo2, Upload, ZoomIn } from "lucide-react";
+import { Clipboard, Copy, Download, Eye, ImagePlus, Layers, Paintbrush, Plus, Redo2, Save, Trash2, Undo2, Upload, ZoomIn } from "lucide-react";
 
 import type { ContextMenuState } from "../types";
 
@@ -24,6 +24,7 @@ type CanvasContextMenuProps = {
     onDownloadImage?: () => void;
     onCopyNode?: () => void;
     onUpload?: () => void;
+    onSketch?: () => void;
     onAddNode?: () => void;
     onUndo?: () => void;
     onRedo?: () => void;
@@ -49,6 +50,7 @@ export function CanvasNodeContextMenu({
     onDownloadImage,
     onCopyNode,
     onUpload,
+    onSketch,
     onAddNode,
     onUndo,
     onRedo,
@@ -83,6 +85,7 @@ export function CanvasNodeContextMenu({
             {menu.type === "canvas" ? (
                 <>
                     <CanvasMenuButton icon={<Upload className="size-4" />} label="上传" onClick={onUpload} />
+                    <CanvasMenuButton icon={<Paintbrush className="size-4" />} label="画笔" onClick={onSketch} />
                     <CanvasMenuButton icon={<Plus className="size-4" />} label="添加节点" onClick={onAddNode} />
                     <MenuDivider />
                     <CanvasMenuButton icon={<Undo2 className="size-4" />} label="撤销" shortcut="Ctrl+Z" disabled={!canUndo} onClick={onUndo} />
