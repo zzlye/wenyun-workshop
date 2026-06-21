@@ -29,6 +29,7 @@ export function CanvasSketchDialog({ open, onClose, onSave }: CanvasSketchDialog
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const undoStackRef = useRef<ImageData[]>([]);
     const drawingRef = useRef<{ active: boolean; lastX: number; lastY: number }>({ active: false, lastX: 0, lastY: 0 });
+    const initializedRef = useRef(false);
     const [color, setColor] = useState(COLORS[0]);
     const [brushSize, setBrushSize] = useState(8);
     const [mode, setMode] = useState<DrawMode>("draw");
@@ -57,30 +58,22 @@ export function CanvasSketchDialog({ open, onClose, onSave }: CanvasSketchDialog
         drawingRef.current = { active: false, lastX: 0, lastY: 0 };
         setBrushCursor((current) => ({ ...current, visible: false }));
         fillWhite();
+        initializedRef.current = true;
         setHasInk(false);
         setMode("draw");
     }, [fillWhite]);
 
+    const ensureCanvasReady = useCallback(() => {
+        if (initializedRef.current) return;
+        fillWhite();
+        initializedRef.current = true;
+    }, [fillWhite]);
+
     useEffect(() => {
         if (!open) return;
-        const frame = window.requestAnimationFrame(resetCanvas);
+        const frame = window.requestAnimationFrame(ensureCanvasReady);
         return () => window.cancelAnimationFrame(frame);
-    }, [open, resetCanvas]);
-
-    const handleOpenChange = useCallback(
-        (visible: boolean) => {
-            if (visible) {
-                window.setTimeout(resetCanvas, 0);
-                return;
-            }
-            undoStackRef.current = [];
-            drawingRef.current = { active: false, lastX: 0, lastY: 0 };
-            setUndoDepth(0);
-            setHasInk(false);
-            setBrushCursor((current) => ({ ...current, visible: false }));
-        },
-        [resetCanvas],
-    );
+    }, [ensureCanvasReady, open]);
 
     const pushUndo = useCallback(() => {
         const canvas = canvasRef.current;
@@ -193,6 +186,12 @@ export function CanvasSketchDialog({ open, onClose, onSave }: CanvasSketchDialog
         setBrushCursor((current) => ({ ...current, visible: false }));
     }, []);
 
+    const closeDialog = useCallback(() => {
+        drawingRef.current.active = false;
+        hideBrushCursor();
+        onClose();
+    }, [hideBrushCursor, onClose]);
+
     const save = useCallback(async () => {
         const canvas = canvasRef.current;
         if (!canvas || !hasInk) return;
@@ -214,7 +213,7 @@ export function CanvasSketchDialog({ open, onClose, onSave }: CanvasSketchDialog
     }, [hasInk, onSave]);
 
     return (
-        <Modal title={null} open={open} centered footer={null} width={1040} onCancel={saving ? undefined : onClose} afterOpenChange={handleOpenChange} destroyOnHidden styles={{ body: { padding: 0 } }}>
+        <Modal title={null} open={open} centered footer={null} width={1040} onCancel={saving ? undefined : closeDialog} styles={{ body: { padding: 0 } }}>
             <div className="overflow-hidden rounded-2xl bg-white text-stone-950 shadow-2xl">
                 <div className="flex items-center justify-between border-b border-stone-200 px-5 py-3">
                     <div className="flex items-center gap-2">
@@ -303,7 +302,7 @@ export function CanvasSketchDialog({ open, onClose, onSave }: CanvasSketchDialog
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <Button disabled={saving} onClick={onClose}>
+                        <Button disabled={saving} onClick={closeDialog}>
                             取消
                         </Button>
                         <Button type="primary" icon={<Save className="size-4" />} disabled={!hasInk} loading={saving} onClick={save}>
