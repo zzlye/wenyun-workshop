@@ -57,6 +57,7 @@ const lockedFetchProxyRoutes: LockedFetchProxyRoute[] = [
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
   'content-length',
+  'expect',
   'host',
   'keep-alive',
   'origin',
@@ -89,6 +90,14 @@ function writeResponseHeaders(response: Response, res: import('node:http').Serve
   })
 }
 
+async function readRequestBody(req: import('node:http').IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = []
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  }
+  return Buffer.concat(chunks)
+}
+
 function lockedFetchProxyPlugin() {
   return {
     name: 'locked-fetch-proxy',
@@ -105,11 +114,12 @@ function lockedFetchProxyPlugin() {
           const targetUrl = new URL(route.rewrite(requestUrl), route.target)
           const method = req.method ?? 'GET'
           const hasBody = method !== 'GET' && method !== 'HEAD'
+          const body = hasBody ? await readRequestBody(req) : undefined
           const response = await fetch(targetUrl, {
             method,
             headers: toFetchHeaders(req.headers),
             redirect: 'manual',
-            ...(hasBody ? { body: req as any, duplex: 'half' as any } : {}),
+            ...(hasBody ? { body } : {}),
           })
 
           res.statusCode = response.status
@@ -121,7 +131,8 @@ function lockedFetchProxyPlugin() {
           }
           await pipeline(Readable.fromWeb(response.body as any), res)
         } catch (error) {
-          const message = error instanceof Error ? (error.stack ?? error.message) : String(error)
+          const cause = error instanceof Error && 'cause' in error && error.cause ? `\n原因: ${String(error.cause)}` : ''
+          const message = error instanceof Error ? `${error.stack ?? error.message}${cause}` : String(error)
           server.config.logger.error(`[locked-fetch-proxy] ${requestUrl} 代理失败:\n${message}`)
           if (!res.headersSent) {
             res.statusCode = 502
