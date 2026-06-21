@@ -52,22 +52,11 @@ function appendBananaGenerationFields(target: Record<string, unknown>, profile: 
   target.replyType = 'json'
 }
 
-function appendBananaReferenceImages(target: Record<string, unknown>, imageDataUrls: string[]) {
-  if (imageDataUrls.length === 0) return
-  // Grsai 的 Banana 图生图接口使用 JSON images 数组；new-api 的 multipart edits 转换不会生成这个字段。
-  target.images = imageDataUrls
-}
-
 function appendBananaGenerationFormFields(formData: FormData, profile: ApiProfile, params: TaskParams) {
   if (!isBananaImageModel(profile.model)) return
   formData.append('aspectRatio', getBananaAspectRatio(params.size))
   formData.append('imageSize', getBananaImageSize(params.size))
   formData.append('replyType', 'json')
-}
-
-function shouldUseBananaJsonGenerationForEdit(profile: ApiProfile): boolean {
-  // 两个内置站点统一走 Banana 原生 JSON 图生图逻辑，站点差异只保留在各自的 URL/代理上。
-  return isBananaImageModel(profile.model)
 }
 
 function appendQuery(path: string, query?: Record<string, string>): string {
@@ -616,7 +605,8 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
   try {
     let response: Response
 
-    if (isEdit && !shouldUseBananaJsonGenerationForEdit(profile)) {
+    // 带参考图的 Banana 2/Pro 也要走标准 edits 上传链路，不能把图片塞进 generations 的 JSON images 字段。
+    if (isEdit) {
       const formData = new FormData()
       formData.append('model', profile.model)
       formData.append('prompt', prompt)
@@ -705,7 +695,6 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
         body.partial_images = getStreamPartialImages(profile)
       }
       appendBananaGenerationFields(body, profile, params)
-      appendBananaReferenceImages(body, inputImageDataUrls)
 
       response = await fetch(buildApiUrl(profile.baseUrl, paths.generationPath, proxyConfig, useApiProxy), {
         method: 'POST',

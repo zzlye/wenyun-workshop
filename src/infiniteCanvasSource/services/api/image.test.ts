@@ -55,21 +55,36 @@ describe("canvas image api", () => {
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZmluYWw=" }]);
     });
 
-    it("keeps Banana JSON generation requests for Wenyun canvas image edits", async () => {
-        const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-            new Response(JSON.stringify({ results: [{ url: "data:image/png;base64,ZWRpdGVk" }] }), {
+    it.each([
+        ["文运站 Banana 2", undefined, "Nano-Banana-2", "nano-banana-2", "/api-proxy/wenyun/images/edits", "2k"],
+        ["文运站 Banana Pro", undefined, "Nano-Banana-Pro", "nano-banana-pro", "/api-proxy/wenyun/images/edits", "2k"],
+        ["公益站 Banana 2", LOCKED_PUBLIC_PROFILE_ID, "Nano-Banana-2", "nano-banana-2", "/api-proxy/public/images/edits", "1k"],
+        ["公益站 Banana Pro", LOCKED_PUBLIC_PROFILE_ID, "Nano-Banana-Pro", "nano-banana-pro", "/api-proxy/public/images/edits", "1k"],
+    ])("routes %s canvas image edits through standard NewAPI edits without changing site URL", async (
+        _label,
+        activeProfileId,
+        model,
+        requestModel,
+        expectedUrl,
+        quality,
+    ) => {
+        const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+            const url = String(input);
+            if (url.startsWith("data:")) return new Response(new Blob(["ref"], { type: "image/png" }));
+            return new Response(JSON.stringify({ data: [{ b64_json: "ZWRpdGVk" }] }), {
                 status: 200,
                 headers: { "Content-Type": "application/json" },
-            }),
-        );
+            });
+        });
 
         useStore.setState({
             settings: {
                 ...DEFAULT_SETTINGS,
+                ...(activeProfileId ? { activeProfileId } : {}),
                 profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
                     ...profile,
                     apiKey: "test-key",
-                    model: "Nano-Banana-2",
+                    model,
                 })),
             },
         });
@@ -77,78 +92,29 @@ describe("canvas image api", () => {
         const images = await requestEdit(
             {
                 ...defaultConfig,
-                baseUrl: "https://api.example.com/v1",
+                baseUrl: activeProfileId ? "https://1520635.xyz:3901/v1" : "https://api.example.com/v1",
                 apiKey: "test-key",
-                model: "Nano-Banana-2",
-                imageModel: "Nano-Banana-2",
+                model,
+                imageModel: model,
                 size: "16:9",
-                quality: "2k",
-                count: "1",
-            },
-            "改成穿赤霖高中校服",
-            [{ id: "ref-1", name: "ref.png", type: "image/png", dataUrl: "data:image/png;base64,cmVm" }],
-        );
-
-        const [url, init] = fetchMock.mock.calls[0];
-        const body = JSON.parse(String((init as RequestInit).body));
-        expect(String(url)).toBe("/api-proxy/wenyun/images/generations");
-        expect(body).toMatchObject({
-            model: "nano-banana-2",
-            prompt: "改成穿赤霖高中校服",
-            images: ["data:image/png;base64,cmVm"],
-            aspectRatio: "16:9",
-            imageSize: "2K",
-            replyType: "json",
-        });
-        expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZWRpdGVk" }]);
-    });
-
-    it("uses the Wenyun Banana JSON edit logic for public-site canvas image edits without changing its URL", async () => {
-        const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-            new Response(JSON.stringify({ results: [{ url: "data:image/png;base64,ZWRpdGVk" }] }), {
-                status: 200,
-                headers: { "Content-Type": "application/json" },
-            }),
-        );
-
-        useStore.setState({
-            settings: {
-                ...DEFAULT_SETTINGS,
-                activeProfileId: LOCKED_PUBLIC_PROFILE_ID,
-                profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
-                    ...profile,
-                    apiKey: "test-key",
-                    model: "Nano-Banana-2",
-                })),
-            },
-        });
-
-        const images = await requestEdit(
-            {
-                ...defaultConfig,
-                baseUrl: "https://1520635.xyz:3901/v1",
-                apiKey: "test-key",
-                model: "Nano-Banana-2",
-                imageModel: "Nano-Banana-2",
-                size: "16:9",
-                quality: "1k",
+                quality,
                 count: "1",
             },
             "帮我美化封面",
-            [{ id: "ref-1", name: "ref.txt", type: "text/plain", dataUrl: "data:text/plain;base64,cmVm" }],
+            [{ id: "ref-1", name: "ref.png", type: "image/png", dataUrl: "data:image/png;base64,cmVm" }],
         );
 
-        const [url, init] = fetchMock.mock.calls[0];
-        const body = JSON.parse(String((init as RequestInit).body));
-        expect(String(url)).toBe("/api-proxy/public/images/generations");
-        expect(body).toMatchObject({
-            model: "nano-banana-2",
-            prompt: "帮我美化封面",
-            images: ["data:text/plain;base64,cmVm"],
-            aspectRatio: "16:9",
-            imageSize: "1K",
-            replyType: "json",
-        });
+        const apiCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/images/edits"));
+        expect(apiCall).toBeTruthy();
+        const [url, init] = apiCall!;
+        const formData = (init as RequestInit).body as FormData;
+        expect(String(url)).toBe(expectedUrl);
+        expect(formData.get("model")).toBe(requestModel);
+        expect(formData.get("prompt")).toBe("帮我美化封面");
+        expect(formData.get("aspectRatio")).toBe("16:9");
+        expect(formData.get("imageSize")).toBe(quality === "2k" ? "2K" : "1K");
+        expect(formData.get("replyType")).toBe("json");
+        expect(formData.getAll("image[]")).toHaveLength(1);
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZWRpdGVk" }]);
     });
 });
