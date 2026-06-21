@@ -18,6 +18,13 @@ type CanvasSketchDialogProps = {
 
 type DrawMode = "draw" | "erase";
 
+type BrushCursor = {
+    visible: boolean;
+    x: number;
+    y: number;
+    diameter: number;
+};
+
 export function CanvasSketchDialog({ open, onClose, onSave }: CanvasSketchDialogProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const undoStackRef = useRef<ImageData[]>([]);
@@ -28,6 +35,7 @@ export function CanvasSketchDialog({ open, onClose, onSave }: CanvasSketchDialog
     const [hasInk, setHasInk] = useState(false);
     const [undoDepth, setUndoDepth] = useState(0);
     const [saving, setSaving] = useState(false);
+    const [brushCursor, setBrushCursor] = useState<BrushCursor>({ visible: false, x: 0, y: 0, diameter: brushSize });
 
     const getContext = useCallback(() => canvasRef.current?.getContext("2d", { willReadFrequently: true }) || null, []);
 
@@ -47,6 +55,7 @@ export function CanvasSketchDialog({ open, onClose, onSave }: CanvasSketchDialog
         undoStackRef.current = [];
         setUndoDepth(0);
         drawingRef.current = { active: false, lastX: 0, lastY: 0 };
+        setBrushCursor((current) => ({ ...current, visible: false }));
         fillWhite();
         setHasInk(false);
         setMode("draw");
@@ -57,6 +66,21 @@ export function CanvasSketchDialog({ open, onClose, onSave }: CanvasSketchDialog
         const frame = window.requestAnimationFrame(resetCanvas);
         return () => window.cancelAnimationFrame(frame);
     }, [open, resetCanvas]);
+
+    const handleOpenChange = useCallback(
+        (visible: boolean) => {
+            if (visible) {
+                window.setTimeout(resetCanvas, 0);
+                return;
+            }
+            undoStackRef.current = [];
+            drawingRef.current = { active: false, lastX: 0, lastY: 0 };
+            setUndoDepth(0);
+            setHasInk(false);
+            setBrushCursor((current) => ({ ...current, visible: false }));
+        },
+        [resetCanvas],
+    );
 
     const pushUndo = useCallback(() => {
         const canvas = canvasRef.current;
@@ -76,6 +100,23 @@ export function CanvasSketchDialog({ open, onClose, onSave }: CanvasSketchDialog
         };
     }, []);
 
+    const updateBrushCursor = useCallback(
+        (event: ReactPointerEvent<HTMLCanvasElement>) => {
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            const scale = rect.width / canvas.width;
+            const diameter = (mode === "erase" ? brushSize * 1.8 : brushSize) * scale;
+            setBrushCursor({
+                visible: true,
+                x: event.clientX - rect.left,
+                y: event.clientY - rect.top,
+                diameter: Math.max(4, diameter),
+            });
+        },
+        [brushSize, mode],
+    );
+
     const configureStroke = useCallback(
         (context: CanvasRenderingContext2D) => {
             context.lineCap = "round";
@@ -93,6 +134,7 @@ export function CanvasSketchDialog({ open, onClose, onSave }: CanvasSketchDialog
             const context = getContext();
             if (!canvas || !context) return;
             event.preventDefault();
+            updateBrushCursor(event);
             canvas.setPointerCapture(event.pointerId);
             pushUndo();
             const point = getPoint(event);
@@ -104,11 +146,12 @@ export function CanvasSketchDialog({ open, onClose, onSave }: CanvasSketchDialog
             context.stroke();
             setHasInk(true);
         },
-        [configureStroke, getContext, getPoint, pushUndo],
+        [configureStroke, getContext, getPoint, pushUndo, updateBrushCursor],
     );
 
     const handlePointerMove = useCallback(
         (event: ReactPointerEvent<HTMLCanvasElement>) => {
+            updateBrushCursor(event);
             if (!drawingRef.current.active) return;
             const context = getContext();
             if (!context) return;
@@ -121,7 +164,7 @@ export function CanvasSketchDialog({ open, onClose, onSave }: CanvasSketchDialog
             context.stroke();
             drawingRef.current = { active: true, lastX: point.x, lastY: point.y };
         },
-        [configureStroke, getContext, getPoint],
+        [configureStroke, getContext, getPoint, updateBrushCursor],
     );
 
     const stopDrawing = useCallback((event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -146,19 +189,32 @@ export function CanvasSketchDialog({ open, onClose, onSave }: CanvasSketchDialog
         setHasInk(false);
     }, [fillWhite, pushUndo]);
 
+    const hideBrushCursor = useCallback(() => {
+        setBrushCursor((current) => ({ ...current, visible: false }));
+    }, []);
+
     const save = useCallback(async () => {
         const canvas = canvasRef.current;
         if (!canvas || !hasInk) return;
         setSaving(true);
         try {
-            await onSave(canvas.toDataURL("image/png"));
+            // 保存前重新合成白底，避免图片节点透出画布网格。
+            const output = document.createElement("canvas");
+            output.width = canvas.width;
+            output.height = canvas.height;
+            const context = output.getContext("2d");
+            if (!context) throw new Error("画笔图片保存失败");
+            context.fillStyle = "#ffffff";
+            context.fillRect(0, 0, output.width, output.height);
+            context.drawImage(canvas, 0, 0);
+            await onSave(output.toDataURL("image/png"));
         } finally {
             setSaving(false);
         }
     }, [hasInk, onSave]);
 
     return (
-        <Modal title={null} open={open} centered footer={null} width={1040} onCancel={saving ? undefined : onClose} destroyOnHidden styles={{ body: { padding: 0 } }}>
+        <Modal title={null} open={open} centered footer={null} width={1040} onCancel={saving ? undefined : onClose} afterOpenChange={handleOpenChange} destroyOnHidden styles={{ body: { padding: 0 } }}>
             <div className="overflow-hidden rounded-2xl bg-white text-stone-950 shadow-2xl">
                 <div className="flex items-center justify-between border-b border-stone-200 px-5 py-3">
                     <div className="flex items-center gap-2">
@@ -181,18 +237,35 @@ export function CanvasSketchDialog({ open, onClose, onSave }: CanvasSketchDialog
                 </div>
 
                 <div className="bg-stone-100 p-4">
-                    <div className="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-inner">
+                    <div className="relative overflow-hidden rounded-xl border border-stone-200 bg-white shadow-inner">
                         <canvas
                             ref={canvasRef}
                             width={SKETCH_WIDTH}
                             height={SKETCH_HEIGHT}
-                            className="block h-auto w-full touch-none cursor-crosshair select-none bg-white"
+                            className="block h-auto w-full touch-none cursor-none select-none bg-white"
                             onPointerDown={handlePointerDown}
                             onPointerMove={handlePointerMove}
                             onPointerUp={stopDrawing}
                             onPointerCancel={stopDrawing}
-                            onPointerLeave={stopDrawing}
+                            onPointerLeave={(event) => {
+                                stopDrawing(event);
+                                hideBrushCursor();
+                            }}
                         />
+                        {brushCursor.visible ? (
+                            <div
+                                className="pointer-events-none absolute rounded-full border shadow-sm"
+                                style={{
+                                    left: brushCursor.x,
+                                    top: brushCursor.y,
+                                    width: brushCursor.diameter,
+                                    height: brushCursor.diameter,
+                                    transform: "translate(-50%, -50%)",
+                                    borderColor: mode === "erase" ? "rgba(68,64,60,.65)" : color,
+                                    background: mode === "erase" ? "rgba(255,255,255,.55)" : `${color}22`,
+                                }}
+                            />
+                        ) : null}
                     </div>
                 </div>
 
