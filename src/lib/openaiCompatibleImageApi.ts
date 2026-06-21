@@ -1,6 +1,6 @@
 import { DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type CustomProviderDefinition, type CustomProviderPollMapping, type CustomProviderResultMapping, type CustomProviderSubmitMapping, type ImageApiResponse, type ImageResponseItem, type ResponsesApiResponse, type ResponsesOutputItem, type TaskParams } from '../types'
 import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './canvasImage'
-import { getFixedImageRequestModel, isBananaImageModel } from './apiProfiles'
+import { getFixedImageRequestModel, isBananaImageModel, LOCKED_WENYUN_BASE_URL } from './apiProfiles'
 import { buildApiUrl, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from './devProxy'
 import { formatImageRatio, normalizeImageSize } from './size'
 import {
@@ -52,11 +52,22 @@ function appendBananaGenerationFields(target: Record<string, unknown>, profile: 
   target.replyType = 'json'
 }
 
+function appendBananaReferenceImages(target: Record<string, unknown>, imageDataUrls: string[]) {
+  if (imageDataUrls.length === 0) return
+  // 文运站旧 Banana 渠道的图生图使用 JSON images 数组，不接受 multipart edits。
+  target.images = imageDataUrls
+}
+
 function appendBananaGenerationFormFields(formData: FormData, profile: ApiProfile, params: TaskParams) {
   if (!isBananaImageModel(profile.model)) return
   formData.append('aspectRatio', getBananaAspectRatio(params.size))
   formData.append('imageSize', getBananaImageSize(params.size))
   formData.append('replyType', 'json')
+}
+
+function shouldUseBananaJsonGenerationForEdit(profile: ApiProfile): boolean {
+  // 文运站旧渠道仍要求 generations + JSON images；公益站和其它兼容渠道走标准 edits。
+  return isBananaImageModel(profile.model) && profile.baseUrl === LOCKED_WENYUN_BASE_URL
 }
 
 function appendQuery(path: string, query?: Record<string, string>): string {
@@ -605,8 +616,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
   try {
     let response: Response
 
-    // 带参考图的 Banana 2/Pro 也要走标准 edits 上传链路，不能把图片塞进 generations 的 JSON images 字段。
-    if (isEdit) {
+    if (isEdit && !shouldUseBananaJsonGenerationForEdit(profile)) {
       const formData = new FormData()
       formData.append('model', profile.model)
       formData.append('prompt', prompt)
@@ -695,6 +705,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
         body.partial_images = getStreamPartialImages(profile)
       }
       appendBananaGenerationFields(body, profile, params)
+      appendBananaReferenceImages(body, inputImageDataUrls)
 
       response = await fetch(buildApiUrl(profile.baseUrl, paths.generationPath, proxyConfig, useApiProxy), {
         method: 'POST',

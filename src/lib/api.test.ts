@@ -456,16 +456,63 @@ describe('callImageApi', () => {
   })
 
   it.each([
-    ['文运站 Banana 2', undefined, 'Nano-Banana-2', 'nano-banana-2', '/api-proxy/wenyun/images/edits'],
-    ['文运站 Banana Pro', undefined, 'Nano-Banana-Pro', 'nano-banana-pro', '/api-proxy/wenyun/images/edits'],
-    ['公益站 Banana 2', LOCKED_PUBLIC_PROFILE_ID, 'Nano-Banana-2', 'nano-banana-2', '/api-proxy/public/images/edits'],
-    ['公益站 Banana Pro', LOCKED_PUBLIC_PROFILE_ID, 'Nano-Banana-Pro', 'nano-banana-pro', '/api-proxy/public/images/edits'],
-  ])('routes %s image edits through standard NewAPI edits without changing site URL', async (
+    ['文运站 Banana 2', 'Nano-Banana-2', 'nano-banana-2'],
+    ['文运站 Banana Pro', 'Nano-Banana-Pro', 'nano-banana-pro'],
+  ])('routes %s image edits through Wenyun JSON generation compatibility', async (
     _label,
-    activeProfileId,
     model,
     requestModel,
-    expectedUrl,
+  ) => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      results: [{ url: 'data:image/png;base64,ZWRpdGVk' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      apiKey: 'test-key',
+      model,
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
+        ...profile,
+        apiKey: 'test-key',
+        model,
+      })),
+    }
+
+    const result = await callImageApi({
+      settings,
+      prompt: '帮我美化封面',
+      params: { ...DEFAULT_PARAMS, size: '2560x1440' },
+      inputImageDataUrls: ['data:image/png;base64,cmVm'],
+    } as any)
+
+    const [url, init] = fetchMock.mock.calls[0]
+    const body = JSON.parse(String((init as RequestInit).body))
+    expect(String(url)).toBe('/api-proxy/wenyun/images/generations')
+    expect(init).toMatchObject({
+      method: 'POST',
+      headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+    })
+    expect(body).toMatchObject({
+      model: requestModel,
+      prompt: '帮我美化封面',
+      images: ['data:image/png;base64,cmVm'],
+      aspectRatio: '16:9',
+      imageSize: '2K',
+      replyType: 'json',
+    })
+    expect(result.images).toEqual(['data:image/png;base64,ZWRpdGVk'])
+  })
+
+  it.each([
+    ['公益站 Banana 2', 'Nano-Banana-2', 'nano-banana-2'],
+    ['公益站 Banana Pro', 'Nano-Banana-Pro', 'nano-banana-pro'],
+  ])('routes %s image edits through standard NewAPI edits without changing site URL', async (
+    _label,
+    model,
+    requestModel,
   ) => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input)
@@ -482,7 +529,7 @@ describe('callImageApi', () => {
       ...DEFAULT_SETTINGS,
       apiKey: 'test-key',
       model,
-      ...(activeProfileId ? { activeProfileId } : {}),
+      activeProfileId: LOCKED_PUBLIC_PROFILE_ID,
       profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
         ...profile,
         apiKey: 'test-key',
@@ -501,7 +548,7 @@ describe('callImageApi', () => {
     expect(apiCall).toBeTruthy()
     const [url, init] = apiCall!
     const formData = (init as RequestInit).body as FormData
-    expect(String(url)).toBe(expectedUrl)
+    expect(String(url)).toBe('/api-proxy/public/images/edits')
     expect(init).toMatchObject({ method: 'POST' })
     expect(formData.get('model')).toBe(requestModel)
     expect(formData.get('prompt')).toBe('帮我美化封面')
