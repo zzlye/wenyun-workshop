@@ -1,6 +1,6 @@
 import { DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type CustomProviderDefinition, type CustomProviderPollMapping, type CustomProviderResultMapping, type CustomProviderSubmitMapping, type ImageApiResponse, type ImageResponseItem, type ResponsesApiResponse, type ResponsesOutputItem, type TaskParams } from '../types'
 import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './canvasImage'
-import { getFixedImageRequestModel, isBananaImageModel } from './apiProfiles'
+import { getFixedImageRequestModel, isBananaImageModel, LOCKED_PUBLIC_BASE_URL } from './apiProfiles'
 import { buildApiUrl, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from './devProxy'
 import { formatImageRatio, normalizeImageSize } from './size'
 import {
@@ -63,6 +63,11 @@ function appendBananaGenerationFormFields(formData: FormData, profile: ApiProfil
   formData.append('aspectRatio', getBananaAspectRatio(params.size))
   formData.append('imageSize', getBananaImageSize(params.size))
   formData.append('replyType', 'json')
+}
+
+function shouldUseBananaJsonGenerationForEdit(profile: ApiProfile): boolean {
+  // 文运站的 Banana 渠道兼容 Grsai JSON 图生图；公益站需要走 NewAPI 标准 edits 才能上传参考图。
+  return isBananaImageModel(profile.model) && profile.baseUrl !== LOCKED_PUBLIC_BASE_URL
 }
 
 function appendQuery(path: string, query?: Record<string, string>): string {
@@ -611,7 +616,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
   try {
     let response: Response
 
-    if (isEdit && !isBananaImageModel(profile.model)) {
+    if (isEdit && !shouldUseBananaJsonGenerationForEdit(profile)) {
       const formData = new FormData()
       formData.append('model', profile.model)
       formData.append('prompt', prompt)

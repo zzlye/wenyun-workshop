@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PARAMS } from '../types'
-import { DEFAULT_SETTINGS } from './apiProfiles'
+import { DEFAULT_SETTINGS, LOCKED_PUBLIC_PROFILE_ID } from './apiProfiles'
 import { callImageApi } from './api'
 
 describe('callImageApi', () => {
@@ -407,7 +407,7 @@ describe('callImageApi', () => {
 
     const [url, init] = fetchMock.mock.calls[0]
     const body = JSON.parse(String((init as RequestInit).body))
-    expect(String(url)).toBe('https://zzlye.xyz:60/v1/images/generations')
+    expect(String(url)).toBe('/api-proxy/wenyun/images/generations')
     expect(body).toMatchObject({
       model: 'nano-banana-pro',
       stream: true,
@@ -455,7 +455,7 @@ describe('callImageApi', () => {
     expect(body.replyType).toBe('json')
   })
 
-  it('uses Banana JSON generation requests for image edits through NewAPI custom channels', async () => {
+  it('keeps Banana JSON generation requests for Wenyun image edits', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
       id: 'task-1',
       status: 'succeeded',
@@ -485,7 +485,7 @@ describe('callImageApi', () => {
 
     const [url, init] = fetchMock.mock.calls[0]
     const body = JSON.parse(String((init as RequestInit).body))
-    expect(String(url)).toBe('https://zzlye.xyz:60/v1/images/generations')
+    expect(String(url)).toBe('/api-proxy/wenyun/images/generations')
     expect(init).toMatchObject({
       method: 'POST',
       headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
@@ -498,6 +498,49 @@ describe('callImageApi', () => {
       imageSize: '2K',
       replyType: 'json',
     })
+    expect(result.images).toEqual(['data:image/png;base64,ZWRpdGVk'])
+  })
+
+  it('uses standard edits endpoint for public-site Banana image edits', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.startsWith('data:')) return new Response(new Blob(['ref'], { type: 'image/png' }))
+      return new Response(JSON.stringify({
+        data: [{ b64_json: 'ZWRpdGVk' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      apiKey: 'test-key',
+      model: 'Nano-Banana-2',
+      activeProfileId: LOCKED_PUBLIC_PROFILE_ID,
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
+        ...profile,
+        apiKey: 'test-key',
+        model: 'Nano-Banana-2',
+      })),
+    }
+
+    const result = await callImageApi({
+      settings,
+      prompt: '帮我美化封面',
+      params: { ...DEFAULT_PARAMS, size: '1280x720' },
+      inputImageDataUrls: ['data:image/png;base64,cmVm'],
+    } as any)
+
+    const [url, init] = fetchMock.mock.calls.find(([input]) => String(input).includes('/images/edits')) ?? []
+    const formData = (init as RequestInit).body as FormData
+    expect(String(url)).toBe('/api-proxy/public/images/edits')
+    expect(init).toMatchObject({ method: 'POST' })
+    expect(formData.get('model')).toBe('nano-banana-2')
+    expect(formData.get('prompt')).toBe('帮我美化封面')
+    expect(formData.get('aspectRatio')).toBe('16:9')
+    expect(formData.get('imageSize')).toBe('1K')
+    expect(formData.getAll('image[]')).toHaveLength(1)
     expect(result.images).toEqual(['data:image/png;base64,ZWRpdGVk'])
   })
 
