@@ -103,15 +103,13 @@ describe("canvas image api", () => {
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZWRpdGVk" }]);
     });
 
-    it("uses standard edits endpoint for public-site Banana canvas image edits", async () => {
-        const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-            const url = String(input);
-            if (url.startsWith("data:")) return new Response(new Blob(["ref"], { type: "image/png" }));
-            return new Response(JSON.stringify({ data: [{ b64_json: "ZWRpdGVk" }] }), {
+    it("uses the Wenyun Banana JSON edit logic for public-site canvas image edits without changing its URL", async () => {
+        const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+            new Response(JSON.stringify({ results: [{ url: "data:image/png;base64,ZWRpdGVk" }] }), {
                 status: 200,
                 headers: { "Content-Type": "application/json" },
-            });
-        });
+            }),
+        );
 
         useStore.setState({
             settings: {
@@ -140,14 +138,17 @@ describe("canvas image api", () => {
             [{ id: "ref-1", name: "ref.txt", type: "text/plain", dataUrl: "data:text/plain;base64,cmVm" }],
         );
 
-        const [url, init] = fetchMock.mock.calls.find(([input]) => String(input).includes("/images/edits")) ?? [];
-        const formData = (init as RequestInit).body as FormData;
-        expect(String(url)).toBe("/api-proxy/public/images/edits");
-        expect(formData.get("model")).toBe("nano-banana-2");
-        expect(formData.get("prompt")).toBe("帮我美化封面");
-        expect(formData.get("aspectRatio")).toBe("16:9");
-        expect(formData.get("imageSize")).toBe("1K");
-        expect(formData.getAll("image[]")).toHaveLength(1);
+        const [url, init] = fetchMock.mock.calls[0];
+        const body = JSON.parse(String((init as RequestInit).body));
+        expect(String(url)).toBe("/api-proxy/public/images/generations");
+        expect(body).toMatchObject({
+            model: "nano-banana-2",
+            prompt: "帮我美化封面",
+            images: ["data:text/plain;base64,cmVm"],
+            aspectRatio: "16:9",
+            imageSize: "1K",
+            replyType: "json",
+        });
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZWRpdGVk" }]);
     });
 });
