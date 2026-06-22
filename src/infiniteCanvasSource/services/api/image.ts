@@ -94,19 +94,23 @@ function buildTaskParams(config: AiConfig): TaskParams {
 function buildCanvasImageSettings(config: AiConfig): AppSettings {
     const current = normalizeSettings(useStore.getState().settings);
     const model = config.imageModel || config.model || current.model;
+    const activeProfile = current.profiles.find((profile) => profile.id === current.activeProfileId);
+    const requestApiKey = activeProfile?.apiKey || config.apiKey || current.apiKey;
+    const requestTimeout = config.timeout || activeProfile?.timeout || current.timeout;
 
     return normalizeSettings({
         ...current,
-        apiKey: config.apiKey || current.apiKey,
+        apiKey: requestApiKey,
         model,
-        timeout: config.timeout || current.timeout,
+        timeout: requestTimeout,
         profiles: current.profiles.map((profile) =>
             profile.id === current.activeProfileId
                 ? {
                       ...profile,
-                      apiKey: config.apiKey || profile.apiKey,
+                      // 画布本地配置可能残留切站前的 key，生成时必须优先使用设置里当前站点的 key。
+                      apiKey: profile.apiKey || config.apiKey,
                       model,
-                      timeout: config.timeout || profile.timeout,
+                      timeout: requestTimeout || profile.timeout,
                   }
                 : profile,
         ),

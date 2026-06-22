@@ -55,6 +55,46 @@ describe("canvas image api", () => {
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZmluYWw=" }]);
     });
 
+    it("uses the active settings profile token after switching sites instead of stale canvas config", async () => {
+        const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+            new Response(JSON.stringify({ data: [{ b64_json: "ZmluYWw=" }] }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+            }),
+        );
+
+        useStore.setState({
+            settings: {
+                ...DEFAULT_SETTINGS,
+                activeProfileId: LOCKED_PUBLIC_PROFILE_ID,
+                profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
+                    ...profile,
+                    apiKey: profile.id === LOCKED_PUBLIC_PROFILE_ID ? "public-key" : "wenyun-key",
+                })),
+            },
+        });
+
+        await requestGeneration(
+            {
+                ...defaultConfig,
+                baseUrl: "https://zzlye.xyz:60/v1",
+                apiKey: "wenyun-key",
+                model: "gpt-image-2",
+                imageModel: "gpt-image-2",
+                size: "1:1",
+                quality: "auto",
+                count: "1",
+            },
+            "prompt",
+        );
+
+        const [, init] = fetchMock.mock.calls[0];
+        expect(String(fetchMock.mock.calls[0][0])).toBe("/api-proxy/public/images/generations");
+        expect((init as RequestInit).headers).toMatchObject({
+            Authorization: "Bearer public-key",
+        });
+    });
+
     it.each([
         ["文运站 Banana 2", "Nano-Banana-2", "nano-banana-2"],
         ["文运站 Banana Pro", "Nano-Banana-Pro", "nano-banana-pro"],

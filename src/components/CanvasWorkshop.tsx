@@ -81,6 +81,11 @@ export default function CanvasWorkshop({ onBack, onOpenSettings }: CanvasWorksho
     syncInfiniteCanvasConfigFromSettings(normalizedSettings)
   }, [
     appearanceTheme,
+    normalizedSettings.activeProfileId,
+    normalizedSettings.baseUrl,
+    normalizedSettings.apiKey,
+    normalizedSettings.model,
+    normalizedSettings.timeout,
     normalizedSettings.textVideoApiKey,
     normalizedSettings.textVideoApiProxy,
     normalizedSettings.textVideoBaseUrl,
