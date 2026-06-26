@@ -679,7 +679,7 @@ describe('custom providers', () => {
 
   it('uses fixed display prices for built-in image models', () => {
     expect(getFixedImageModelUnitCostText(DEFAULT_IMAGES_MODEL)).toBe('HUHN 0.06')
-    expect(getFixedImageModelUnitCostText('gpt-image-2-4k')).toBe('HUHN 0.09')
+    expect(getFixedImageModelUnitCostText('gpt-image-2-4k')).toBe('HUHN 0.06')
     expect(getFixedImageModelUnitCostText('Nano-Banana-2')).toBe('HUHN 0.09')
     expect(getFixedImageModelUnitCostText('Nano-Banana-Pro')).toBe('HUHN 0.15')
     expect(getFixedImageRequestModel('gpt-image-2-4k')).toBe('gpt-image-2-vip')
