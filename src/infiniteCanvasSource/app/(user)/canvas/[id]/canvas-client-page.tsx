@@ -29,6 +29,7 @@ import PriceTableButton from "../../../../../components/PriceTableButton";
 import { cropDataUrl, cropGridDataUrl } from "../utils/canvas-image-data";
 import { isCanvasEditableTarget } from "../utils/canvas-dom-events";
 import { clearCanvasGenerationSession, getCanvasGenerationSessionIds, isCanvasNodeGenerationLocked, markCanvasGenerationSession, resetInterruptedCanvasGenerations, withRunningCanvasNode, withoutRunningCanvasNodes } from "../utils/canvas-generation-running";
+import { cloneNodeMetadataForDuplicate } from "../utils/canvas-node-copy";
 import { fitNodeSize, nodeSizeFromRatio } from "../utils/canvas-node-size";
 import { App, Button, Dropdown, Input, Modal } from "antd";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "../constants";
@@ -1204,7 +1205,7 @@ function InfiniteCanvasPage() {
             .map((node) => ({
                 ...node,
                 position: { ...node.position },
-                metadata: node.metadata ? { ...node.metadata } : undefined,
+                metadata: cloneNodeMetadataForDuplicate(node.metadata),
             }));
 
         if (!copiedNodes.length) return;
@@ -1243,7 +1244,7 @@ function InfiniteCanvasPage() {
                     x: node.position.x + dx,
                     y: node.position.y + dy,
                 },
-                metadata: node.metadata ? { ...node.metadata } : undefined,
+                metadata: cloneNodeMetadataForDuplicate(node.metadata),
             };
         });
 
@@ -1278,7 +1279,7 @@ function InfiniteCanvasPage() {
             nodes: nodesRef.current.map((node) => ({
                 ...node,
                 position: { ...node.position },
-                metadata: node.metadata ? { ...node.metadata } : undefined,
+                metadata: cloneNodeMetadataForDuplicate(node.metadata),
             })),
             connections: connectionsRef.current.map((connection) => ({ ...connection })),
         };
@@ -1292,7 +1293,7 @@ function InfiniteCanvasPage() {
                 {
                     ...source,
                     position: { ...source.position },
-                    metadata: source.metadata ? { ...source.metadata } : undefined,
+                    metadata: cloneNodeMetadataForDuplicate(source.metadata),
                 },
             ],
             connections: [],
@@ -3705,22 +3706,6 @@ function applyNodeConfigPatch(node: CanvasNodeData, patch: Partial<CanvasNodeDat
     const spec = node.type === CanvasNodeType.Video ? NODE_DEFAULT_SIZE[CanvasNodeType.Video] : NODE_DEFAULT_SIZE[CanvasNodeType.Image];
     const size = typeof patch.size === "string" && !node.metadata?.content ? nodeSizeFromRatio(patch.size, spec.width, spec.height) : null;
     return size && (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video) ? { ...next, ...size, position: { x: node.position.x + node.width / 2 - size.width / 2, y: node.position.y + node.height / 2 - size.height / 2 } } : next;
-}
-
-function cloneNodeMetadataForDuplicate(metadata?: CanvasNodeMetadata) {
-    if (!metadata) return undefined;
-    // 副本只保留节点自身内容，批次和引用关系必须断开，避免看起来自动连回原节点。
-    return {
-        ...metadata,
-        references: undefined,
-        inputOrder: undefined,
-        isBatchRoot: undefined,
-        batchRootId: undefined,
-        batchChildIds: undefined,
-        batchUsesReferenceImages: undefined,
-        primaryImageId: undefined,
-        imageBatchExpanded: undefined,
-    };
 }
 
 function normalizeConnection(firstNodeId: string, secondNodeId: string, nodes: CanvasNodeData[], firstHandleType: "source" | "target") {
