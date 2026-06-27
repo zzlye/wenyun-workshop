@@ -30,10 +30,6 @@ ENV DEFAULT_API_URL=https://zzlye.xyz:60/v1
 ENV API_PROXY_URL=https://zzlye.xyz:60/v1
 ENV ENABLE_API_PROXY=true
 ENV LOCK_API_PROXY=true
-ENV NEWAPI_WENYUN_ACCESS_TOKEN=
-ENV NEWAPI_WENYUN_USER_ID=
-ENV NEWAPI_PUBLIC_ACCESS_TOKEN=
-ENV NEWAPI_PUBLIC_USER_ID=
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY deploy/nginx.conf /etc/nginx/templates/default.conf.template
