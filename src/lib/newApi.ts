@@ -678,49 +678,10 @@ function parseModelPerformancePayload(payload: unknown): NewApiModelPerformanceI
   return Array.from(uniqueItems.values())
 }
 
-function parseTokenLogPerformancePayload(payload: unknown): NewApiModelPerformanceItem[] {
-  const data = getPayloadData(payload)
-  const source = Array.isArray(data) ? data : findPerformanceArray(data) ?? []
-  const totals = new Map<string, { model: string; success: number; total: number }>()
-
-  for (const item of source) {
-    if (!isRecord(item)) continue
-    const model = readString(item, ['model_name', 'modelName', 'model', 'name'])
-    if (!model) continue
-    const type = readNumber(item, ['type', 'log_type', 'logType'])
-    const isSuccess = type === 2
-    const isFailure = type === 5
-    if (!isSuccess && !isFailure) continue
-
-    const key = model.trim().toLowerCase()
-    const current = totals.get(key) ?? { model, success: 0, total: 0 }
-    current.total += 1
-    if (isSuccess) current.success += 1
-    totals.set(key, current)
-  }
-
-  return Array.from(totals.values())
-    .filter((item) => item.total > 0)
-    .map((item) => ({
-      model: item.model,
-      avgLatencyMs: null,
-      successRate: Math.round((item.success / item.total) * 10000) / 100,
-      avgTps: null,
-      requestCount: item.total,
-    }))
-}
-
 function getNewApiModelPerformanceUrls(origin: string, apiRoot: string, safeHours: number): string[] {
   return Array.from(new Set([
     `${origin}/api/perf-metrics/summary?hours=${safeHours}`,
     `${apiRoot}/api/perf-metrics/summary?hours=${safeHours}`,
-  ]))
-}
-
-function getNewApiTokenLogUrls(origin: string, apiRoot: string): string[] {
-  return Array.from(new Set([
-    `${origin}/api/log/token`,
-    `${apiRoot}/api/log/token`,
   ]))
 }
 
@@ -852,26 +813,6 @@ export async function queryNewApiModelPerformance(profile: ApiProfile, hours = 2
       }
     } catch (err) {
       lastError = err
-    }
-  }
-
-  if (profile.apiKey.trim()) {
-    for (const url of getNewApiTokenLogUrls(origin, apiRoot)) {
-      try {
-        // 模型广场接口在部分站点需要前台登录态，退回用当前 Key 最近日志计算成功率。
-        const payload = await fetchJson(url, profile.apiKey, { noCache: true })
-        if (isRecord(payload) && payload.success === false) {
-          throw new Error(readString(payload, ['message', 'msg', 'error', 'detail']) ?? '成功率检测失败')
-        }
-        const items = parseTokenLogPerformancePayload(payload)
-        return {
-          items,
-          updatedAt: Date.now(),
-          found: items.length > 0,
-        }
-      } catch (err) {
-        lastError = err
-      }
     }
   }
 

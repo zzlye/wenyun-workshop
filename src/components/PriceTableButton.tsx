@@ -46,8 +46,8 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
     try {
       const result = await queryNewApiModelPerformance(activeProfile, 24)
       setPerformanceItems(result.items)
-      setPerformanceUpdatedAt(result.updatedAt)
-      if (!result.found) setPerformanceError('当前站点暂时没有 24 小时成功率数据')
+      setPerformanceUpdatedAt(result.found ? result.updatedAt : null)
+      if (!result.found) setPerformanceError('当前站点的 NewAPI 模型广场成功率未开放或暂无 24 小时数据')
     } catch (err) {
       setPerformanceItems([])
       setPerformanceUpdatedAt(null)

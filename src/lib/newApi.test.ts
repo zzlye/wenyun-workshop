@@ -296,25 +296,13 @@ describe('newApi model performance', () => {
     expect((fetchMock.mock.calls[0][1]?.headers as Record<string, string>).Authorization).toBeUndefined()
   })
 
-  it('falls back to token logs when model square metrics require frontend login', async () => {
+  it('does not fake model square success rate from token logs when metrics require frontend login', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({
         success: false,
         message: '未登录',
       }), {
         status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        success: true,
-        data: [
-          { model_name: 'gpt-image-2-4k', type: 2 },
-          { model_name: 'gpt-image-2-4k', type: 2 },
-          { model_name: 'gpt-image-2-4k', type: 5 },
-          { model_name: 'nano-banana-pro', type: 2 },
-        ],
-      }), {
-        status: 200,
         headers: { 'Content-Type': 'application/json' },
       }))
 
@@ -324,31 +312,8 @@ describe('newApi model performance', () => {
       apiKey: 'test-key',
     })
 
-    expect(result.found).toBe(true)
-    expect(result.items).toEqual([
-      {
-        model: 'gpt-image-2-4k',
-        avgLatencyMs: null,
-        successRate: 66.67,
-        avgTps: null,
-        requestCount: 3,
-      },
-      {
-        model: 'nano-banana-pro',
-        avgLatencyMs: null,
-        successRate: 100,
-        avgTps: null,
-        requestCount: 1,
-      },
-    ])
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(String(fetchMock.mock.calls[1][0])).toContain('https://example.com/api/log/token')
-    expect(fetchMock.mock.calls[1][1]).toMatchObject({
-      cache: 'no-store',
-      headers: expect.objectContaining({
-        Authorization: 'Bearer test-key',
-        'Cache-Control': 'no-cache, no-store, max-age=0',
-      }),
-    })
+    expect(result).toMatchObject({ found: false, items: [] })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(String(fetchMock.mock.calls[0][0])).toContain('https://example.com/api/perf-metrics/summary?hours=24')
   })
 })
