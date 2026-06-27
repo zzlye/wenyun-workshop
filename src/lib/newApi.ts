@@ -40,6 +40,20 @@ export interface NewApiPriceTableResult {
   found: boolean
 }
 
+export interface NewApiModelPerformanceItem {
+  model: string
+  avgLatencyMs: number | null
+  successRate: number | null
+  avgTps: number | null
+  requestCount: number | null
+}
+
+export interface NewApiModelPerformanceResult {
+  items: NewApiModelPerformanceItem[]
+  updatedAt: number
+  found: boolean
+}
+
 interface NewApiStatusInfo {
   currencySymbol: string
   quotaPerUnit: number
@@ -617,6 +631,53 @@ function collectModelPricesFromPayload(payload: unknown, allowDirectPayload: boo
   return allowDirectPayload ? collectModelPriceValues(getPayloadData(payload)) : []
 }
 
+function findPerformanceArray(input: unknown, depth = 0): unknown[] | null {
+  if (depth > 5 || !input || typeof input !== 'object') return null
+  if (Array.isArray(input)) return input
+
+  const record = input as Record<string, unknown>
+  for (const key of ['models', 'items', 'list', 'data']) {
+    const value = record[key]
+    if (Array.isArray(value)) return value
+  }
+
+  for (const value of Object.values(record)) {
+    const found = findPerformanceArray(value, depth + 1)
+    if (found) return found
+  }
+
+  return null
+}
+
+function toModelPerformanceItem(input: unknown): NewApiModelPerformanceItem | null {
+  if (!isRecord(input)) return null
+  const model = readString(input, ['model_name', 'modelName', 'model', 'name', 'id'])
+  if (!model) return null
+
+  return {
+    model,
+    avgLatencyMs: readNumber(input, ['avg_latency_ms', 'avgLatencyMs', 'latency_ms', 'latencyMs', 'latency']),
+    successRate: readNumber(input, ['success_rate', 'successRate', 'uptime_pct', 'uptimePct', 'uptime']),
+    avgTps: readNumber(input, ['avg_tps', 'avgTps', 'tps', 'throughput']),
+    requestCount: readNumber(input, ['request_count', 'requestCount', 'requests', 'count']),
+  }
+}
+
+function parseModelPerformancePayload(payload: unknown): NewApiModelPerformanceItem[] {
+  const data = getPayloadData(payload)
+  const source = findPerformanceArray(data) ?? findPerformanceArray(payload) ?? []
+  const items = source
+    .map(toModelPerformanceItem)
+    .filter((item): item is NewApiModelPerformanceItem => Boolean(item))
+  const uniqueItems = new Map<string, NewApiModelPerformanceItem>()
+  for (const item of items) {
+    const key = item.model.trim().toLowerCase()
+    if (!key) continue
+    uniqueItems.set(key, item)
+  }
+  return Array.from(uniqueItems.values())
+}
+
 function getPublicPriceUrls(origin: string, apiRoot: string): string[] {
   return Array.from(new Set([
     `${origin}/api/pricing`,
@@ -713,4 +774,37 @@ export async function queryNewApiPriceTable(profile: ApiProfile): Promise<NewApi
   } catch {
     return { items: [], updatedAt: Date.now(), found: false }
   }
+}
+
+export async function queryNewApiModelPerformance(profile: ApiProfile, hours = 24): Promise<NewApiModelPerformanceResult> {
+  const apiRoot = getApiRoot(profile.baseUrl)
+  const origin = getApiOrigin(profile.baseUrl)
+  if (!apiRoot || !origin) throw new Error('API URL 无效')
+
+  const safeHours = Number.isFinite(hours) && hours > 0 ? Math.min(Math.max(Math.round(hours), 1), 720) : 24
+  const urls = Array.from(new Set([
+    `${origin}/api/perf-metrics/summary?hours=${safeHours}`,
+    `${apiRoot}/api/perf-metrics/summary?hours=${safeHours}`,
+  ]))
+  let lastError: unknown = null
+
+  for (const url of urls) {
+    try {
+      // 成功率是实时运营数据，强制绕过缓存，避免连续点击看到旧结果。
+      const payload = await fetchJson(url, profile.apiKey, { noCache: true })
+      if (isRecord(payload) && payload.success === false) {
+        throw new Error(readString(payload, ['message', 'msg', 'error', 'detail']) ?? '成功率检测失败')
+      }
+      const items = parseModelPerformancePayload(payload)
+      return {
+        items,
+        updatedAt: Date.now(),
+        found: items.length > 0,
+      }
+    } catch (err) {
+      lastError = err
+    }
+  }
+
+  throw new Error(lastError instanceof Error ? lastError.message : '成功率检测失败')
 }

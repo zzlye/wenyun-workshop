@@ -1,9 +1,10 @@
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import { QrCode, ReceiptText, X } from 'lucide-react'
+import { QrCode, ReceiptText, RefreshCw, X } from 'lucide-react'
 import type { ApiProfile } from '../types'
 import { useStore } from '../store'
 import { buildFixedModelPriceRows } from '../lib/modelPricing'
+import { queryNewApiModelPerformance, type NewApiModelPerformanceItem } from '../lib/newApi'
 import SupportJoinGroupNotice from './SupportJoinGroupNotice'
 
 type PriceTableButtonProps = {
@@ -12,14 +13,80 @@ type PriceTableButtonProps = {
   buttonStyle?: CSSProperties
 }
 
+function formatLatency(ms: number | null): string {
+  if (!Number.isFinite(ms) || !ms || ms <= 0) return '—'
+  return ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`
+}
+
+function formatThroughput(tps: number | null): string {
+  if (!Number.isFinite(tps) || !tps || tps <= 0) return '—'
+  return tps >= 1000 ? `${(tps / 1000).toFixed(1)}K tps` : `${tps.toFixed(tps < 10 ? 2 : 1)} tps`
+}
+
+function formatSuccessRate(rate: number | null): string {
+  if (!Number.isFinite(rate)) return '—'
+  return `${Math.max(0, Math.min(100, rate ?? 0)).toFixed(2)}%`
+}
+
+function getStatusColor(rate: number | null): string {
+  if (!Number.isFinite(rate)) return 'bg-gray-300 dark:bg-gray-600'
+  if ((rate ?? 0) < 99) return 'bg-red-500'
+  if ((rate ?? 0) < 99.9) return 'bg-amber-500'
+  return 'bg-emerald-500'
+}
+
+function getStatusText(rate: number | null): string {
+  if (!Number.isFinite(rate)) return '无数据'
+  if ((rate ?? 0) < 99) return '异常'
+  if ((rate ?? 0) < 99.9) return '波动'
+  return '稳定'
+}
+
+function normalizeModelKey(model: string): string {
+  return model.trim().toLowerCase()
+}
+
+function findMetric(metrics: NewApiModelPerformanceItem[], model: string, upstreamModel?: string): NewApiModelPerformanceItem | null {
+  const keys = [model, upstreamModel].filter((value): value is string => Boolean(value?.trim())).map(normalizeModelKey)
+  return metrics.find((item) => keys.includes(normalizeModelKey(item.model))) ?? null
+}
+
 export default function PriceTableButton({ activeProfile, buttonClassName, buttonStyle }: PriceTableButtonProps) {
   const settings = useStore((state) => state.settings)
   const [open, setOpen] = useState(false)
   const [contactOpen, setContactOpen] = useState(false)
+  const [isLoadingPerformance, setIsLoadingPerformance] = useState(false)
+  const [performanceError, setPerformanceError] = useState('')
+  const [performanceItems, setPerformanceItems] = useState<NewApiModelPerformanceItem[]>([])
+  const [performanceUpdatedAt, setPerformanceUpdatedAt] = useState<number | null>(null)
   const rows = useMemo(
     () => buildFixedModelPriceRows(activeProfile.id, [settings.textModel, settings.textVideoModel, settings.videoModel]),
     [activeProfile.id, settings.textModel, settings.textVideoModel, settings.videoModel],
   )
+
+  const loadPerformance = async () => {
+    setIsLoadingPerformance(true)
+    setPerformanceError('')
+    try {
+      const result = await queryNewApiModelPerformance(activeProfile, 24)
+      setPerformanceItems(result.items)
+      setPerformanceUpdatedAt(result.updatedAt)
+      if (!result.found) setPerformanceError('当前站点暂时没有 24 小时成功率数据')
+    } catch (err) {
+      setPerformanceItems([])
+      setPerformanceUpdatedAt(null)
+      setPerformanceError(err instanceof Error ? err.message : '成功率检测失败')
+    } finally {
+      setIsLoadingPerformance(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!open) return
+    void loadPerformance()
+    // 模型列表打开时拉取当前站点的实时成功率，刷新按钮负责再次手动检测。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, activeProfile.id])
 
   return (
     <>
@@ -60,42 +127,78 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
           onPointerDown={(event) => event.stopPropagation()}
         >
           <div className="absolute inset-0 bg-black/45 backdrop-blur-sm animate-overlay-in" onClick={() => setOpen(false)} />
-          <div className="relative z-10 flex max-h-[82vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/50 bg-white/95 shadow-2xl ring-1 ring-black/5 animate-modal-in dark:border-white/[0.08] dark:bg-gray-900/95 dark:ring-white/10">
+          <div className="relative z-10 flex max-h-[82vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-white/50 bg-white/95 shadow-2xl ring-1 ring-black/5 animate-modal-in dark:border-white/[0.08] dark:bg-gray-900/95 dark:ring-white/10">
             <div className="flex shrink-0 items-center justify-between gap-4 border-b border-gray-100 p-5 dark:border-white/[0.08]">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 text-base font-semibold text-gray-900 dark:text-gray-100">
                   <ReceiptText className="h-4 w-4 text-blue-500" />
                   <span>{activeProfile.name || '当前站点'}模型列表</span>
                 </div>
-                <div className="mt-1 text-xs text-gray-400 dark:text-gray-500">固定模型配置</div>
+                <div className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  固定模型配置
+                  {performanceUpdatedAt ? `，成功率更新于 ${new Date(performanceUpdatedAt).toLocaleString()}` : ''}
+                </div>
               </div>
-              <button
-                type="button"
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-white/[0.08] dark:hover:text-gray-100"
-                onClick={() => setOpen(false)}
-                aria-label="关闭模型列表"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:border-blue-400/30 dark:hover:bg-blue-500/15 dark:hover:text-blue-200"
+                  onClick={() => void loadPerformance()}
+                  disabled={isLoadingPerformance}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isLoadingPerformance ? 'animate-spin' : ''}`} />
+                  {isLoadingPerformance ? '检测中' : '刷新成功率'}
+                </button>
+                <button
+                  type="button"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-white/[0.08] dark:hover:text-gray-100"
+                  onClick={() => setOpen(false)}
+                  aria-label="关闭模型列表"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-5">
-              <div className="overflow-hidden rounded-xl border border-gray-200/70 dark:border-white/[0.08]">
-                <div className="grid grid-cols-[minmax(0,1.15fr)_minmax(120px,0.85fr)_110px] gap-4 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-400 dark:bg-white/[0.04] dark:text-gray-500">
-                  <span>模型</span>
-                  <span>支持分辨率</span>
-                  <span>价格</span>
+              {performanceError ? (
+                <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+                  {performanceError}
                 </div>
-                {rows.map((row) => (
-                  <div key={`${row.model}-${row.upstreamModel || ''}`} className="grid grid-cols-[minmax(0,1.15fr)_minmax(120px,0.85fr)_110px] gap-4 border-t border-gray-100 px-4 py-3 text-sm dark:border-white/[0.06]">
-                    <div className="min-w-0">
-                      <div className="break-all font-medium text-gray-800 dark:text-gray-100">{row.model}</div>
-                      {row.upstreamModel ? <div className="mt-1 break-all text-[11px] text-gray-400 dark:text-gray-500">实际模型：{row.upstreamModel}</div> : null}
-                    </div>
-                    <div className="min-w-0 text-gray-600 dark:text-gray-300">{row.resolutionText || '—'}</div>
-                    <div className="font-mono text-gray-700 dark:text-gray-200">{row.priceText}</div>
+              ) : null}
+              <div className="overflow-x-auto rounded-xl border border-gray-200/70 dark:border-white/[0.08]">
+                <div className="min-w-[880px]">
+                  <div className="grid grid-cols-[minmax(0,1.15fr)_minmax(120px,0.85fr)_90px_90px_90px_90px_82px] gap-3 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-400 dark:bg-white/[0.04] dark:text-gray-500">
+                    <span>模型</span>
+                    <span>支持分辨率</span>
+                    <span>价格</span>
+                    <span>成功率</span>
+                    <span>延迟</span>
+                    <span>吞吐</span>
+                    <span>状态</span>
                   </div>
-                ))}
+                  {rows.map((row) => {
+                    const metric = findMetric(performanceItems, row.model, row.upstreamModel)
+                    const rate = metric?.successRate ?? null
+                    return (
+                      <div key={`${row.model}-${row.upstreamModel || ''}`} className="grid grid-cols-[minmax(0,1.15fr)_minmax(120px,0.85fr)_90px_90px_90px_90px_82px] gap-3 border-t border-gray-100 px-4 py-3 text-sm dark:border-white/[0.06]">
+                        <div className="min-w-0">
+                          <div className="break-all font-medium text-gray-800 dark:text-gray-100">{row.model}</div>
+                          {row.upstreamModel ? <div className="mt-1 break-all text-[11px] text-gray-400 dark:text-gray-500">实际模型：{row.upstreamModel}</div> : null}
+                        </div>
+                        <div className="min-w-0 text-gray-600 dark:text-gray-300">{row.resolutionText || '—'}</div>
+                        <div className="font-mono text-gray-700 dark:text-gray-200">{row.priceText}</div>
+                        <div className="font-mono text-gray-700 dark:text-gray-200">{formatSuccessRate(rate)}</div>
+                        <div className="font-mono text-gray-700 dark:text-gray-200">{formatLatency(metric?.avgLatencyMs ?? null)}</div>
+                        <div className="font-mono text-gray-700 dark:text-gray-200">{formatThroughput(metric?.avgTps ?? null)}</div>
+                        <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                          <span className={`h-2.5 w-2.5 rounded-full ${getStatusColor(rate)}`} />
+                          <span>{getStatusText(rate)}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             </div>
           </div>
