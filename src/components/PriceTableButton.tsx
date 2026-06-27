@@ -13,33 +13,9 @@ type PriceTableButtonProps = {
   buttonStyle?: CSSProperties
 }
 
-function formatLatency(ms: number | null): string {
-  if (!Number.isFinite(ms) || !ms || ms <= 0) return '—'
-  return ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`
-}
-
-function formatThroughput(tps: number | null): string {
-  if (!Number.isFinite(tps) || !tps || tps <= 0) return '—'
-  return tps >= 1000 ? `${(tps / 1000).toFixed(1)}K tps` : `${tps.toFixed(tps < 10 ? 2 : 1)} tps`
-}
-
 function formatSuccessRate(rate: number | null): string {
   if (!Number.isFinite(rate)) return '—'
   return `${Math.max(0, Math.min(100, rate ?? 0)).toFixed(2)}%`
-}
-
-function getStatusColor(rate: number | null): string {
-  if (!Number.isFinite(rate)) return 'bg-gray-300 dark:bg-gray-600'
-  if ((rate ?? 0) < 99) return 'bg-red-500'
-  if ((rate ?? 0) < 99.9) return 'bg-amber-500'
-  return 'bg-emerald-500'
-}
-
-function getStatusText(rate: number | null): string {
-  if (!Number.isFinite(rate)) return '无数据'
-  if ((rate ?? 0) < 99) return '异常'
-  if ((rate ?? 0) < 99.9) return '波动'
-  return '稳定'
 }
 
 function normalizeModelKey(model: string): string {
@@ -127,7 +103,7 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
           onPointerDown={(event) => event.stopPropagation()}
         >
           <div className="absolute inset-0 bg-black/45 backdrop-blur-sm animate-overlay-in" onClick={() => setOpen(false)} />
-          <div className="relative z-10 flex max-h-[82vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-white/50 bg-white/95 shadow-2xl ring-1 ring-black/5 animate-modal-in dark:border-white/[0.08] dark:bg-gray-900/95 dark:ring-white/10">
+          <div className="relative z-10 flex max-h-[82vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-white/50 bg-white/95 shadow-2xl ring-1 ring-black/5 animate-modal-in dark:border-white/[0.08] dark:bg-gray-900/95 dark:ring-white/10">
             <div className="flex shrink-0 items-center justify-between gap-4 border-b border-gray-100 p-5 dark:border-white/[0.08]">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 text-base font-semibold text-gray-900 dark:text-gray-100">
@@ -167,21 +143,18 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
                 </div>
               ) : null}
               <div className="overflow-x-auto rounded-xl border border-gray-200/70 dark:border-white/[0.08]">
-                <div className="min-w-[880px]">
-                  <div className="grid grid-cols-[minmax(0,1.15fr)_minmax(120px,0.85fr)_90px_90px_90px_90px_82px] gap-3 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-400 dark:bg-white/[0.04] dark:text-gray-500">
+                <div className="min-w-[640px]">
+                  <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(120px,0.9fr)_110px_100px] gap-3 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-400 dark:bg-white/[0.04] dark:text-gray-500">
                     <span>模型</span>
                     <span>支持分辨率</span>
                     <span>价格</span>
                     <span>成功率</span>
-                    <span>延迟</span>
-                    <span>吞吐</span>
-                    <span>状态</span>
                   </div>
                   {rows.map((row) => {
                     const metric = findMetric(performanceItems, row.model, row.upstreamModel)
                     const rate = metric?.successRate ?? null
                     return (
-                      <div key={`${row.model}-${row.upstreamModel || ''}`} className="grid grid-cols-[minmax(0,1.15fr)_minmax(120px,0.85fr)_90px_90px_90px_90px_82px] gap-3 border-t border-gray-100 px-4 py-3 text-sm dark:border-white/[0.06]">
+                      <div key={`${row.model}-${row.upstreamModel || ''}`} className="grid grid-cols-[minmax(0,1.2fr)_minmax(120px,0.9fr)_110px_100px] gap-3 border-t border-gray-100 px-4 py-3 text-sm dark:border-white/[0.06]">
                         <div className="min-w-0">
                           <div className="break-all font-medium text-gray-800 dark:text-gray-100">{row.model}</div>
                           {row.upstreamModel ? <div className="mt-1 break-all text-[11px] text-gray-400 dark:text-gray-500">实际模型：{row.upstreamModel}</div> : null}
@@ -189,12 +162,6 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
                         <div className="min-w-0 text-gray-600 dark:text-gray-300">{row.resolutionText || '—'}</div>
                         <div className="font-mono text-gray-700 dark:text-gray-200">{row.priceText}</div>
                         <div className="font-mono text-gray-700 dark:text-gray-200">{formatSuccessRate(rate)}</div>
-                        <div className="font-mono text-gray-700 dark:text-gray-200">{formatLatency(metric?.avgLatencyMs ?? null)}</div>
-                        <div className="font-mono text-gray-700 dark:text-gray-200">{formatThroughput(metric?.avgTps ?? null)}</div>
-                        <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
-                          <span className={`h-2.5 w-2.5 rounded-full ${getStatusColor(rate)}`} />
-                          <span>{getStatusText(rate)}</span>
-                        </div>
                       </div>
                     )
                   })}
