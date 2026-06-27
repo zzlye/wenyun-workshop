@@ -10,7 +10,7 @@ import { saveAs } from "file-saver";
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestVideoGeneration } from "@/services/api/video";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
-import { imageToDataUrl, resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
+import { getImageBlob as getStoredCanvasImageBlob, imageToDataUrl, resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
 import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,7 @@ import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { getActiveApiProfile, getApiBalanceSnapshot, setApiBalanceSnapshot, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
 import { copyImageSourceToClipboard, getClipboardFailureMessage } from "../../../../../lib/clipboard";
+import { getImageBlobExtension, getImageSourceBlob } from "../../../../../lib/imageTransfer";
 import { storeImage } from "../../../../../lib/db";
 import { queryNewApiBalance } from "../../../../../lib/newApi";
 import { replaceImageMentionsForApi, stripImageMentionMarkers } from "../../../../../lib/promptImageMentions";
@@ -1926,10 +1927,21 @@ function InfiniteCanvasPage() {
         setNodes((prev) => prev.map((node) => (node.id === nodeId ? applyNodeConfigPatch(node, patch) : node)));
     }, []);
 
-    const downloadNodeImage = useCallback((node: CanvasNodeData) => {
+    const downloadNodeImage = useCallback(async (node: CanvasNodeData) => {
         if ((node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video) || !node.metadata?.content) return;
-        saveAs(node.metadata.content, `canvas-${node.type}-${node.id}.${node.type === CanvasNodeType.Video ? "mp4" : imageExtension(node.metadata.content)}`);
-    }, []);
+        if (node.type === CanvasNodeType.Video) {
+            saveAs(node.metadata.content, `canvas-${node.type}-${node.id}.mp4`);
+            return;
+        }
+
+        try {
+            const storedBlob = node.metadata.storageKey ? await getStoredCanvasImageBlob(node.metadata.storageKey) : null;
+            const blob = storedBlob || (await getImageSourceBlob(node.metadata.content));
+            saveAs(blob, `canvas-${node.type}-${node.id}.${getImageBlobExtension(blob, node.metadata.content)}`);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "下载图片失败");
+        }
+    }, [message]);
 
     const copyNodeImage = useCallback(
         async (node: CanvasNodeData) => {
@@ -3564,10 +3576,6 @@ function Shortcut({ keys, value }: { keys: string[]; value: string }) {
             <span className="text-right text-sm opacity-55">{value}</span>
         </div>
     );
-}
-
-function imageExtension(dataUrl: string) {
-    return dataUrl.match(/^data:image[/]([^;]+)/)?.[1] || dataUrl.match(/image[/]([^;]+)/)?.[1] || "png";
 }
 
 function imageMetadata(image: UploadedImage): CanvasNodeMetadata {

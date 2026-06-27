@@ -1,11 +1,5 @@
 import { ensureImageCached } from '../store'
-
-const MIME_EXTENSIONS: Record<string, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/webp': 'webp',
-  'image/gif': 'gif',
-}
+import { getImageBlobExtension, getImageSourceBlob } from './imageTransfer'
 
 export interface DownloadImagesResult {
   successCount: number
@@ -29,8 +23,8 @@ export async function downloadImageIds(imageIds: string[], fileNameBase = 'image
       const blob = await getImageBlob(imageIds[index])
       const order = String(index + 1).padStart(2, '0')
       const fileName = multiple
-        ? `${fileNameBase}-${order}.${getBlobExtension(blob)}`
-        : `${fileNameBase}.${getBlobExtension(blob)}`
+        ? `${fileNameBase}-${order}.${getImageBlobExtension(blob, imageIds[index])}`
+        : `${fileNameBase}.${getImageBlobExtension(blob, imageIds[index])}`
       triggerDownload(blob, fileName)
       successCount++
       if (multiple) await delay(100)
@@ -49,9 +43,7 @@ async function getImageBlob(imageIdOrUrl: string): Promise<Blob> {
     src = await ensureImageCached(imageIdOrUrl) ?? imageIdOrUrl
   }
 
-  const res = await fetch(src)
-  if (!res.ok && !src.startsWith('data:')) throw new Error(`读取图片失败：${imageIdOrUrl}`)
-  return await res.blob()
+  return getImageSourceBlob(src)
 }
 
 function triggerDownload(blob: Blob, fileName: string) {
@@ -63,10 +55,6 @@ function triggerDownload(blob: Blob, fileName: string) {
   a.click()
   document.body.removeChild(a)
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
-}
-
-function getBlobExtension(blob: Blob): string {
-  return MIME_EXTENSIONS[blob.type.toLowerCase()] ?? blob.type.split('/')[1] ?? 'png'
 }
 
 function delay(ms: number) {

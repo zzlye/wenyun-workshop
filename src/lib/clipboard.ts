@@ -1,3 +1,5 @@
+import { getImageSourceBlob } from './imageTransfer'
+
 export async function copyTextToClipboard(text: string) {
   let asyncClipboardError: unknown = null
 
@@ -20,8 +22,7 @@ export async function copyBlobToClipboard(blob: Blob | Promise<Blob>) {
     throw new Error('Clipboard image API is not available')
   }
 
-  const resolvedBlob = await Promise.resolve(blob)
-  await writeImageBlobToClipboard(resolvedBlob)
+  await writeImageBlobToClipboard(blob)
 }
 
 export async function copyImageSourceToClipboard(src: string | Promise<string | undefined>) {
@@ -29,11 +30,11 @@ export async function copyImageSourceToClipboard(src: string | Promise<string | 
     throw new Error('Clipboard image API is not available')
   }
 
-  const resolvedSrc = await Promise.resolve(src)
-  if (!resolvedSrc) throw new Error('Image source is not available')
-  const res = await fetch(resolvedSrc)
-  const blob = await res.blob()
-  await writeImageBlobToClipboard(blob)
+  const imageBlob = Promise.resolve(src).then((resolvedSrc) => {
+    if (!resolvedSrc) throw new Error('Image source is not available')
+    return getImageSourceBlob(resolvedSrc)
+  })
+  await writeImageBlobToClipboard(imageBlob)
 }
 
 export function getClipboardFailureMessage(fallback: string, err: unknown) {
@@ -69,28 +70,19 @@ function copyTextWithExecCommand(text: string) {
   }
 }
 
-async function writeImageBlobToClipboard(blob: Blob) {
-  if (!blob.type.startsWith('image/')) throw new Error('Clipboard item is not an image')
-
-  const clipboardItems: Record<string, Blob | Promise<Blob>> = {}
-  const customType = `web ${blob.type}`
-
-  if (isClipboardTypeSupported(customType)) {
-    clipboardItems[customType] = blob
-  }
-
-  if (blob.type === 'image/png') {
-    clipboardItems['image/png'] = blob
-  } else if (isClipboardTypeSupported('image/png')) {
-    clipboardItems['image/png'] = imageBlobToPngBlob(blob)
-  }
-
-  if (Object.keys(clipboardItems).length === 0) {
+async function writeImageBlobToClipboard(blob: Blob | Promise<Blob>) {
+  if (!isClipboardTypeSupported('image/png')) {
     throw new Error('当前浏览器不支持图像剪贴板写入')
   }
 
+  const pngBlob = Promise.resolve(blob).then(async (resolvedBlob) => {
+    if (!resolvedBlob.type.startsWith('image/')) throw new Error('Clipboard item is not an image')
+    return resolvedBlob.type === 'image/png' ? resolvedBlob : imageBlobToPngBlob(resolvedBlob)
+  })
+
+  // 这里必须先调用 write，再等待图片下载/转码；否则 4K 大图会让用户点击手势过期，导致剪贴板拒绝写入。
   await navigator.clipboard.write([
-    new ClipboardItem(clipboardItems),
+    new ClipboardItem({ 'image/png': pngBlob }),
   ])
 }
 
