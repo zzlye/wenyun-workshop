@@ -113,7 +113,9 @@ export function getGenericAssetProxyUrl(url: string): string {
     const parsed = new URL(url)
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return url
     if (typeof window !== 'undefined' && parsed.origin === window.location.origin) return url
-    return `${ASSET_PROXY_PREFIX}?url=${encodeURIComponent(parsed.toString())}`
+    const scheme = parsed.protocol === 'https:' ? 'https' : 'http'
+    // Docker Nginx 不会在 $arg_url 校验前解码 query，因此用路径式代理避免 https%3A 被误判非法。
+    return `${ASSET_PROXY_PREFIX}/${scheme}/${parsed.host}${parsed.pathname}${parsed.search}`
   } catch {
     return url
   }

@@ -68,7 +68,7 @@ describe('buildApiUrl', () => {
 
   it('routes third-party image assets through the generic same-origin asset proxy', () => {
     expect(getLockedAssetProxyUrl('https://bafang.me/files/final.png?token=1')).toBe(
-      '/asset-proxy?url=https%3A%2F%2Fbafang.me%2Ffiles%2Ffinal.png%3Ftoken%3D1',
+      '/asset-proxy/https/bafang.me/files/final.png?token=1',
     )
   })
 

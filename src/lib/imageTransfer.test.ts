@@ -30,7 +30,7 @@ describe('image transfer helpers', () => {
 
     const blob = await getImageSourceBlob('https://bafang.me/result/final.png?token=1')
 
-    expect(fetchSpy).toHaveBeenCalledWith('/asset-proxy?url=https%3A%2F%2Fbafang.me%2Fresult%2Ffinal.png%3Ftoken%3D1', { cache: 'no-store' })
+    expect(fetchSpy).toHaveBeenCalledWith('/asset-proxy/https/bafang.me/result/final.png?token=1', { cache: 'no-store' })
     expect(blob.type).toBe('image/png')
 
     fetchSpy.mockRestore()

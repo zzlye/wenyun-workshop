@@ -235,7 +235,17 @@ function lockedFetchProxyPlugin() {
 function resolveAssetProxyTarget(requestUrl: string): string | null {
   if (!requestUrl.startsWith(ASSET_PROXY_PREFIX)) return null
   const parsed = new URL(requestUrl, 'http://localhost')
+  const pathMatch = parsed.pathname.match(/^\/asset-proxy\/(https?)\/(.+)$/)
+  if (pathMatch) {
+    return normalizeAssetProxyTarget(`${pathMatch[1]}://${pathMatch[2]}${parsed.search}`)
+  }
+
   const target = parsed.searchParams.get('url')?.trim()
+  // 兼容旧版 ?url= 格式，已部署的新版本会优先使用路径式代理。
+  return target ? normalizeAssetProxyTarget(target) : null
+}
+
+function normalizeAssetProxyTarget(target: string): string | null {
   if (!target) return null
   try {
     const targetUrl = new URL(target)
