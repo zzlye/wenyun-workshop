@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "../types";
-import { buildConnectedPromptText, buildNodeGenerationContext, buildNodeGenerationInputs, hasUsableNodeGenerationPrompt, mergeNodeReferenceImages, stripConnectedPromptSuffix } from "./canvas-node-generation";
+import { buildCanvasImageFailureMessage, buildConnectedPromptText, buildNodeGenerationContext, buildNodeGenerationInputs, hasUsableNodeGenerationPrompt, mergeNodeReferenceImages, stripConnectedPromptSuffix } from "./canvas-node-generation";
 
 const baseNode = (node: Partial<CanvasNodeData> & Pick<CanvasNodeData, "id" | "type">): CanvasNodeData => ({
     title: node.id,
@@ -113,5 +113,11 @@ describe("canvas node generation prompt handling", () => {
         const duplicateConnected = { id: "connected-duplicate", name: "重复连接图", type: "image/png", dataUrl: manual.dataUrl };
 
         expect(mergeNodeReferenceImages([manual], [connected, duplicateConnected]).map((image) => image.id)).toEqual(["manual-1", "connected-1"]);
+    });
+
+    it("批量图片失败时优先显示接口返回的具体错误", () => {
+        expect(buildCanvasImageFailureMessage(false, "上游余额不足")).toBe("上游余额不足");
+        expect(buildCanvasImageFailureMessage(true, "上游余额不足")).toBe("部分图片生成失败：上游余额不足");
+        expect(buildCanvasImageFailureMessage(false, "")).toBe("全部图片生成失败");
     });
 });

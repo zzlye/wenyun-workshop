@@ -500,7 +500,7 @@ function SettingTitle({ children, color }: { children: string; color: string }) 
 }
 
 function qualityLabel(value: string) {
-    return ({ auto: "自动", high: "高", medium: "中", low: "低" } as Record<string, string>)[value] || value;
+    return ({ auto: "高", high: "高", medium: "中", low: "低" } as Record<string, string>)[value] || value;
 }
 
 function AssistantMessages({

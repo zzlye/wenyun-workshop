@@ -52,6 +52,9 @@ describe("canvas image api", () => {
             "/api-proxy/wenyun/images/generations",
             expect.objectContaining({ method: "POST" }),
         );
+        const [, init] = fetchMock.mock.calls[0];
+        const body = JSON.parse(String((init as RequestInit).body));
+        expect(body.quality).toBe("high");
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZmluYWw=" }]);
     });
 

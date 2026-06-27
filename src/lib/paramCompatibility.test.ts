@@ -16,16 +16,16 @@ describe('parameter compatibility', () => {
     expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 12 }, settings).n).toBe(10)
   })
 
-  it('limits fal.ai output count to 4', () => {
+  it('keeps the locked fixed-site output count when stale settings contain fal.ai', () => {
     const falProfile = createDefaultFalProfile({ apiKey: 'fal-key' })
-    const settings = normalizeSettings({
+    const settings = {
       ...DEFAULT_SETTINGS,
       profiles: [falProfile],
       activeProfileId: falProfile.id,
-    })
+    }
 
-    expect(getOutputImageLimitForSettings(settings)).toBe(4)
-    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 8 }, settings).n).toBe(4)
+    expect(getOutputImageLimitForSettings(settings)).toBe(10)
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 12 }, settings).n).toBe(10)
   })
 
   it('keeps OpenAI streaming output count so the request can disable streaming', () => {
@@ -39,16 +39,27 @@ describe('parameter compatibility', () => {
     expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 4 }, settings).n).toBe(4)
   })
 
-  it('only replaces fal.ai auto size in text-to-image mode', () => {
-    const falProfile = createDefaultFalProfile({ apiKey: 'fal-key' })
+  it('maps legacy auto image quality to high for every image provider', () => {
+    const openAIProfile = createDefaultOpenAIProfile({ apiKey: 'test-key' })
     const settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [openAIProfile],
+      activeProfileId: openAIProfile.id,
+    })
+
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, quality: 'auto' }, settings).quality).toBe('high')
+  })
+
+  it('normalizes auto size through fixed-site defaults when stale settings contain fal.ai', () => {
+    const falProfile = createDefaultFalProfile({ apiKey: 'fal-key' })
+    const settings = {
       ...DEFAULT_SETTINGS,
       profiles: [falProfile],
       activeProfileId: falProfile.id,
-    })
+    }
 
-    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: 'auto' }, settings).size).toBe('1360x1024')
-    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: 'auto' }, settings, { hasInputImages: true }).size).toBe('auto')
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: 'auto' }, settings).size).toBe(DEFAULT_PARAMS.size)
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: 'auto' }, settings, { hasInputImages: true }).size).toBe(DEFAULT_PARAMS.size)
   })
 
   it('keeps public site image size options the same as Wenyun', () => {

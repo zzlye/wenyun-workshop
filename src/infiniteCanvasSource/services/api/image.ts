@@ -149,11 +149,28 @@ function parseImagePayload(payload: ImageApiResponse) {
 }
 
 function readAxiosError(error: unknown, fallback: string) {
-    if (axios.isAxiosError<{ error?: { message?: string }; msg?: string; code?: number }>(error)) {
+    if (axios.isAxiosError(error)) {
         const responseData = error.response?.data;
-        return sanitizeApiErrorMessage(responseData?.msg || responseData?.error?.message || (error.response?.status ? `${fallback}：${error.response.status}` : fallback));
+        return sanitizeApiErrorMessage(extractApiErrorMessage(responseData) || (error.response?.status ? `${fallback}：${error.response.status}` : fallback));
     }
     return sanitizeApiErrorMessage(error instanceof Error ? error.message : fallback);
+}
+
+function extractApiErrorMessage(payload: unknown): string {
+    if (!payload) return "";
+    if (typeof payload === "string") return payload.trim();
+    if (Array.isArray(payload)) return payload.map(extractApiErrorMessage).filter(Boolean).join("\n");
+    if (typeof payload !== "object") return "";
+
+    const record = payload as Record<string, unknown>;
+    const direct = stringValue(record.msg) || stringValue(record.message) || stringValue(record.error_message) || stringValue(record.detail);
+    if (direct) return direct;
+    if (typeof record.error === "string") return record.error.trim();
+    return extractApiErrorMessage(record.error) || extractApiErrorMessage(record.data);
+}
+
+function stringValue(value: unknown) {
+    return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
 function parseStreamChunk(chunk: string, onDelta: (value: string) => void) {

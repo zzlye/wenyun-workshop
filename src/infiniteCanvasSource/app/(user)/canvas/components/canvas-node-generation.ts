@@ -40,6 +40,13 @@ export function hasUsableNodeGenerationPrompt(prompt: string, connectedText: str
     return Boolean(prompt.trim() || connectedText.trim());
 }
 
+export function buildCanvasImageFailureMessage(hasSuccess: boolean, firstFailureDetails: string) {
+    const details = firstFailureDetails.trim();
+    // 批量生成失败时优先显示上游返回的第一条真实错误，避免只剩“全部失败”这种空泛提示。
+    if (!details) return hasSuccess ? "部分图片生成失败" : "全部图片生成失败";
+    return hasSuccess ? `部分图片生成失败：${details}` : details;
+}
+
 export function buildConnectedPromptText(inputs: NodeGenerationInput[]) {
     return inputs
         .filter((input) => input.type === "text")

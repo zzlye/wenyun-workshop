@@ -444,8 +444,13 @@ function LoadingContent({ theme }: Pick<NodeContentRendererProps, "theme">) {
 
 function ErrorContent({ node, theme, onRetry }: Pick<NodeContentRendererProps, "node" | "theme" | "onRetry">) {
     return (
-        <div className="flex max-w-[260px] flex-col items-center gap-3 px-5 text-center">
-            <div className="text-xs leading-5 text-red-300">{node.metadata?.errorDetails || "生成失败"}</div>
+        <div className="flex max-w-[280px] flex-col items-center gap-3 px-5 text-center">
+            <div
+                className="thin-scrollbar max-h-28 max-w-full overflow-auto whitespace-pre-wrap break-words rounded-lg border px-3 py-2 text-left text-xs leading-5 text-red-300"
+                style={{ background: theme.node.fill, borderColor: theme.node.stroke }}
+            >
+                {node.metadata?.errorDetails || "生成失败"}
+            </div>
             <button
                 type="button"
                 className="inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition hover:scale-[1.02]"

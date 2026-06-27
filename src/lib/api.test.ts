@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PARAMS } from '../types'
 import { DEFAULT_SETTINGS, GPT_IMAGE_2_SUPER_MODEL, LOCKED_PUBLIC_PROFILE_ID } from './apiProfiles'
 import { callImageApi } from './api'
+import { getGenericAssetProxyUrl } from './devProxy'
 
 describe('callImageApi', () => {
   afterEach(() => {
@@ -658,7 +659,7 @@ describe('callImageApi', () => {
     } as any)
 
     expect(fetchMock).toHaveBeenCalledTimes(3)
-    expect(result.images).toEqual([imageUrl])
+    expect(result.images).toEqual([getGenericAssetProxyUrl(imageUrl)])
     expect(result.rawImageUrls).toEqual([imageUrl])
   })
 
