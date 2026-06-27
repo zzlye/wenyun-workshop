@@ -4,6 +4,7 @@ import { useCloseOnEscape } from '../hooks/useCloseOnEscape'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
 import { createMaskPreviewDataUrl } from '../lib/canvasImage'
 import { suppressGlobalClicks } from '../lib/clickSuppression'
+import { getSafeImageDisplayUrl } from '../lib/imageApiShared'
 
 const MIN_SCALE = 1
 const MAX_SCALE = 10
@@ -47,10 +48,10 @@ export default function Lightbox() {
     const imageId = lightboxImageId
     const cached = getCachedImage(imageId)
     if (cached) {
-      setSrc(cached)
+      setSrc(getSafeImageDisplayUrl(cached))
     } else {
       ensureImageCached(imageId).then((url) => {
-        if (!cancelled && url) setSrc(url)
+        if (!cancelled && url) setSrc(getSafeImageDisplayUrl(url))
       })
     }
 
@@ -80,10 +81,10 @@ export default function Lightbox() {
       const maskImageId = taskWithMask.maskImageId
       const cached = getCachedImage(maskImageId)
       if (cached) {
-        setMaskImageSrc(cached)
+        setMaskImageSrc(getSafeImageDisplayUrl(cached))
       } else {
         ensureImageCached(maskImageId).then((url) => {
-          if (!cancelled && url) setMaskImageSrc(url)
+          if (!cancelled && url) setMaskImageSrc(getSafeImageDisplayUrl(url))
         })
       }
     } else {

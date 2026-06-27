@@ -25,6 +25,17 @@ describe('image transfer helpers', () => {
     fetchSpy.mockRestore()
   })
 
+  it('downloads third-party image urls through the generic asset proxy', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Blob(['image'], { type: 'image/png' })))
+
+    const blob = await getImageSourceBlob('https://bafang.me/result/final.png?token=1')
+
+    expect(fetchSpy).toHaveBeenCalledWith('/asset-proxy?url=https%3A%2F%2Fbafang.me%2Fresult%2Ffinal.png%3Ftoken%3D1', { cache: 'no-store' })
+    expect(blob.type).toBe('image/png')
+
+    fetchSpy.mockRestore()
+  })
+
   it('keeps a useful file extension when servers omit the content type', () => {
     const blob = new Blob(['image'])
 

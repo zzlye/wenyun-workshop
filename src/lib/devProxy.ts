@@ -9,6 +9,7 @@ export interface DevProxyConfig {
 }
 
 const DEFAULT_PROXY_PREFIX = '/api-proxy'
+export const ASSET_PROXY_PREFIX = '/asset-proxy'
 const LOCKED_PROXY_TARGETS = [
   {
     baseUrl: 'https://zzlye.xyz:60/v1',
@@ -89,7 +90,18 @@ export function getLockedNewApiProxyUrl(url: string): string | null {
 }
 
 export function getLockedAssetProxyUrl(url: string): string {
-  return getLockedNewApiProxyUrl(url) ?? url
+  return getLockedNewApiProxyUrl(url) ?? getGenericAssetProxyUrl(url)
+}
+
+export function getGenericAssetProxyUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return url
+    if (typeof window !== 'undefined' && parsed.origin === window.location.origin) return url
+    return `${ASSET_PROXY_PREFIX}?url=${encodeURIComponent(parsed.toString())}`
+  } catch {
+    return url
+  }
 }
 
 export function shouldUseApiProxyForBaseUrl(

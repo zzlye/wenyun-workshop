@@ -4,7 +4,7 @@ import { readFileSync } from 'fs'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath, URL } from 'node:url'
-import { normalizeDevProxyConfig } from './src/lib/devProxy'
+import { ASSET_PROXY_PREFIX, normalizeDevProxyConfig } from './src/lib/devProxy'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
@@ -104,6 +104,36 @@ function lockedFetchProxyPlugin() {
     configureServer(server: import('vite').ViteDevServer) {
       server.middlewares.use(async (req, res, next) => {
         const requestUrl = req.url ?? ''
+        const assetProxyTarget = resolveAssetProxyTarget(requestUrl)
+        if (assetProxyTarget) {
+          try {
+            const response = await fetch(assetProxyTarget, {
+              method: req.method ?? 'GET',
+              headers: toFetchHeaders(req.headers),
+              redirect: 'follow',
+            })
+
+            res.statusCode = response.status
+            res.statusMessage = response.statusText
+            writeResponseHeaders(response, res)
+            if (!response.body) {
+              res.end()
+              return
+            }
+            await pipeline(Readable.fromWeb(response.body as any), res)
+          } catch (error) {
+            const cause = error instanceof Error && 'cause' in error && error.cause ? `\n原因: ${String(error.cause)}` : ''
+            const message = error instanceof Error ? `${error.stack ?? error.message}${cause}` : String(error)
+            server.config.logger.error(`[asset-proxy] ${requestUrl} 代理失败:\n${message}`)
+            if (!res.headersSent) {
+              res.statusCode = 502
+              res.setHeader('Content-Type', 'text/plain;charset=utf-8')
+            }
+            res.end('图片代理请求失败')
+          }
+          return
+        }
+
         const route = lockedFetchProxyRoutes.find((item) => requestUrl.startsWith(item.prefix))
         if (!route) {
           next()
@@ -142,6 +172,21 @@ function lockedFetchProxyPlugin() {
         }
       })
     },
+  }
+}
+
+function resolveAssetProxyTarget(requestUrl: string): string | null {
+  if (!requestUrl.startsWith(ASSET_PROXY_PREFIX)) return null
+  const parsed = new URL(requestUrl, 'http://localhost')
+  const target = parsed.searchParams.get('url')?.trim()
+  if (!target) return null
+  try {
+    const targetUrl = new URL(target)
+    // 图片代理只允许 HTTP(S)，避免误读本地文件或其他协议。
+    if (targetUrl.protocol !== 'http:' && targetUrl.protocol !== 'https:') return null
+    return targetUrl.toString()
+  } catch {
+    return null
   }
 }
 

@@ -10,6 +10,7 @@ import { createMaskPreviewDataUrl } from '../lib/canvasImage'
 import { dismissAllTooltips } from '../lib/tooltipDismiss'
 import { downloadImageIds } from '../lib/downloadImages'
 import { isAgentTaskPromptPending } from '../lib/taskPromptDisplay'
+import { getSafeImageDisplayUrl } from '../lib/imageApiShared'
 import { CloseIcon, CodeIcon, CopyIcon, DownloadIcon, EditIcon, LinkIcon, TrashIcon } from './icons'
 
 import ViewportTooltip from './ViewportTooltip'
@@ -156,7 +157,7 @@ export default function DetailModal() {
 
     let cancelled = false
     const setOutputImage = (imageId: string, dataUrl: string) => {
-      if (!cancelled) setOutputPreviewSrcs((prev) => ({ ...prev, [imageId]: dataUrl }))
+      if (!cancelled) setOutputPreviewSrcs((prev) => ({ ...prev, [imageId]: getSafeImageDisplayUrl(dataUrl) }))
     }
 
     for (const imageId of outputImageIds) {

@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef, type ReactNode } from 'react'
 import type { TaskRecord } from '../types'
-import { useStore, ensureImageThumbnailCached, subscribeImageThumbnail, updateTaskInStore, retryTask } from '../store'
+import { useStore, ensureImageCached, ensureImageThumbnailCached, subscribeImageThumbnail, updateTaskInStore, retryTask } from '../store'
 import { formatImageRatio } from '../lib/size'
 import { getParamDisplay, ActualValueBadge } from '../lib/paramDisplay'
 import { DEFAULT_IMAGES_MODEL, DEFAULT_FAL_MODEL } from '../lib/apiProfiles'
+import { getSafeImageDisplayUrl } from '../lib/imageApiShared'
 import { isAgentTaskPromptPending } from '../lib/taskPromptDisplay'
 import { CodeIcon } from './icons'
 import ViewportTooltip from './ViewportTooltip'
@@ -55,6 +56,16 @@ function TaskActionButton({
       </ViewportTooltip>
     </span>
   )
+}
+
+function getTaskImageSize(task: TaskRecord, imageId: string) {
+  const size = task.actualParamsByImage?.[imageId]?.size || task.actualParams?.size || task.params.size
+  if (typeof size !== 'string') return null
+  const match = size.match(/^(\d+)x(\d+)$/)
+  if (!match) return null
+  const width = Number(match[1])
+  const height = Number(match[2])
+  return width > 0 && height > 0 ? { width, height } : null
 }
 
 export default function TaskCard({
@@ -263,13 +274,29 @@ export default function TaskCard({
       }
     }
 
+    const applyFallbackImage = async () => {
+      if (!imageId) return
+      const dataUrl = await ensureImageCached(imageId)
+      if (!dataUrl || cancelled) return
+      setThumbSrc(getSafeImageDisplayUrl(dataUrl))
+      const fallbackSize = getTaskImageSize(task, imageId)
+      if (fallbackSize) {
+        setCoverRatio(formatImageRatio(fallbackSize.width, fallbackSize.height))
+        setCoverSize(`${fallbackSize.width}×${fallbackSize.height}`)
+      }
+    }
+
     if (imageId) {
       unsubscribe = subscribeImageThumbnail(imageId, applyThumbnail)
       ensureImageThumbnailCached(imageId).then((thumbnail) => {
-        if (cancelled || !thumbnail) return
+        if (cancelled) return
+        if (!thumbnail) {
+          void applyFallbackImage()
+          return
+        }
         applyThumbnail(thumbnail)
       }).catch(() => {
-        if (!cancelled) setThumbSrc('')
+        if (!cancelled) void applyFallbackImage()
       })
     }
 
@@ -277,7 +304,7 @@ export default function TaskCard({
       cancelled = true
       unsubscribe?.()
     }
-  }, [task.outputImages])
+  }, [task])
 
   const duration = (() => {
     let seconds: number
