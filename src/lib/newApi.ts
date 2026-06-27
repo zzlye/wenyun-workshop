@@ -1,6 +1,6 @@
 import type { ApiProfile } from '../types'
 import { getFixedImageRequestModel } from './apiProfiles'
-import { getLockedNewApiProxyUrl } from './devProxy'
+import { getLockedNewApiPerformanceProxyUrl, getLockedNewApiProxyUrl } from './devProxy'
 
 export interface NewApiBalanceResult {
   text: string
@@ -679,10 +679,15 @@ function parseModelPerformancePayload(payload: unknown): NewApiModelPerformanceI
 }
 
 function getNewApiModelPerformanceUrls(origin: string, apiRoot: string, safeHours: number): string[] {
-  return Array.from(new Set([
+  const directUrls = [
     `${origin}/api/perf-metrics/summary?hours=${safeHours}`,
     `${apiRoot}/api/perf-metrics/summary?hours=${safeHours}`,
-  ]))
+  ]
+  const proxiedUrls = directUrls
+    .map(getLockedNewApiPerformanceProxyUrl)
+    .filter((url): url is string => Boolean(url))
+
+  return Array.from(new Set([...proxiedUrls, ...directUrls]))
 }
 
 function isNewApiAccessTokenFailure(error: unknown): boolean {
@@ -800,7 +805,7 @@ export async function queryNewApiModelPerformance(profile: ApiProfile, hours = 2
   for (const url of getNewApiModelPerformanceUrls(origin, apiRoot, safeHours)) {
     try {
       // 成功率是实时运营数据，强制绕过缓存，避免连续点击看到旧结果。
-      // NewAPI 模型广场性能接口走前台公开访问，不使用 API Key，避免被识别成无效 access token。
+      // NewAPI 模型广场开启登录限制时，先走服务端只读代理注入前台 Access Token。
       const payload = await fetchJson(url, undefined, { noCache: true })
       if (isRecord(payload) && payload.success === false) {
         throw new Error(readString(payload, ['message', 'msg', 'error', 'detail']) ?? '成功率检测失败')

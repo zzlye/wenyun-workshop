@@ -296,6 +296,42 @@ describe('newApi model performance', () => {
     expect((fetchMock.mock.calls[0][1]?.headers as Record<string, string>).Authorization).toBeUndefined()
   })
 
+  it('uses the locked same-origin performance proxy for the Wenyun site', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        success: true,
+        data: {
+          models: [
+            {
+              model_name: 'gpt-image-2',
+              success_rate: 98.5,
+            },
+          ],
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+
+    const result = await queryNewApiModelPerformance({
+      ...DEFAULT_SETTINGS.profiles[0],
+      baseUrl: 'https://zzlye.xyz:60/v1',
+      apiKey: 'test-key',
+    })
+
+    expect(result).toMatchObject({
+      found: true,
+      items: [
+        expect.objectContaining({
+          model: 'gpt-image-2',
+          successRate: 98.5,
+        }),
+      ],
+    })
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/model-performance-proxy/wenyun/api/perf-metrics/summary?hours=24')
+    expect((fetchMock.mock.calls[0][1]?.headers as Record<string, string>).Authorization).toBeUndefined()
+  })
+
   it('does not fake model square success rate from token logs when metrics require frontend login', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({

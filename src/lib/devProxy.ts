@@ -16,12 +16,14 @@ const LOCKED_PROXY_TARGETS = [
     origin: 'https://zzlye.xyz:60',
     apiPrefix: '/api-proxy/wenyun',
     newApiPrefix: '/newapi-proxy/wenyun',
+    performancePrefix: '/model-performance-proxy/wenyun',
   },
   {
     baseUrl: 'https://1520635.xyz:3901/v1',
     origin: 'https://1520635.xyz:3901',
     apiPrefix: '/api-proxy/public',
     newApiPrefix: '/newapi-proxy/public',
+    performancePrefix: '/model-performance-proxy/public',
   },
 ] as const
 
@@ -84,6 +86,19 @@ export function getLockedNewApiProxyUrl(url: string): string | null {
     })
     if (!target) return null
     return `${target.newApiPrefix}${parsed.pathname}${parsed.search}`
+  } catch {
+    return null
+  }
+}
+
+export function getLockedNewApiPerformanceProxyUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    const target = LOCKED_PROXY_TARGETS.find((item) => item.origin.toLowerCase() === parsed.origin.toLowerCase())
+    if (!target) return null
+    // 成功率接口需要 NewAPI 前台登录态，Docker 里用只读同源代理在服务端注入凭证。
+    if (parsed.pathname !== '/api/perf-metrics/summary') return null
+    return `${target.performancePrefix}${parsed.pathname}${parsed.search}`
   } catch {
     return null
   }

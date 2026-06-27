@@ -24,9 +24,37 @@ type LockedFetchProxyRoute = {
   prefix: string
   target: string
   rewrite: (path: string) => string
+  exact?: boolean
+  auth?: {
+    accessTokenEnv: string
+    userIdEnv: string
+    label: string
+  }
 }
 
 const lockedFetchProxyRoutes: LockedFetchProxyRoute[] = [
+  {
+    prefix: '/model-performance-proxy/wenyun/api/perf-metrics/summary',
+    target: 'https://zzlye.xyz:60',
+    rewrite: (path) => path.replace(/^\/model-performance-proxy\/wenyun/, ''),
+    exact: true,
+    auth: {
+      accessTokenEnv: 'NEWAPI_WENYUN_ACCESS_TOKEN',
+      userIdEnv: 'NEWAPI_WENYUN_USER_ID',
+      label: '文运站成功率代理',
+    },
+  },
+  {
+    prefix: '/model-performance-proxy/public/api/perf-metrics/summary',
+    target: 'https://1520635.xyz:3901',
+    rewrite: (path) => path.replace(/^\/model-performance-proxy\/public/, ''),
+    exact: true,
+    auth: {
+      accessTokenEnv: 'NEWAPI_PUBLIC_ACCESS_TOKEN',
+      userIdEnv: 'NEWAPI_PUBLIC_USER_ID',
+      label: '公益站成功率代理',
+    },
+  },
   {
     prefix: '/api-proxy/wenyun',
     target: 'https://zzlye.xyz:60',
@@ -90,6 +118,13 @@ function writeResponseHeaders(response: Response, res: import('node:http').Serve
   })
 }
 
+function findLockedFetchProxyRoute(requestUrl: string): LockedFetchProxyRoute | null {
+  const pathname = new URL(requestUrl, 'http://localhost').pathname
+  return lockedFetchProxyRoutes.find((item) =>
+    item.exact ? pathname === item.prefix : requestUrl.startsWith(item.prefix),
+  ) ?? null
+}
+
 async function readRequestBody(req: import('node:http').IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = []
   for await (const chunk of req) {
@@ -134,20 +169,42 @@ function lockedFetchProxyPlugin() {
           return
         }
 
-        const route = lockedFetchProxyRoutes.find((item) => requestUrl.startsWith(item.prefix))
+        const route = findLockedFetchProxyRoute(requestUrl)
         if (!route) {
           next()
           return
         }
 
         try {
+          const accessToken = route.auth ? process.env[route.auth.accessTokenEnv]?.trim() ?? '' : ''
+          const userId = route.auth ? process.env[route.auth.userIdEnv]?.trim() ?? '' : ''
+          if (route.auth && (!accessToken || !userId)) {
+            res.statusCode = 503
+            res.setHeader('Content-Type', 'text/plain;charset=utf-8')
+            res.end(`${route.auth.label}未配置`)
+            return
+          }
+
           const targetUrl = new URL(route.rewrite(requestUrl), route.target)
           const method = req.method ?? 'GET'
+          if (route.auth && method !== 'GET' && method !== 'HEAD') {
+            res.statusCode = 405
+            res.setHeader('Content-Type', 'text/plain;charset=utf-8')
+            res.end('成功率代理只允许 GET 请求')
+            return
+          }
           const hasBody = method !== 'GET' && method !== 'HEAD'
           const body = hasBody ? await readRequestBody(req) : undefined
+          const headers = toFetchHeaders(req.headers)
+          if (route.auth) {
+            // 本地开发代理只给成功率接口注入 NewAPI 前台 Access Token，不把凭证写入浏览器代码。
+            headers.set('Authorization', `Bearer ${accessToken}`)
+            headers.set('New-Api-User', userId)
+            headers.set('Cache-Control', 'no-cache')
+          }
           const response = await fetch(targetUrl, {
             method,
-            headers: toFetchHeaders(req.headers),
+            headers,
             redirect: 'manual',
             ...(hasBody ? { body } : {}),
           })
