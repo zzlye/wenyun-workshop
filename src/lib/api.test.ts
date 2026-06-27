@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PARAMS } from '../types'
-import { DEFAULT_SETTINGS, LOCKED_PUBLIC_PROFILE_ID } from './apiProfiles'
+import { DEFAULT_SETTINGS, GPT_IMAGE_2_SUPER_MODEL, LOCKED_PUBLIC_PROFILE_ID } from './apiProfiles'
 import { callImageApi } from './api'
 
 describe('callImageApi', () => {
@@ -344,7 +344,42 @@ describe('callImageApi', () => {
     })
   })
 
-  it('routes fixed GPT Image 2 4K model through the VIP request model', async () => {
+  it('routes fixed GPT Image 2 super model through the VIP request model', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      data: [{ b64_json: 'ZmluYWw=' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      apiKey: 'test-key',
+      model: GPT_IMAGE_2_SUPER_MODEL,
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
+        ...profile,
+        apiKey: 'test-key',
+        model: GPT_IMAGE_2_SUPER_MODEL,
+      })),
+    }
+
+    await callImageApi({
+      settings,
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    } as any)
+
+    const [, init] = fetchMock.mock.calls[0]
+    const body = JSON.parse(String((init as RequestInit).body))
+    expect(body).toMatchObject({
+      model: 'gpt-image-2-vip',
+      prompt: 'prompt',
+      size: DEFAULT_PARAMS.size,
+    })
+  })
+
+  it('keeps the new fixed GPT Image 2 4K model on the 4K request model', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
       data: [{ b64_json: 'ZmluYWw=' }],
     }), {
@@ -373,7 +408,7 @@ describe('callImageApi', () => {
     const [, init] = fetchMock.mock.calls[0]
     const body = JSON.parse(String((init as RequestInit).body))
     expect(body).toMatchObject({
-      model: 'gpt-image-2-vip',
+      model: 'gpt-image-2-4k',
       prompt: 'prompt',
       size: DEFAULT_PARAMS.size,
     })

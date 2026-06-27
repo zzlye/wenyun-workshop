@@ -60,7 +60,7 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
           onPointerDown={(event) => event.stopPropagation()}
         >
           <div className="absolute inset-0 bg-black/45 backdrop-blur-sm animate-overlay-in" onClick={() => setOpen(false)} />
-          <div className="relative z-10 flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-white/50 bg-white/95 shadow-2xl ring-1 ring-black/5 animate-modal-in dark:border-white/[0.08] dark:bg-gray-900/95 dark:ring-white/10">
+          <div className="relative z-10 flex max-h-[82vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/50 bg-white/95 shadow-2xl ring-1 ring-black/5 animate-modal-in dark:border-white/[0.08] dark:bg-gray-900/95 dark:ring-white/10">
             <div className="flex shrink-0 items-center justify-between gap-4 border-b border-gray-100 p-5 dark:border-white/[0.08]">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 text-base font-semibold text-gray-900 dark:text-gray-100">
@@ -81,16 +81,18 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
 
             <div className="flex-1 overflow-y-auto p-5">
               <div className="overflow-hidden rounded-xl border border-gray-200/70 dark:border-white/[0.08]">
-                <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-4 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-400 dark:bg-white/[0.04] dark:text-gray-500">
+                <div className="grid grid-cols-[minmax(0,1.15fr)_minmax(120px,0.85fr)_110px] gap-4 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-400 dark:bg-white/[0.04] dark:text-gray-500">
                   <span>模型</span>
+                  <span>支持分辨率</span>
                   <span>价格</span>
                 </div>
                 {rows.map((row) => (
-                  <div key={`${row.model}-${row.upstreamModel || ''}`} className="grid grid-cols-[minmax(0,1fr)_120px] gap-4 border-t border-gray-100 px-4 py-3 text-sm dark:border-white/[0.06]">
+                  <div key={`${row.model}-${row.upstreamModel || ''}`} className="grid grid-cols-[minmax(0,1.15fr)_minmax(120px,0.85fr)_110px] gap-4 border-t border-gray-100 px-4 py-3 text-sm dark:border-white/[0.06]">
                     <div className="min-w-0">
                       <div className="break-all font-medium text-gray-800 dark:text-gray-100">{row.model}</div>
                       {row.upstreamModel ? <div className="mt-1 break-all text-[11px] text-gray-400 dark:text-gray-500">实际模型：{row.upstreamModel}</div> : null}
                     </div>
+                    <div className="min-w-0 text-gray-600 dark:text-gray-300">{row.resolutionText || '—'}</div>
                     <div className="font-mono text-gray-700 dark:text-gray-200">{row.priceText}</div>
                   </div>
                 ))}

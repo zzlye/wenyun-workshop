@@ -6,6 +6,7 @@ import {
   DEFAULT_OPENAI_PROFILE_ID,
   DEFAULT_SETTINGS,
   FIXED_IMAGE_MODEL_OPTIONS,
+  GPT_IMAGE_2_SUPER_MODEL,
   allowsCustomImageRatioForProfile,
   createDefaultOpenAIProfile,
   createDefaultFalProfile,
@@ -657,13 +658,14 @@ describe('custom providers', () => {
     const settings = normalizeSettings({
       ...DEFAULT_SETTINGS,
       profiles: [
-        { ...DEFAULT_SETTINGS.profiles[0], model: 'gpt-image-2-4k' },
+        { ...DEFAULT_SETTINGS.profiles[0], model: GPT_IMAGE_2_SUPER_MODEL },
         { ...DEFAULT_SETTINGS.profiles[1], model: 'gpt-image-2-4k' },
       ],
     })
 
+    expect(FIXED_IMAGE_MODEL_OPTIONS.map((option) => String(option.value))).toContain(GPT_IMAGE_2_SUPER_MODEL)
     expect(FIXED_IMAGE_MODEL_OPTIONS.map((option) => String(option.value))).toContain('gpt-image-2-4k')
-    expect(settings.profiles[0].model).toBe('gpt-image-2-4k')
+    expect(settings.profiles[0].model).toBe(GPT_IMAGE_2_SUPER_MODEL)
     expect(settings.profiles[1].model).toBe('gpt-image-2-4k')
   })
 
@@ -679,10 +681,13 @@ describe('custom providers', () => {
 
   it('uses fixed display prices for built-in image models', () => {
     expect(getFixedImageModelUnitCostText(DEFAULT_IMAGES_MODEL)).toBe('HUHN 0.06')
-    expect(getFixedImageModelUnitCostText('gpt-image-2-4k')).toBe('HUHN 0.06')
+    expect(getFixedImageModelUnitCostText(GPT_IMAGE_2_SUPER_MODEL)).toBe('HUHN 0.06')
+    expect(getFixedImageModelUnitCostText('gpt-image-2-vip')).toBe('HUHN 0.06')
+    expect(getFixedImageModelUnitCostText('gpt-image-2-4k')).toBe('HUHN 0.15')
     expect(getFixedImageModelUnitCostText('Nano-Banana-2')).toBe('HUHN 0.09')
     expect(getFixedImageModelUnitCostText('Nano-Banana-Pro')).toBe('HUHN 0.15')
-    expect(getFixedImageRequestModel('gpt-image-2-4k')).toBe('gpt-image-2-vip')
+    expect(getFixedImageRequestModel(GPT_IMAGE_2_SUPER_MODEL)).toBe('gpt-image-2-vip')
+    expect(getFixedImageRequestModel('gpt-image-2-4k')).toBe('gpt-image-2-4k')
     expect(getBananaPricedImageModel('nano-banana-pro')).toBe('nano-banana-pro')
   })
 

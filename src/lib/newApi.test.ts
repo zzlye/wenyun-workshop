@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SETTINGS } from './apiProfiles'
+import { DEFAULT_SETTINGS, GPT_IMAGE_2_SUPER_MODEL } from './apiProfiles'
 import { queryNewApiBalance, queryNewApiModelUnitCost, queryNewApiPriceTable } from './newApi'
 
 describe('newApi model unit cost', () => {
@@ -75,7 +75,7 @@ describe('newApi model unit cost', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
-  it('queries the upstream VIP model when displaying the fixed 4K model cost', async () => {
+  it('queries the upstream VIP model when displaying the fixed super model cost', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({
         data: {
@@ -97,7 +97,7 @@ describe('newApi model unit cost', () => {
       ...DEFAULT_SETTINGS.profiles[0],
       baseUrl: 'https://example.com/v1',
       apiKey: 'test-key',
-      model: 'gpt-image-2-4k',
+      model: GPT_IMAGE_2_SUPER_MODEL,
     })
 
     expect(result).toMatchObject({ text: 'HUHN 0.09', found: true })
