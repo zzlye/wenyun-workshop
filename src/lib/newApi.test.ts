@@ -139,6 +139,43 @@ describe('newApi model unit cost', () => {
     expect(fetchMock.mock.calls[1][0]).toBe('https://example.com/api/pricing')
   })
 
+  it('reads pricing-get payloads returned by the public pricing endpoint', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          'general_setting.custom_currency_symbol': 'HUHN',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        success: true,
+        data: {
+          data: [
+            { model_name: 'gpt-image-2', model_price: 0.06 },
+            { model_name: 'gpt-image-2-vip', model_price: 0.09 },
+          ],
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+
+    const result = await queryNewApiPriceTable({
+      ...DEFAULT_SETTINGS.profiles[0],
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'test-key',
+    })
+
+    expect(result.found).toBe(true)
+    expect(result.items).toEqual([
+      { model: 'gpt-image-2', rawPrice: 0.06, text: 'HUHN 0.06' },
+      { model: 'gpt-image-2-vip', rawPrice: 0.09, text: 'HUHN 0.09' },
+    ])
+    expect(fetchMock.mock.calls[1][0]).toBe('https://example.com/api/pricing')
+  })
+
   it('does not request protected price endpoints without an access token', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({

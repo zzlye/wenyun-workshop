@@ -1,6 +1,7 @@
 import type { ApiProfile } from '../types'
 import { getFixedImageRequestModel } from './apiProfiles'
 import { getLockedNewApiPerformanceProxyUrl, getLockedNewApiProxyUrl } from './devProxy'
+import type { ApiPriceSnapshot } from '../types'
 
 export interface NewApiBalanceResult {
   text: string
@@ -631,6 +632,45 @@ function collectModelPricesFromPayload(payload: unknown, allowDirectPayload: boo
   return allowDirectPayload ? collectModelPriceValues(getPayloadData(payload)) : []
 }
 
+function normalizeNewApiPricingItem(input: unknown): { model: string; price: number } | null {
+  if (!isRecord(input)) return null
+  const model = readString(input, ['model_name', 'modelName', 'model', 'name', 'id'])
+  const price = readNumber(input, ['model_price', 'modelPrice', 'price', 'cost', 'quota', 'value'])
+  if (!model || price == null) return null
+  return { model, price }
+}
+
+function parseNewApiPricingPayload(payload: unknown): Array<{ model: string; price: number }> {
+  const data = getPayloadData(payload)
+  const source = Array.isArray(data)
+    ? data
+    : isRecord(data) && Array.isArray(data.data)
+      ? data.data
+      : Array.isArray(data)
+        ? data
+        : []
+  const items = source.map(normalizeNewApiPricingItem).filter((item): item is { model: string; price: number } => Boolean(item))
+  const unique = new Map<string, { model: string; price: number }>()
+  for (const item of items) {
+    const key = item.model.trim().toLowerCase()
+    if (!key) continue
+    unique.set(key, item)
+  }
+  return Array.from(unique.values())
+}
+
+function snapshotPriceTable(items: Array<{ model: string; price: number }>, status: NewApiStatusInfo): ApiPriceSnapshot {
+  return {
+    items: items.map((item) => ({
+      model: item.model,
+      rawPrice: item.price,
+      text: formatModelUnitCost(item.price, status),
+    })),
+    updatedAt: Date.now(),
+    found: items.length > 0,
+  }
+}
+
 function findPerformanceArray(input: unknown, depth = 0): unknown[] | null {
   if (depth > 5 || !input || typeof input !== 'object') return null
   if (Array.isArray(input)) return input
@@ -763,12 +803,12 @@ export async function queryNewApiPriceTable(profile: ApiProfile): Promise<NewApi
       }
     }
 
-    addEntries(collectModelPricesFromPayload(status.raw, false))
+    addEntries(collectModelPricesFromPayload(status.raw, true))
 
     if (profile.apiKey.trim()) {
       for (const url of getPublicPriceUrls(origin, apiRoot)) {
         try {
-          const fetchedEntries = collectModelPricesFromPayload(await fetchPublicPriceJson(url, profile.apiKey), true)
+          const fetchedEntries = parseNewApiPricingPayload(await fetchPublicPriceJson(url, profile.apiKey))
           addEntries(fetchedEntries)
           if (fetchedEntries.length > 0) break
         } catch (err) {

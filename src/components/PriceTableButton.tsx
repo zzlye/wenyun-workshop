@@ -4,7 +4,8 @@ import { QrCode, ReceiptText, RefreshCw, X } from 'lucide-react'
 import type { ApiProfile } from '../types'
 import { useStore } from '../store'
 import { buildFixedModelPriceRows } from '../lib/modelPricing'
-import { queryNewApiModelPerformance, type NewApiModelPerformanceItem } from '../lib/newApi'
+import { queryNewApiModelPerformance, queryNewApiPriceTable, type NewApiModelPerformanceItem } from '../lib/newApi'
+import { setApiPriceSnapshot } from '../lib/apiProfiles'
 import SupportJoinGroupNotice from './SupportJoinGroupNotice'
 
 type PriceTableButtonProps = {
@@ -29,21 +30,40 @@ function findMetric(metrics: NewApiModelPerformanceItem[], model: string, upstre
 
 export default function PriceTableButton({ activeProfile, buttonClassName, buttonStyle }: PriceTableButtonProps) {
   const settings = useStore((state) => state.settings)
+  const setSettings = useStore((state) => state.setSettings)
   const [open, setOpen] = useState(false)
   const [contactOpen, setContactOpen] = useState(false)
   const [isLoadingPerformance, setIsLoadingPerformance] = useState(false)
   const [performanceError, setPerformanceError] = useState('')
   const [performanceItems, setPerformanceItems] = useState<NewApiModelPerformanceItem[]>([])
   const [performanceUpdatedAt, setPerformanceUpdatedAt] = useState<number | null>(null)
-  const rows = useMemo(
-    () => buildFixedModelPriceRows(activeProfile.id, [settings.textModel, settings.textVideoModel, settings.videoModel]),
-    [activeProfile.id, settings.textModel, settings.textVideoModel, settings.videoModel],
-  )
+  const rows = useMemo(() => {
+    const baseRows = buildFixedModelPriceRows(activeProfile.id, [settings.textModel, settings.textVideoModel, settings.videoModel])
+    const snapshot = settings.apiPriceByProfileId[activeProfile.id]
+    if (!snapshot?.items.length) return baseRows
+    const priceMap = new Map(snapshot.items.map((item) => [item.model.trim().toLowerCase(), item] as const))
+    return baseRows.map((row) => {
+      const synced = priceMap.get(row.model.trim().toLowerCase()) ?? (row.upstreamModel ? priceMap.get(row.upstreamModel.trim().toLowerCase()) : undefined)
+      return synced ? { ...row, priceText: synced.text } : row
+    })
+  }, [activeProfile.id, settings.apiPriceByProfileId, settings.textModel, settings.textVideoModel, settings.videoModel])
 
   const loadPerformance = async () => {
     setIsLoadingPerformance(true)
     setPerformanceError('')
     try {
+      const priceTable = await queryNewApiPriceTable(activeProfile)
+      if (priceTable.found) {
+        setSettings(setApiPriceSnapshot(useStore.getState().settings, activeProfile.id, {
+          items: priceTable.items.map((item) => ({
+            model: item.model,
+            rawPrice: item.rawPrice,
+            text: item.text,
+          })),
+          updatedAt: priceTable.updatedAt,
+          found: priceTable.found,
+        }))
+      }
       const result = await queryNewApiModelPerformance(activeProfile, 24)
       setPerformanceItems(result.items)
       setPerformanceUpdatedAt(result.found ? result.updatedAt : null)

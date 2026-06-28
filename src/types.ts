@@ -101,6 +101,18 @@ export interface ApiBalanceSnapshot {
   updatedAt?: number
 }
 
+export interface ApiPriceSnapshotItem {
+  model: string
+  rawPrice: number
+  text: string
+}
+
+export interface ApiPriceSnapshot {
+  items: ApiPriceSnapshotItem[]
+  updatedAt?: number
+  found?: boolean
+}
+
 export interface CloudSyncSettings {
   /** 是否启用数据同步 */
   enabled: boolean
@@ -217,6 +229,8 @@ export interface AppSettings {
   apiBalanceProfileId?: string
   /** 各固定站点最近一次查询到的 Key 余额 */
   apiBalanceByProfileId: Record<string, ApiBalanceSnapshot>
+  /** 各固定站点最近一次查询到的价格表 */
+  apiPriceByProfileId: Record<string, ApiPriceSnapshot>
   /** 公告当天不再提醒日期，格式为 YYYY-MM-DD */
   announcementDismissedDate?: string
   /** 当天不再提醒对应的公告内容指纹，公告更新后会重新弹出 */

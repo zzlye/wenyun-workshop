@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback, useState, useMemo, useLayoutEffect, typ
 import { createPortal } from 'react-dom'
 import { useStore, submitTask, submitAgentMessage, stopAgentResponse, addImageFromFile, createInputImageFromFile, deleteImageIfUnreferenced, updateTaskInStore, removeMultipleTasks, getCachedImage, ensureImageCached, getActiveAgentRounds } from '../store'
 import { DEFAULT_PARAMS } from '../types'
-import { FIXED_IMAGE_MODEL_OPTIONS, allowsCustomImageRatioForProfile, getActiveApiProfile, getImageModelSubmitCostText, getImageSizeTiersForProfile, normalizeImageSizeForProfile, normalizeSettings } from '../lib/apiProfiles'
+import { FIXED_IMAGE_MODEL_OPTIONS, allowsCustomImageRatioForProfile, getActiveApiProfile, getApiModelUnitCostText, getImageSizeTiersForProfile, normalizeImageSizeForProfile, normalizeSettings } from '../lib/apiProfiles'
 import { getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
 import { normalizeImageSize } from '../lib/size'
@@ -588,7 +588,7 @@ export default function InputBar() {
   ), [activeProfile.id, currentActiveProfile.id, settings])
   const hasSubmitApiConfig = Boolean(activeProfile.apiKey)
   const canSubmit = Boolean(prompt.trim() && hasSubmitApiConfig && !activeAgentIsRunning)
-  const modelUnitCostText = getImageModelSubmitCostText(activeProfile.model)
+  const modelUnitCostText = getApiModelUnitCostText(settings, activeProfile.id, activeProfile.model) ?? 'HUHN --'
   const submitButtonAriaLabel = activeAgentIsRunning
     ? '停止生成'
     : hasSubmitApiConfig

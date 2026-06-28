@@ -1,6 +1,7 @@
 import type {
   ApiMode,
   ApiBalanceSnapshot,
+  ApiPriceSnapshot,
   ApiProfile,
   ApiProvider,
   AppSettings,
@@ -30,7 +31,6 @@ import {
   GPT_IMAGE_2_4K_MODEL,
   GPT_IMAGE_2_4K_REQUEST_MODEL,
   getBananaPricedImageModel,
-  getImageModelSubmitCostText,
   getFixedImageModelUnitCostText,
   getFixedImageRequestModel,
   getImageModelOptionsForProfile,
@@ -47,7 +47,6 @@ export {
   GPT_IMAGE_2_4K_MODEL,
   GPT_IMAGE_2_4K_REQUEST_MODEL,
   getBananaPricedImageModel,
-  getImageModelSubmitCostText,
   getFixedImageModelUnitCostText,
   getFixedImageRequestModel,
   getImageModelOptionsForProfile,
@@ -91,8 +90,45 @@ export function normalizeImageSizeForProfile(size: string, _profileId: string): 
   return size
 }
 
-export function getApiModelUnitCostText(_settings: AppSettings, _profileId: string, model: string): string | null {
-  return getFixedImageModelUnitCostText(model)
+function normalizeApiPriceItem(value: unknown): ApiPriceSnapshot['items'][number] | null {
+  if (!isRecord(value)) return null
+  const model = typeof value.model === 'string' ? value.model.trim() : ''
+  const rawPrice = typeof value.rawPrice === 'number' ? value.rawPrice : Number(value.rawPrice)
+  const text = typeof value.text === 'string' ? value.text.trim() : ''
+  if (!model || !Number.isFinite(rawPrice) || !text) return null
+  return { model, rawPrice, text }
+}
+
+function normalizeApiPriceSnapshot(value: unknown): ApiPriceSnapshot | null {
+  if (!isRecord(value)) return null
+  const items = Array.isArray(value.items)
+    ? value.items.map(normalizeApiPriceItem).filter((item): item is NonNullable<ApiPriceSnapshot['items'][number]> => Boolean(item))
+    : []
+  return {
+    items,
+    updatedAt: normalizeApiBalanceUpdatedAt(value.updatedAt),
+    found: typeof value.found === 'boolean' ? value.found : undefined,
+  }
+}
+
+export function getApiModelUnitCostText(settings: AppSettings, profileId: string, model: string): string | null {
+  const snapshot = settings.apiPriceByProfileId[profileId]
+  const normalizedModel = model.trim().toLowerCase()
+  const synced = snapshot?.items.find((item) => item.model.trim().toLowerCase() === normalizedModel)
+  return synced?.text ?? getFixedImageModelUnitCostText(model)
+}
+
+export function getApiPriceSnapshot(settings: Pick<AppSettings, 'apiPriceByProfileId'>, profileId: string): ApiPriceSnapshot | null {
+  return settings.apiPriceByProfileId[profileId] ?? null
+}
+
+export function setApiPriceSnapshot(settings: AppSettings, profileId: string, snapshot: ApiPriceSnapshot): Partial<AppSettings> {
+  return {
+    apiPriceByProfileId: {
+      ...settings.apiPriceByProfileId,
+      [profileId]: snapshot,
+    },
+  }
 }
 
 const LOCKED_OPENAI_PROFILE_DEFINITIONS = [
@@ -231,6 +267,18 @@ function normalizeApiBalanceByProfileId(record: Record<string, unknown>, profile
   }
 
   return balances
+}
+
+function normalizeApiPriceByProfileId(record: Record<string, unknown>, profileIds: Set<string>): Record<string, ApiPriceSnapshot> {
+  const prices: Record<string, ApiPriceSnapshot> = {}
+  if (isRecord(record.apiPriceByProfileId)) {
+    for (const [profileId, value] of Object.entries(record.apiPriceByProfileId)) {
+      if (!profileIds.has(profileId)) continue
+      const snapshot = normalizeApiPriceSnapshot(value)
+      if (snapshot) prices[profileId] = snapshot
+    }
+  }
+  return prices
 }
 
 export function getApiBalanceSnapshot(settings: Pick<AppSettings, 'apiBalanceByProfileId' | 'apiBalanceProfileId' | 'apiBalanceText' | 'apiBalanceCurrency' | 'apiBalanceUpdatedAt'>, profileId: string): ApiBalanceSnapshot | null {
@@ -752,6 +800,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
   const profiles = createLockedOpenAIProfiles(record.profiles, legacyProfile)
   const profileIds = new Set(profiles.map((profile) => profile.id))
   const apiBalanceByProfileId = normalizeApiBalanceByProfileId(record, profileIds)
+  const apiPriceByProfileId = normalizeApiPriceByProfileId(record, profileIds)
   const activeProfileId = typeof record.activeProfileId === 'string' && profiles.some((p) => p.id === record.activeProfileId)
     ? record.activeProfileId
     : profiles[0].id
@@ -815,6 +864,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     apiBalanceUpdatedAt: normalizeApiBalanceUpdatedAt(record.apiBalanceUpdatedAt),
     apiBalanceProfileId: typeof record.apiBalanceProfileId === 'string' ? record.apiBalanceProfileId : undefined,
     apiBalanceByProfileId,
+    apiPriceByProfileId,
     announcementDismissedDate: typeof record.announcementDismissedDate === 'string' ? record.announcementDismissedDate : undefined,
     announcementDismissedHash: typeof record.announcementDismissedHash === 'string' ? record.announcementDismissedHash : undefined,
     announcementDismissedForever: typeof record.announcementDismissedForever === 'boolean' ? record.announcementDismissedForever : false,
@@ -1128,5 +1178,6 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   agentScrollToBottomAfterSubmit: true,
   agentMaxToolRounds: DEFAULT_AGENT_MAX_TOOL_ROUNDS,
   agentWebSearch: false,
+  apiPriceByProfileId: {},
   cloudSync: DEFAULT_CLOUD_SYNC_SETTINGS,
 })

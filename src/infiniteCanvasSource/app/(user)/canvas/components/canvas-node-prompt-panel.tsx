@@ -14,7 +14,7 @@ import { useAssetStore, type Asset } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { assetTagOptions, assetTagValues, getAssetTag, normalizeAssetTag, type AssetTag } from "@/lib/asset-tags";
 import type { InputImage } from "../../../../../types";
-import { getActiveApiProfile, getImageModelSubmitCostText, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
+import { getActiveApiProfile, getApiModelUnitCostText, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, isCursorInSelectedImageMention, remapImageMentionsForOrder, stripImageMentionMarkers } from "../../../../../lib/promptImageMentions";
 import { storeImage } from "../../../../../lib/db";
 import { useCanvasModelOptions } from "./canvas-model-options";
@@ -94,7 +94,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
     const mentionableReferencesRef = useRef(mentionableReferences);
     const promptRef = useRef(prompt);
     const credits = requestCreditCost({ channelMode: config.channelMode, modelCosts, model: config.model, count: mode === "image" ? config.count : 1 });
-    const imageCostText = mode === "image" ? getImageModelSubmitCostText(config.model) : null;
+    const imageCostText = mode === "image" ? (getApiModelUnitCostText(settings, activeProfile.id, config.model) ?? "HUHN --") : null;
     const atReferenceLimit = referenceImages.length >= MAX_REFERENCE_IMAGES;
     const visiblePrompt = stripImageMentionMarkers(prompt);
     const atImageQuery = isCursorInSelectedImageMention(prompt, cursorPos) ? null : getAtImageQuery(visiblePrompt, cursorPos, { length: mentionableInputImages.length });

@@ -10,7 +10,7 @@ import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from
 import { CreditSymbol, requestCreditCost } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { getActiveApiProfile, getImageModelSubmitCostText, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
+import { getActiveApiProfile, getApiModelUnitCostText, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
 import { useCanvasModelOptions } from "./canvas-model-options";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
@@ -44,7 +44,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, inputs, o
     const modelOptions = useCanvasModelOptions(config, mode, activeProfile.id);
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(node.metadata?.count || 1)) || 1)));
     const credits = requestCreditCost({ channelMode: config.channelMode, modelCosts, model: config.model, count: mode === "image" ? count : 1 });
-    const imageCostText = mode === "image" ? getImageModelSubmitCostText(config.model) : null;
+    const imageCostText = mode === "image" ? (getApiModelUnitCostText(settings, activeProfile.id, config.model) ?? "HUHN --") : null;
     const chipStyle = { background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text };
     const textInputs = inputs.filter((input) => input.type === "text");
     const imageInputs = inputs.filter((input) => input.type === "image");

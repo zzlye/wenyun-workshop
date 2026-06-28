@@ -14,6 +14,7 @@ import {
   findEquivalentApiProfile,
   getActiveApiProfile,
   getApiBalanceSnapshot,
+  getApiModelUnitCostText,
   getBananaPricedImageModel,
   getFixedImageRequestModel,
   getFixedImageModelUnitCostText,
@@ -26,6 +27,7 @@ import {
   normalizeImageSizeForProfile,
   normalizeSettings,
   setApiBalanceSnapshot,
+  setApiPriceSnapshot,
   switchApiProfileProvider,
   validateApiProfile,
 } from './apiProfiles'
@@ -622,6 +624,22 @@ describe('custom providers', () => {
 
     expect(getApiBalanceSnapshot(withBoth, LOCKED_WENYUN_PROFILE_ID)).toMatchObject({ text: 'HUHN 12.00' })
     expect(getApiBalanceSnapshot(withBoth, LOCKED_PUBLIC_PROFILE_ID)).toMatchObject({ text: 'HUHN 3.50' })
+  })
+
+  it('reads synced price snapshots before falling back to fixed prices', () => {
+    const withPrices = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      ...setApiPriceSnapshot(DEFAULT_SETTINGS, LOCKED_WENYUN_PROFILE_ID, {
+        items: [
+          { model: 'gpt-image-2-vip', rawPrice: 0.07, text: 'HUHN 0.07' },
+        ],
+        updatedAt: 1000,
+        found: true,
+      }),
+    })
+
+    expect(getApiModelUnitCostText(withPrices, LOCKED_WENYUN_PROFILE_ID, 'gpt-image-2-vip')).toBe('HUHN 0.07')
+    expect(getApiModelUnitCostText(withPrices, LOCKED_WENYUN_PROFILE_ID, 'gpt-image-2-4k')).toBe('HUHN 0.15')
   })
 
   it('keeps Codex CLI compatibility disabled for locked profiles', () => {
