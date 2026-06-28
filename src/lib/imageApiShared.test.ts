@@ -55,7 +55,6 @@ describe('isLongImageRequest', () => {
   it('treats Image-2 4K aliases as long requests', () => {
     expect(isLongImageRequest('gpt-image-2-4k', { size: '1024x1024' })).toBe(true)
     expect(isLongImageRequest('gpt-image-2-vip', { size: '1024x1024' })).toBe(true)
-    expect(isLongImageRequest('gpt-image-2-超分', { size: '1024x1024' })).toBe(true)
   })
 
   it('treats 4K-sized requests as long requests regardless of model', () => {

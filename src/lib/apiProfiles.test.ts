@@ -6,6 +6,7 @@ import {
   DEFAULT_OPENAI_PROFILE_ID,
   DEFAULT_SETTINGS,
   FIXED_IMAGE_MODEL_OPTIONS,
+  GPT_IMAGE_2_VIP_MODEL,
   GPT_IMAGE_2_SUPER_MODEL,
   allowsCustomImageRatioForProfile,
   createDefaultOpenAIProfile,
@@ -681,12 +682,12 @@ describe('custom providers', () => {
 
   it('uses fixed display prices for built-in image models', () => {
     expect(getFixedImageModelUnitCostText(DEFAULT_IMAGES_MODEL)).toBe('HUHN 0.06')
-    expect(getFixedImageModelUnitCostText(GPT_IMAGE_2_SUPER_MODEL)).toBe('HUHN 0.06')
-    expect(getFixedImageModelUnitCostText('gpt-image-2-vip')).toBe('HUHN 0.06')
+    expect(getFixedImageModelUnitCostText(GPT_IMAGE_2_VIP_MODEL)).toBe('HUHN 0.09')
+    expect(getFixedImageModelUnitCostText('gpt-image-2-vip')).toBe('HUHN 0.09')
     expect(getFixedImageModelUnitCostText('gpt-image-2-4k')).toBe('HUHN 0.15')
     expect(getFixedImageModelUnitCostText('Nano-Banana-2')).toBe('HUHN 0.09')
     expect(getFixedImageModelUnitCostText('Nano-Banana-Pro')).toBe('HUHN 0.15')
-    expect(getFixedImageRequestModel(GPT_IMAGE_2_SUPER_MODEL)).toBe('gpt-image-2-vip')
+    expect(getFixedImageRequestModel(GPT_IMAGE_2_VIP_MODEL)).toBe('gpt-image-2-vip')
     expect(getFixedImageRequestModel('gpt-image-2-4k')).toBe('gpt-image-2-4k')
     expect(getBananaPricedImageModel('nano-banana-pro')).toBe('nano-banana-pro')
   })

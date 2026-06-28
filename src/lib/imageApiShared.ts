@@ -212,7 +212,7 @@ export function mergeActualParams(...sources: Array<Partial<TaskParams> | undefi
 }
 
 export function isLongImageRequest(model: string, params?: Pick<TaskParams, 'size'>): boolean {
-  if (/gpt-image-2-(?:4k|vip|超分)|nano-banana/i.test(model)) return true
+  if (/gpt-image-2-(?:4k|vip)|nano-banana/i.test(model)) return true
   const size = params?.size ? normalizeImageSize(params.size) : ''
   const match = size.match(/^(\d+)x(\d+)$/)
   if (!match) return false
