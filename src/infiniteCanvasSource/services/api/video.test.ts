@@ -427,6 +427,29 @@ describe("canvas video api", () => {
         );
     });
 
+    it("uses parsed display message to continue after unavailable token errors", async () => {
+        const noTokens = Object.assign(new Error("no active tokens available"), {
+            isAxiosError: false,
+            response: { status: 400, data: { message: "no active tokens available" } },
+        });
+        (axios.post as Mock)
+            .mockRejectedValueOnce(noTokens)
+            .mockResolvedValueOnce({ data: { data: { task_id: "task-message", status: "queued" } } });
+        (axios.get as Mock)
+            .mockResolvedValueOnce({ data: { data: { id: "task-message", status: "completed", video_url: "https://cdn.example.com/video.mp4" } } })
+            .mockResolvedValueOnce({ data: new Blob(["video"], { type: "video/mp4" }) });
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(new Blob(["video"], { type: "video/mp4" })));
+
+        await expect(requestVideoGeneration({
+            ...defaultConfig,
+            videoBaseUrl: "https://api.geeknow.ai/v1",
+            videoApiKey: "video-key",
+            videoModel: "sora-2",
+        }, "prompt")).resolves.toEqual(expect.any(Blob));
+
+        expect(axios.post).toHaveBeenNthCalledWith(2, "https://api.geeknow.ai/v1/video/generations", expect.any(Object), expect.any(Object));
+    });
+
     it("tries unversioned API root when versioned video root returns 404", async () => {
         const notFound = Object.assign(new Error("not found"), {
             isAxiosError: true,

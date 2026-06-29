@@ -97,7 +97,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
         } catch (error) {
             const message = readAxiosError(error, "视频生成失败");
             failures.push(new VideoAttemptError(message, label));
-            if (!shouldContinue(error)) throw buildVideoGenerationError(failures);
+            if (!shouldContinue(error) && !isCompatibleVideoFallbackMessage(message)) throw buildVideoGenerationError(failures);
             return null;
         }
     };
@@ -596,6 +596,10 @@ function shouldFallbackToCompatibleVideoApi(error: unknown) {
     if (!axios.isAxiosError(error) || error.response?.status !== 400) return false;
     const message = extractApiErrorMessage(error.response.data);
     // 上游 token 池不可用不是请求参数错误，继续尝试兼容接口，避免单一路径直接卡死。
+    return isCompatibleVideoFallbackMessage(message);
+}
+
+function isCompatibleVideoFallbackMessage(message: string) {
     return /no active tokens available|no available tokens?|tokens? unavailable|no available channel|channel unavailable/i.test(message);
 }
 
