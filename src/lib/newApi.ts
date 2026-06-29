@@ -727,21 +727,13 @@ function getNewApiModelPerformanceUrls(origin: string, apiRoot: string, safeHour
     .map(getLockedNewApiPerformanceProxyUrl)
     .filter((url): url is string => Boolean(url))
 
-  // 内置站点的成功率接口要由同源代理注入 NewAPI 前台凭证；代理不可用时不再继续直连刷屏。
-  if (proxiedUrls.length > 0) return Array.from(new Set(proxiedUrls))
-  return Array.from(new Set(directUrls))
+  return Array.from(new Set([...proxiedUrls, ...directUrls]))
 }
 
 function isNewApiAccessTokenFailure(error: unknown): boolean {
   if (isAuthOrRateLimitFailure(error)) return true
   if (!(error instanceof Error)) return false
   return /access token|未登录|not logged in|unauthorized|401/i.test(error.message)
-}
-
-function isNewApiPerformanceUnavailableFailure(error: unknown): boolean {
-  if (error instanceof HttpStatusError && [401, 403, 429, 500, 502, 503, 504].includes(error.status)) return true
-  if (!(error instanceof Error)) return false
-  return /access token|未登录|not logged in|unauthorized|未配置|not configured|503|502|504/i.test(error.message)
 }
 
 function getPublicPriceUrls(origin: string, apiRoot: string): string[] {
@@ -869,7 +861,7 @@ export async function queryNewApiModelPerformance(profile: ApiProfile, hours = 2
     }
   }
 
-  if (isNewApiAccessTokenFailure(lastError) || isNewApiPerformanceUnavailableFailure(lastError)) {
+  if (isNewApiAccessTokenFailure(lastError)) {
     return { items: [], updatedAt: Date.now(), found: false }
   }
 

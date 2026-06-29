@@ -369,21 +369,6 @@ describe('newApi model performance', () => {
     expect((fetchMock.mock.calls[0][1]?.headers as Record<string, string>).Authorization).toBeUndefined()
   })
 
-  it('does not spam direct performance endpoints when the locked proxy is unavailable', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response('文运站成功率代理未配置', { status: 503 }))
-
-    const result = await queryNewApiModelPerformance({
-      ...DEFAULT_SETTINGS.profiles[0],
-      baseUrl: 'https://zzlye.xyz:60/v1',
-      apiKey: 'test-key',
-    })
-
-    expect(result).toMatchObject({ found: false, items: [] })
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(String(fetchMock.mock.calls[0][0])).toContain('/model-performance-proxy/wenyun/api/perf-metrics/summary?hours=24')
-  })
-
   it('does not fake model square success rate from token logs when metrics require frontend login', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({
