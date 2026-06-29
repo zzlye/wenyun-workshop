@@ -631,15 +631,15 @@ describe('custom providers', () => {
       ...DEFAULT_SETTINGS,
       ...setApiPriceSnapshot(DEFAULT_SETTINGS, LOCKED_WENYUN_PROFILE_ID, {
         items: [
-          { model: 'gpt-image-2-vip', rawPrice: 0.07, text: 'HUHN 0.07' },
+          { model: 'gpt-image-2-4k', rawPrice: 0.11, text: 'HUHN 0.11' },
         ],
         updatedAt: 1000,
         found: true,
       }),
     })
 
-    expect(getApiModelUnitCostText(withPrices, LOCKED_WENYUN_PROFILE_ID, 'gpt-image-2-vip')).toBe('HUHN 0.07')
-    expect(getApiModelUnitCostText(withPrices, LOCKED_WENYUN_PROFILE_ID, 'gpt-image-2-4k')).toBe('HUHN 0.15')
+    expect(getApiModelUnitCostText(withPrices, LOCKED_WENYUN_PROFILE_ID, 'gpt-image-2-4k')).toBe('HUHN 0.11')
+    expect(getApiModelUnitCostText(withPrices, LOCKED_WENYUN_PROFILE_ID, 'gpt-image-2-vip')).toBe('HUHN 0.15')
   })
 
   it('keeps Codex CLI compatibility disabled for locked profiles', () => {
@@ -684,6 +684,7 @@ describe('custom providers', () => {
 
     expect(FIXED_IMAGE_MODEL_OPTIONS.map((option) => String(option.value))).toContain(GPT_IMAGE_2_SUPER_MODEL)
     expect(FIXED_IMAGE_MODEL_OPTIONS.map((option) => String(option.value))).toContain('gpt-image-2-4k')
+    expect(FIXED_IMAGE_MODEL_OPTIONS.map((option) => String(option.value))).not.toContain('gpt-image-2-vip')
     expect(settings.profiles[0].model).toBe(GPT_IMAGE_2_SUPER_MODEL)
     expect(settings.profiles[1].model).toBe('gpt-image-2-4k')
   })
@@ -700,12 +701,13 @@ describe('custom providers', () => {
 
   it('uses fixed display prices for built-in image models', () => {
     expect(getFixedImageModelUnitCostText(DEFAULT_IMAGES_MODEL)).toBe('HUHN 0.06')
-    expect(getFixedImageModelUnitCostText(GPT_IMAGE_2_VIP_MODEL)).toBe('HUHN 0.09')
-    expect(getFixedImageModelUnitCostText('gpt-image-2-vip')).toBe('HUHN 0.09')
+    expect(getFixedImageModelUnitCostText(GPT_IMAGE_2_VIP_MODEL)).toBe('HUHN 0.15')
+    expect(getFixedImageModelUnitCostText('gpt-image-2-vip')).toBe('HUHN 0.15')
     expect(getFixedImageModelUnitCostText('gpt-image-2-4k')).toBe('HUHN 0.15')
     expect(getFixedImageModelUnitCostText('Nano-Banana-2')).toBe('HUHN 0.09')
     expect(getFixedImageModelUnitCostText('Nano-Banana-Pro')).toBe('HUHN 0.15')
-    expect(getFixedImageRequestModel(GPT_IMAGE_2_VIP_MODEL)).toBe('gpt-image-2-vip')
+    expect(getFixedImageRequestModel(GPT_IMAGE_2_VIP_MODEL)).toBe('gpt-image-2-4k')
+    expect(getFixedImageRequestModel('gpt-image-2-vip')).toBe('gpt-image-2-4k')
     expect(getFixedImageRequestModel('gpt-image-2-4k')).toBe('gpt-image-2-4k')
     expect(getBananaPricedImageModel('nano-banana-pro')).toBe('nano-banana-pro')
   })

@@ -345,7 +345,7 @@ describe('callImageApi', () => {
     })
   })
 
-  it('routes fixed GPT Image 2 super model through the VIP request model', async () => {
+  it('routes fixed GPT Image 2 super model through the 4K request model', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
       data: [{ b64_json: 'ZmluYWw=' }],
     }), {
@@ -374,7 +374,7 @@ describe('callImageApi', () => {
     const [, init] = fetchMock.mock.calls[0]
     const body = JSON.parse(String((init as RequestInit).body))
     expect(body).toMatchObject({
-      model: 'gpt-image-2-vip',
+      model: 'gpt-image-2-4k',
       prompt: 'prompt',
       size: DEFAULT_PARAMS.size,
     })

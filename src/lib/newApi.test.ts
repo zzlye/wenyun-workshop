@@ -75,19 +75,19 @@ describe('newApi model unit cost', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
-  it('queries the upstream VIP model when displaying the fixed super model cost', async () => {
+  it('queries the 4K model when displaying the fixed super model cost', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({
         data: {
           'general_setting.custom_currency_symbol': 'HUHN',
-          ModelPrice: JSON.stringify({ 'gpt-image-2-vip': 0.15 }),
+          ModelPrice: JSON.stringify({ 'gpt-image-2-4k': 0.15 }),
         },
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
-        data: { 'gpt-image-2-vip': 0.09 },
+        data: { 'gpt-image-2-4k': 0.15 },
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -100,7 +100,7 @@ describe('newApi model unit cost', () => {
       model: GPT_IMAGE_2_SUPER_MODEL,
     })
 
-    expect(result).toMatchObject({ text: 'HUHN 0.09', found: true })
+    expect(result).toMatchObject({ text: 'HUHN 0.15', found: true })
   })
 
   it('reads the NewAPI pricing data array when status has no model price map', async () => {
@@ -367,6 +367,21 @@ describe('newApi model performance', () => {
     })
     expect(String(fetchMock.mock.calls[0][0])).toContain('/model-performance-proxy/wenyun/api/perf-metrics/summary?hours=24')
     expect((fetchMock.mock.calls[0][1]?.headers as Record<string, string>).Authorization).toBeUndefined()
+  })
+
+  it('does not spam direct performance endpoints when the locked proxy is unavailable', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('文运站成功率代理未配置', { status: 503 }))
+
+    const result = await queryNewApiModelPerformance({
+      ...DEFAULT_SETTINGS.profiles[0],
+      baseUrl: 'https://zzlye.xyz:60/v1',
+      apiKey: 'test-key',
+    })
+
+    expect(result).toMatchObject({ found: false, items: [] })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/model-performance-proxy/wenyun/api/perf-metrics/summary?hours=24')
   })
 
   it('does not fake model square success rate from token logs when metrics require frontend login', async () => {
