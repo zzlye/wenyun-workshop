@@ -24,11 +24,15 @@ describe('parseModelListPayload', () => {
   it('puts currently stable video models before Grok video models', () => {
     expect(parseModelListPayload({
       data: [
+        { id: 'kling-video-o3-omni' },
+        { id: 'grok-imagine-video-1.5-720p' },
         { id: 'grok-video-3-pro' },
+        { id: 'sora-v3-fast' },
         { id: 'veo_3_1-fast' },
+        { id: 'veo31-fast' },
         { id: 'sora-2' },
         { id: 'grok-video-3' },
       ],
-    })).toEqual(['sora-2', 'veo_3_1-fast', 'grok-video-3', 'grok-video-3-pro'])
+    })).toEqual(['sora-2', 'sora-v3-fast', 'veo_3_1-fast', 'veo31-fast', 'kling-video-o3-omni', 'grok-imagine-video-1.5-720p', 'grok-video-3', 'grok-video-3-pro'])
   })
 })

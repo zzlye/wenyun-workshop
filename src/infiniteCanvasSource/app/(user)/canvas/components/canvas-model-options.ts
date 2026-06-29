@@ -14,7 +14,7 @@ type ExternalModelTarget = "text" | "video";
 const modelOptionsCache = new Map<string, string[]>();
 
 export function useCanvasModelOptions(config: AiConfig, mode: CanvasGenerationMode, activeProfileId: string): ModelOption[] | undefined {
-    const currentModel = config.model || (mode === "image" ? config.imageModel : mode === "video" ? config.videoModel : config.textModel);
+    const currentModel = mode === "image" ? config.imageModel || config.model : mode === "video" ? config.videoModel || config.model : config.textModel || config.model;
     const source = mode === "text" || mode === "video" ? getExternalModelSource(config, mode) : null;
     const [externalOptions, setExternalOptions] = useState<string[]>(() => uniqueModels([currentModel]));
 
@@ -59,7 +59,7 @@ function getExternalModelSource(config: AiConfig, mode: ExternalModelTarget) {
             target: mode,
             baseUrl: config.videoBaseUrl.trim() || config.textVideoBaseUrl.trim(),
             apiKey: config.videoApiKey.trim() || config.textVideoApiKey.trim(),
-            model: config.model || config.videoModel,
+            model: config.videoModel || config.model,
         };
     }
 
@@ -67,7 +67,7 @@ function getExternalModelSource(config: AiConfig, mode: ExternalModelTarget) {
         target: mode,
         baseUrl: config.textBaseUrl.trim() || config.textVideoBaseUrl.trim(),
         apiKey: config.textApiKey.trim() || config.textVideoApiKey.trim(),
-        model: config.model || config.textModel,
+        model: config.textModel || config.model,
     };
 }
 

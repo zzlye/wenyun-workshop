@@ -119,6 +119,11 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
 
     for (const source of sources) {
         const labelPrefix = `${formatVideoSourceLabel(source, model)} `;
+        if (isChatCompletionsFirstModel(model)) {
+            const result = await tryGeneration(`${labelPrefix}聊天兼容 /chat/completions`, () => requestChatCompletionsVideoGeneration(config, source, prompt, references, model), shouldFallbackToNextVideoSource);
+            if (result) return result;
+        }
+
         if (isJsonVideosFirstModel(model)) {
             const result = await tryGeneration(`${labelPrefix}OpenAI JSON /videos`, () => requestOpenAiVideosJsonGeneration(config, source, prompt, references, model), shouldFallbackToNextVideoSource);
             if (result) return result;
@@ -146,18 +151,19 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
 }
 
 async function requestOpenAiVideosJsonGeneration(config: AiConfig, source: VideoApiSource, prompt: string, references: ReferenceImage[], model: string) {
+    const seconds = normalizeVideoSecondsForModel(config.videoSeconds, model);
     const payload: Record<string, unknown> = {
         model,
         prompt,
-        seconds: normalizeVideoSecondsForModel(config.videoSeconds, model),
+        aspect_ratio: normalizeVideoAspectRatio(config.size, model),
+        duration: Number(seconds),
+        seconds,
         size: normalizeVideoSize(config.size) || undefined,
+        resolution: normalizeVideoResolutionForModel(config.vquality, model),
+        generate_audio: true,
     };
-    const images = (await Promise.all(references.slice(0, 7).map((image) => imageToDataUrl(image)))).filter(Boolean);
-    // 部分 NewAPI 中转站的 Sora/Veo 图生视频不接受 multipart，但接受 JSON 图片字段。
-    if (images.length) {
-        payload.image = images[0];
-        payload.input_reference = images.length === 1 ? images[0] : images;
-    }
+    const images = (await Promise.all(references.slice(0, getJsonVideoReferenceLimit(model)).map((image) => imageToDataUrl(image)))).filter(Boolean);
+    appendJsonVideoReferenceFields(payload, images, model);
     const created = unwrapVideoTask((await axios.post<ApiVideoResponse>(aiApiUrl(config, source, "/videos"), payload, { headers: { ...aiHeaders(config, source), "Content-Type": "application/json" }, timeout: requestTimeout(source) })).data);
     return waitOpenAiVideoResult(config, source, created, model);
 }
@@ -167,9 +173,12 @@ async function requestOpenAiVideosMultipartGeneration(config: AiConfig, source: 
     body.append("model", model);
     body.append("prompt", prompt);
     body.append("seconds", normalizeVideoSecondsForModel(config.videoSeconds, model));
+    body.append("duration", normalizeVideoSecondsForModel(config.videoSeconds, model));
+    body.append("aspect_ratio", normalizeVideoAspectRatio(config.size, model));
+    body.append("resolution", normalizeVideoResolutionForModel(config.vquality, model));
     if (normalizeVideoSize(config.size)) body.append("size", normalizeVideoSize(config.size)!);
     if (includeLegacyFields) {
-        body.append("resolution_name", normalizeVideoResolution(config.vquality));
+        body.append("resolution_name", normalizeVideoResolutionForModel(config.vquality, model));
         body.append("preset", "normal");
     }
     const files = await Promise.all(references.slice(0, 7).map((image) => imageToVideoReferenceFile(image)));
@@ -207,6 +216,7 @@ async function requestChatCompletionsVideoGeneration(config: AiConfig, source: V
             model,
             messages: [{ role: "user", content }],
             stream: false,
+            temperature: 0.7,
         },
         { headers: { ...aiHeaders(config, source), "Content-Type": "application/json" }, timeout: requestTimeout(source) },
     );
@@ -218,12 +228,16 @@ async function requestChatCompletionsVideoGeneration(config: AiConfig, source: V
 }
 
 async function requestNewApiVideoGeneration(config: AiConfig, source: VideoApiSource, prompt: string, references: ReferenceImage[], model: string) {
+    const seconds = normalizeVideoSecondsForModel(config.videoSeconds, model);
     const payload: Record<string, unknown> = {
         model,
         prompt,
-        seconds: normalizeVideoSecondsForModel(config.videoSeconds, model),
+        aspect_ratio: normalizeVideoAspectRatio(config.size, model),
+        duration: Number(seconds),
+        seconds,
         size: normalizeVideoSize(config.size) || undefined,
-        resolution: normalizeVideoResolution(config.vquality),
+        resolution: normalizeVideoResolutionForModel(config.vquality, model),
+        generate_audio: true,
     };
     const images = (await Promise.all(references.slice(0, 7).map((image) => imageToDataUrl(image)))).filter(Boolean);
     if (images.length) payload.image = images.length === 1 ? images[0] : images;
@@ -248,8 +262,8 @@ async function requestNewApiVideoGeneration(config: AiConfig, source: VideoApiSo
 
 async function buildChatVideoContent(config: AiConfig, prompt: string, references: ReferenceImage[]) {
     const model = config.videoModel || config.model;
-    const settingsText = `视频参数：${normalizeVideoSecondsForModel(config.videoSeconds, model)}秒，${normalizeVideoResolution(config.vquality)}，${videoAspectLabel(config.size)}。`;
-    const text = `${settingsText}\n\n${prompt}`;
+    const settingsText = `视频参数：${normalizeVideoSecondsForModel(config.videoSeconds, model)}秒，${normalizeVideoResolutionForModel(config.vquality, model)}，${videoAspectLabel(config.size)}。`;
+    const text = isChatCompletionsFirstModel(model) ? prompt : `${settingsText}\n\n${prompt}`;
     const images = (await Promise.all(references.slice(0, 7).map((image) => imageToDataUrl(image)))).filter(Boolean);
     if (!images.length) return text;
     return [{ type: "text", text }, ...images.map((url) => ({ type: "image_url", image_url: { url } }))];
@@ -272,17 +286,86 @@ function normalizeVideoSeconds(value: string) {
 
 function normalizeVideoSecondsForModel(value: string, model: string) {
     const seconds = Math.floor(Number(value) || 6);
-    if (!isSoraVideoModel(model)) return normalizeVideoSeconds(value);
-    // Sora 系列只接受 4、8、12 秒，避免旧节点保存的 6s/10s 继续发出后被接口拒绝。
-    if (seconds <= 4) return "4";
-    if (seconds >= 12) return "12";
-    return "8";
+    if (isSora2VideoModel(model)) {
+        // Sora 2 只接受 4、8、12 秒，避免旧节点保存的 6s/10s 继续发出后被接口拒绝。
+        if (seconds <= 4) return "4";
+        if (seconds >= 12) return "12";
+        return "8";
+    }
+    if (isSoraV3VideoModel(model)) return String(Math.max(4, Math.min(15, seconds)));
+    if (isVeo31FastVideoModel(model)) {
+        if (seconds <= 4) return "4";
+        if (seconds >= 8) return "8";
+        return "6";
+    }
+    if (isKlingVideoModel(model)) return String(Math.max(3, Math.min(15, seconds)));
+    return normalizeVideoSeconds(value);
+}
+
+function normalizeVideoAspectRatio(value: string, model: string) {
+    const ratio = readVideoAspectRatio(value);
+    if (isSora2VideoModel(model) || isVeo31FastVideoModel(model)) return ratio === "9:16" ? "9:16" : "16:9";
+    if (isKlingVideoModel(model)) return ["1:1", "9:16"].includes(ratio) ? ratio : "16:9";
+    if (isSoraV3VideoModel(model)) {
+        if (["21:9", "1:1", "4:3", "3:4", "16:9", "9:16"].includes(ratio)) return ratio;
+        return "16:9";
+    }
+    return ratio;
+}
+
+function readVideoAspectRatio(value: string) {
+    const trimmed = (value || "").trim();
+    if (/^\d+:\d+$/.test(trimmed)) return trimmed;
+    if (/^\d+x\d+$/.test(trimmed)) {
+        const [width, height] = trimmed.split("x").map(Number);
+        if (width && height) {
+            if (Math.abs(width - height) / Math.max(width, height) < 0.02) return "1:1";
+            const ratio = width / height;
+            if (ratio >= 2) return "21:9";
+            if (ratio >= 1.5) return "16:9";
+            if (ratio >= 1.15) return "4:3";
+            if (ratio <= 0.5) return "9:16";
+            if (ratio <= 0.85) return "3:4";
+        }
+    }
+    if (["9:16", "2:3", "3:4"].includes(trimmed)) return "9:16";
+    return "16:9";
+}
+
+function appendJsonVideoReferenceFields(payload: Record<string, unknown>, images: string[], model: string) {
+    if (!images.length) return;
+    if (isSoraV3VideoModel(model)) {
+        // 兼容 NewAPI 的 image_urls，以及 Sora V3 上游的 image_url/reference_image_urls。
+        payload.image_urls = images;
+        if (images.length === 1) payload.image_url = images[0];
+        else payload.reference_image_urls = images;
+        return;
+    }
+    if (isStandardJsonVideoModel(model)) {
+        payload.image_urls = images;
+        return;
+    }
+    // 部分 NewAPI 中转站的旧 Sora/Veo 图生视频不接受 multipart，但接受这组 JSON 图片字段。
+    payload.image = images[0];
+    payload.input_reference = images.length === 1 ? images[0] : images;
+}
+
+function getJsonVideoReferenceLimit(model: string) {
+    if (isSora2VideoModel(model) || isVeo31FastVideoModel(model) || /^kling-video-3\.0$/i.test(model.trim())) return 1;
+    if (isSoraV3VideoModel(model)) return 4;
+    if (/^kling-video-o3-omni$/i.test(model.trim())) return 7;
+    return 7;
 }
 
 function normalizeVideoSize(value: string) {
     if (value === "auto") return null;
     const size = value || "1280x720";
     if (/^\d+x\d+$/.test(size)) return size;
+    if (size === "1:1") return "1024x1024";
+    if (size === "21:9") return "1680x720";
+    if (size === "4:3") return "1024x768";
+    if (size === "3:4") return "768x1024";
+    if (size === "16:9") return "1280x720";
     return ["9:16", "2:3", "3:4"].includes(size) ? "720x1280" : "1280x720";
 }
 
@@ -291,6 +374,14 @@ function normalizeVideoResolution(value: string) {
     if (value === "auto" || value === "high" || value === "medium") return "720p";
     const resolution = value.replace(/p$/i, "") || "720";
     return `${resolution}p`;
+}
+
+function normalizeVideoResolutionForModel(value: string, model: string) {
+    const resolution = normalizeVideoResolution(value);
+    if (isSora2VideoModel(model)) return "720p";
+    if (isSoraV3VideoModel(model)) return resolution === "480p" ? "480p" : "720p";
+    if (isKlingVideoModel(model) || isVeo31FastVideoModel(model)) return resolution === "1080p" ? "1080p" : "720p";
+    return resolution;
 }
 
 async function imageToVideoReferenceFile(image: ReferenceImage) {
@@ -508,16 +599,48 @@ function isGrokVideosMultipartModel(model: string) {
     return /^grok-video-3(?:-|$)/i.test(model.trim());
 }
 
+function isChatCompletionsFirstModel(model: string) {
+    return /^grok-imagine-video(?:-|$)/i.test(model.trim());
+}
+
+function isSora2VideoModel(model: string) {
+    return /^sora-?2(?:-|$)/i.test(model.trim());
+}
+
+function isSoraV3VideoModel(model: string) {
+    return /^sora-v3(?:-|$)/i.test(model.trim());
+}
+
 function isSoraVideoModel(model: string) {
-    return /^sora(?:-|$)/i.test(model.trim());
+    return isSora2VideoModel(model) || isSoraV3VideoModel(model) || /^sora(?:-|$)/i.test(model.trim());
 }
 
 function isVeoVideoModel(model: string) {
-    return /^veo(?:[_-]|$)/i.test(model.trim());
+    return /^(?:veo(?:[_-]|$)|veo31(?:-|$))/i.test(model.trim());
+}
+
+function isVeo31FastVideoModel(model: string) {
+    return /^veo31-fast$/i.test(model.trim());
+}
+
+function isKlingVideoModel(model: string) {
+    return /^kling-video(?:-|$)/i.test(model.trim());
+}
+
+function isStandardJsonVideoModel(model: string) {
+    const normalized = model.trim().toLowerCase();
+    return [
+        "kling-video-3.0",
+        "kling-video-o3-omni",
+        "sora2",
+        "sora-v3-pro",
+        "sora-v3-fast",
+        "veo31-fast",
+    ].includes(normalized);
 }
 
 function isJsonVideosFirstModel(model: string) {
-    return isSoraVideoModel(model) || isVeoVideoModel(model);
+    return isStandardJsonVideoModel(model) || isSoraVideoModel(model) || isVeoVideoModel(model) || isKlingVideoModel(model);
 }
 
 function videoDownloadHeaders(config: AiConfig, source: VideoApiSource, url: string) {

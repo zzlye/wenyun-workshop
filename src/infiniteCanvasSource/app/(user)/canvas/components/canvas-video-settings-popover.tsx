@@ -23,6 +23,7 @@ export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClass
     const panelRef = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false);
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
+    const videoModel = config.videoModel || config.model;
 
     useEffect(() => {
         if (!open) return;
@@ -52,7 +53,7 @@ export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClass
             <span ref={buttonRef} className="inline-flex min-w-0">
                 <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[170px] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => setOpen((current) => !current)}>
                     <span className="truncate">
-                        {videoResolutionLabel(config.vquality)} · {videoSizeLabel(config.size)} · {videoSecondsLabel(config.videoSeconds, config.model || config.videoModel)}
+                        {videoResolutionLabel(config.vquality, videoModel)} · {videoSizeLabel(config.size, videoModel)} · {videoSecondsLabel(config.videoSeconds, videoModel)}
                     </span>
                 </Button>
             </span>

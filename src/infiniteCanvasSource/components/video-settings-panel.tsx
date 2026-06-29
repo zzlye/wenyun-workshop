@@ -6,12 +6,17 @@ import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import type { AiConfig } from "@/stores/use-config-store";
 
-const resolutionOptions = [
+const defaultResolutionOptions = [
     { value: "720", label: "720p" },
     { value: "480", label: "480p" },
 ];
 
-const sizeOptions = [
+const hdResolutionOptions = [
+    { value: "720", label: "720p" },
+    { value: "1080", label: "1080p" },
+];
+
+const defaultSizeOptions = [
     { value: "1280x720", label: "横屏", width: 1280, height: 720 },
     { value: "720x1280", label: "竖屏", width: 720, height: 1280 },
     { value: "1024x1024", label: "方形", width: 1024, height: 1024 },
@@ -20,8 +25,32 @@ const sizeOptions = [
     { value: "auto", label: "auto", width: 0, height: 0 },
 ];
 
+const standardLandscapeSizeOptions = [
+    { value: "1280x720", label: "横屏", width: 1280, height: 720 },
+    { value: "720x1280", label: "竖屏", width: 720, height: 1280 },
+];
+
+const klingSizeOptions = [
+    ...standardLandscapeSizeOptions,
+    { value: "1024x1024", label: "方形", width: 1024, height: 1024 },
+    { value: "1920x1080", label: "1080 横屏", width: 1920, height: 1080 },
+    { value: "1080x1920", label: "1080 竖屏", width: 1080, height: 1920 },
+    { value: "1080x1080", label: "1080 方形", width: 1080, height: 1080 },
+];
+
+const soraV3SizeOptions = [
+    ...standardLandscapeSizeOptions,
+    { value: "1024x1024", label: "方形", width: 1024, height: 1024 },
+    { value: "1680x720", label: "21:9", width: 1680, height: 720 },
+    { value: "1024x768", label: "4:3", width: 1024, height: 768 },
+    { value: "768x1024", label: "3:4", width: 768, height: 1024 },
+];
+
 const defaultSecondOptions = [6, 10, 12, 16, 20];
-const soraSecondOptions = [4, 8, 12];
+const sora2SecondOptions = [4, 8, 12];
+const soraV3SecondOptions = [4, 6, 8, 10, 12, 15];
+const veo31FastSecondOptions = [4, 6, 8];
+const klingSecondOptions = [3, 5, 10, 15];
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
@@ -32,12 +61,14 @@ type VideoSettingsPanelProps = {
 };
 
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
-    const videoModel = config.model || config.videoModel;
+    const videoModel = config.videoModel || config.model;
+    const resolutionOptions = getVideoResolutionOptions(videoModel);
+    const sizeOptions = getVideoSizeOptions(videoModel);
     const secondOptions = getVideoSecondOptions(videoModel);
     const seconds = normalizeVideoSecondsForModel(config.videoSeconds || "6", videoModel);
-    const size = normalizeVideoSizeValue(config.size);
+    const size = normalizeVideoSizeValue(config.size, videoModel);
     const dimensions = readSizeDimensions(size);
-    const resolution = normalizeVideoResolutionValue(config.vquality);
+    const resolution = normalizeVideoResolutionValue(config.vquality, videoModel);
     const updateDimension = (key: "width" | "height", value: number | null) => {
         const next = Math.max(1, Math.floor(value || dimensions[key] || 720));
         onConfigChange("size", `${key === "width" ? next : dimensions.width}x${key === "height" ? next : dimensions.height}`);
@@ -47,6 +78,16 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
         if ((config.videoSeconds || "") === seconds) return;
         onConfigChange("videoSeconds", seconds);
     }, [config.videoSeconds, onConfigChange, seconds]);
+
+    useEffect(() => {
+        if ((config.size || "") === size) return;
+        onConfigChange("size", size);
+    }, [config.size, onConfigChange, size]);
+
+    useEffect(() => {
+        if ((config.vquality || "") === resolution) return;
+        onConfigChange("vquality", resolution);
+    }, [config.vquality, onConfigChange, resolution]);
 
     return (
         <ImageSettingsTheme theme={theme}>
@@ -96,7 +137,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                                 {value}s
                             </OptionPill>
                         ))}
-                        {isSoraVideoModel(videoModel) ? null : <NumberInput value={seconds} min={1} max={20} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} />}
+                        {allowsCustomVideoSeconds(videoModel) ? <NumberInput value={seconds} min={getVideoSecondsRange(videoModel).min} max={getVideoSecondsRange(videoModel).max} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} /> : null}
                     </div>
                 </SettingGroup>
             </div>
@@ -104,45 +145,132 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     );
 }
 
-export function videoResolutionLabel(value: string) {
-    return `${normalizeVideoResolutionValue(value)}p`;
+export function videoResolutionLabel(value: string, model = "") {
+    return `${normalizeVideoResolutionValue(value, model)}p`;
 }
 
-export function videoSizeLabel(value: string) {
-    const size = normalizeVideoSizeValue(value);
-    return sizeOptions.find((item) => item.value === size)?.label || size;
+export function videoSizeLabel(value: string, model = "") {
+    const size = normalizeVideoSizeValue(value, model);
+    return getVideoSizeOptions(model).find((item) => item.value === size)?.label || defaultSizeOptions.find((item) => item.value === size)?.label || size;
 }
 
 export function videoSecondsLabel(value: string, model = "") {
     return `${normalizeVideoSecondsForModel(value || "6", model)}s`;
 }
 
-export function normalizeVideoSizeValue(value: string) {
-    if (value === "auto") return "auto";
-    if (/^\d+x\d+$/.test(value || "")) return value;
-    return ["9:16", "2:3", "3:4"].includes(value) ? "720x1280" : "1280x720";
+export function normalizeVideoSizeValue(value: string, model = "") {
+    if (value === "auto") return isSora2VideoModel(model) || isVeo31FastVideoModel(model) || isKlingVideoModel(model) || isSoraV3VideoModel(model) ? "1280x720" : "auto";
+    const size = /^\d+x\d+$/.test(value || "") ? value : ratioToVideoSize(value);
+    const aspectRatio = readAspectRatio(size);
+    if (isSora2VideoModel(model) || isVeo31FastVideoModel(model)) return aspectRatio === "9:16" ? "720x1280" : "1280x720";
+    if (isKlingVideoModel(model)) {
+        if (aspectRatio === "1:1") return "1024x1024";
+        return aspectRatio === "9:16" ? "720x1280" : "1280x720";
+    }
+    if (isSoraV3VideoModel(model)) {
+        if (aspectRatio === "1:1") return "1024x1024";
+        if (aspectRatio === "21:9") return "1680x720";
+        if (aspectRatio === "4:3") return "1024x768";
+        if (aspectRatio === "3:4") return "768x1024";
+        return aspectRatio === "9:16" ? "720x1280" : "1280x720";
+    }
+    return size;
 }
 
-export function normalizeVideoResolutionValue(value: string) {
+function ratioToVideoSize(value: string) {
+    if (value === "1:1") return "1024x1024";
+    if (value === "21:9") return "1680x720";
+    if (value === "4:3") return "1024x768";
+    if (value === "3:4") return "768x1024";
+    if (["9:16", "2:3"].includes(value)) return "720x1280";
+    return "1280x720";
+}
+
+export function normalizeVideoResolutionValue(value: string, model = "") {
     if (value === "480p" || value === "low") return "480";
     if (value === "720p" || value === "auto" || value === "high" || value === "medium") return "720";
-    return value.replace(/p$/i, "") || "720";
+    const resolution = value.replace(/p$/i, "") || "720";
+    if (isSora2VideoModel(model)) return "720";
+    if (isSoraV3VideoModel(model)) return resolution === "480" ? "480" : "720";
+    if (isKlingVideoModel(model) || isVeo31FastVideoModel(model)) return resolution === "1080" ? "1080" : "720";
+    return resolution;
 }
 
 export function normalizeVideoSecondsForModel(value: string, model = "") {
     const seconds = Math.floor(Number(value) || 6);
-    if (!isSoraVideoModel(model)) return String(Math.max(1, Math.min(20, seconds)));
-    if (seconds <= 4) return "4";
-    if (seconds >= 12) return "12";
-    return "8";
+    if (isSora2VideoModel(model)) {
+        if (seconds <= 4) return "4";
+        if (seconds >= 12) return "12";
+        return "8";
+    }
+    if (isSoraV3VideoModel(model)) return String(Math.max(4, Math.min(15, seconds)));
+    if (isVeo31FastVideoModel(model)) {
+        if (seconds <= 4) return "4";
+        if (seconds >= 8) return "8";
+        return "6";
+    }
+    if (isKlingVideoModel(model)) return String(Math.max(3, Math.min(15, seconds)));
+    return String(Math.max(1, Math.min(20, seconds)));
 }
 
 function getVideoSecondOptions(model = "") {
-    return isSoraVideoModel(model) ? soraSecondOptions : defaultSecondOptions;
+    if (isSora2VideoModel(model)) return sora2SecondOptions;
+    if (isSoraV3VideoModel(model)) return soraV3SecondOptions;
+    if (isVeo31FastVideoModel(model)) return veo31FastSecondOptions;
+    if (isKlingVideoModel(model)) return klingSecondOptions;
+    return defaultSecondOptions;
 }
 
-function isSoraVideoModel(model = "") {
-    return /^sora(?:-|$)/i.test(model.trim());
+function getVideoSecondsRange(model = "") {
+    if (isSoraV3VideoModel(model)) return { min: 4, max: 15 };
+    if (isKlingVideoModel(model)) return { min: 3, max: 15 };
+    return { min: 1, max: 20 };
+}
+
+function allowsCustomVideoSeconds(model = "") {
+    return !isSora2VideoModel(model) && !isVeo31FastVideoModel(model);
+}
+
+function getVideoResolutionOptions(model = "") {
+    if (isKlingVideoModel(model) || isVeo31FastVideoModel(model)) return hdResolutionOptions;
+    return defaultResolutionOptions;
+}
+
+function getVideoSizeOptions(model = "") {
+    if (isSora2VideoModel(model) || isVeo31FastVideoModel(model)) return standardLandscapeSizeOptions;
+    if (isKlingVideoModel(model)) return klingSizeOptions;
+    if (isSoraV3VideoModel(model)) return soraV3SizeOptions;
+    return defaultSizeOptions;
+}
+
+function readAspectRatio(value: string) {
+    if (!/^\d+x\d+$/.test(value || "")) return "16:9";
+    const [width, height] = value.split("x").map(Number);
+    if (!width || !height) return "16:9";
+    if (Math.abs(width - height) / Math.max(width, height) < 0.02) return "1:1";
+    const ratio = width / height;
+    if (ratio >= 2) return "21:9";
+    if (ratio >= 1.5) return "16:9";
+    if (ratio >= 1.15) return "4:3";
+    if (ratio <= 0.5) return "9:16";
+    if (ratio <= 0.85) return "3:4";
+    return "16:9";
+}
+
+function isSora2VideoModel(model = "") {
+    return /^sora-?2(?:-|$)/i.test(model.trim());
+}
+
+function isSoraV3VideoModel(model = "") {
+    return /^sora-v3(?:-|$)/i.test(model.trim());
+}
+
+function isVeo31FastVideoModel(model = "") {
+    return /^veo31-fast$/i.test(model.trim());
+}
+
+function isKlingVideoModel(model = "") {
+    return /^kling-video(?:-|$)/i.test(model.trim());
 }
 
 function OptionPill({ selected, theme, onClick, children }: { selected: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {

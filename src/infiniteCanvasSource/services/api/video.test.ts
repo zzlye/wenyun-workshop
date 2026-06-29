@@ -49,6 +49,33 @@ describe("canvas video api", () => {
         expect(blob.type).toBe("video/mp4");
     });
 
+    it("uses chat completions first for Grok Imagine video models", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { choices: [{ message: { content: "https://cdn.example.com/grok-imagine.mp4" } }] } });
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(new Blob(["video"], { type: "video/mp4" })));
+
+        const blob = await requestVideoGeneration({
+            ...defaultConfig,
+            videoBaseUrl: "https://ai.bafang.me/v1",
+            videoApiKey: "video-key",
+            videoModel: "grok-imagine-video-1.5-720p",
+        }, "prompt");
+
+        expect(axios.post).toHaveBeenCalledTimes(1);
+        expect(axios.post).toHaveBeenCalledWith(
+            "https://ai.bafang.me/v1/chat/completions",
+            expect.objectContaining({
+                model: "grok-imagine-video-1.5-720p",
+                messages: [{ role: "user", content: "prompt" }],
+                stream: false,
+                temperature: 0.7,
+            }),
+            expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer video-key" }) }),
+        );
+        expect(axios.get).not.toHaveBeenCalled();
+        expect(fetch).toHaveBeenCalledWith("https://cdn.example.com/grok-imagine.mp4", expect.any(Object));
+        expect(blob.type).toBe("video/mp4");
+    });
+
     it("uses JSON videos endpoint first for Sora models without references", async () => {
         (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-sora", status: "queued" } });
         (axios.get as Mock).mockResolvedValueOnce({ data: { id: "task-sora", status: "completed", output: "https://cdn.example.com/sora.mp4" } });
@@ -156,6 +183,81 @@ describe("canvas video api", () => {
             1,
             "https://api.example.com/v1/videos",
             expect.objectContaining({ model: "veo_3_1-fast", prompt: "prompt" }),
+            expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer video-key" }) }),
+        );
+    });
+
+    it("uses standard JSON videos payload for Sora V3 models", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-v3", status: "queued" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: { id: "task-v3", status: "completed", video_url: "https://cdn.example.com/sora-v3.mp4" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: new Blob(["video"], { type: "video/mp4" }) });
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(new Blob(["video"], { type: "video/mp4" })));
+
+        const reference = {
+            id: "ref-1",
+            name: "reference.png",
+            type: "image/png",
+            dataUrl: "data:image/png;base64,cmVm",
+        };
+
+        await requestVideoGeneration({
+            ...defaultConfig,
+            videoBaseUrl: "https://api.example.com/v1",
+            videoApiKey: "video-key",
+            videoModel: "sora-v3-fast",
+            videoSeconds: "10",
+            vquality: "720",
+            size: "16:9",
+        }, "prompt", [reference]);
+
+        expect(axios.post).toHaveBeenNthCalledWith(
+            1,
+            "https://api.example.com/v1/videos",
+            expect.objectContaining({
+                model: "sora-v3-fast",
+                prompt: "prompt",
+                aspect_ratio: "16:9",
+                duration: 10,
+                seconds: "10",
+                resolution: "720p",
+                generate_audio: true,
+                image_urls: ["data:image/png;base64,cmVm"],
+                image_url: "data:image/png;base64,cmVm",
+            }),
+            expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer video-key" }) }),
+        );
+        expect((axios.post as Mock).mock.calls[0][1]).not.toBeInstanceOf(FormData);
+    });
+
+    it("uses standard JSON videos payload for Kling models", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-kling", status: "queued" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: { id: "task-kling", status: "completed", video_url: "https://cdn.example.com/kling.mp4" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: new Blob(["video"], { type: "video/mp4" }) });
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(new Blob(["video"], { type: "video/mp4" })));
+
+        await requestVideoGeneration({
+            ...defaultConfig,
+            videoBaseUrl: "https://api.example.com/v1",
+            videoApiKey: "video-key",
+            videoModel: "kling-video-o3-omni",
+            videoSeconds: "20",
+            vquality: "1080",
+            size: "1:1",
+        }, "prompt");
+
+        expect(axios.post).toHaveBeenNthCalledWith(
+            1,
+            "https://api.example.com/v1/videos",
+            expect.objectContaining({
+                model: "kling-video-o3-omni",
+                prompt: "prompt",
+                aspect_ratio: "1:1",
+                duration: 15,
+                seconds: "15",
+                size: "1024x1024",
+                resolution: "1080p",
+                generate_audio: true,
+            }),
             expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer video-key" }) }),
         );
     });
