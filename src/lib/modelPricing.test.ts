@@ -19,5 +19,6 @@ describe('fixed image model pricing', () => {
       expect.objectContaining({ model: 'Nano-Banana-Pro', resolutionText: '1K、2K、4K' }),
     ]))
     expect(rows.map((row) => row.model)).not.toContain('gpt-image-2-vip')
+    expect(rows.map((row) => row.model)).not.toContain('sora-2')
   })
 })

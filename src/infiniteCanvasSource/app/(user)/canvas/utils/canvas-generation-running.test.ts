@@ -36,7 +36,7 @@ describe("canvas generation running session", () => {
 
         expect(result[0].metadata).toMatchObject({
             status: "error",
-            errorDetails: "页面刷新后生成已中断，请重新生成。",
+            errorDetails: "页面刷新后前端连接已断开，后台可能已提交请求，无法自动取回本次结果。请确认结果或余额后再重试。",
         });
     });
 });

@@ -1,7 +1,7 @@
 import type { CanvasNodeData } from "../types";
 
 const LOADING_STATUS = "loading";
-const INTERRUPTED_ERROR = "页面刷新后生成已中断，请重新生成。";
+const INTERRUPTED_ERROR = "页面刷新后前端连接已断开，后台可能已提交请求，无法自动取回本次结果。请确认结果或余额后再重试。";
 const activeGenerationIdsByProject = new Map<string, Set<string>>();
 
 // 同时读取内存运行集合和节点持久状态，避免切换节点面板后重复提交生成任务。

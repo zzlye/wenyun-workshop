@@ -38,7 +38,7 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
   const [performanceItems, setPerformanceItems] = useState<NewApiModelPerformanceItem[]>([])
   const [performanceUpdatedAt, setPerformanceUpdatedAt] = useState<number | null>(null)
   const rows = useMemo(() => {
-    const baseRows = buildFixedModelPriceRows(activeProfile.id, [settings.textModel, settings.textVideoModel, settings.videoModel])
+    const baseRows = buildFixedModelPriceRows(activeProfile.id)
     const snapshot = settings.apiPriceByProfileId[activeProfile.id]
     if (!snapshot?.items.length) return baseRows
     const priceMap = new Map(snapshot.items.map((item) => [item.model.trim().toLowerCase(), item] as const))
@@ -46,7 +46,7 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
       const synced = priceMap.get(row.model.trim().toLowerCase()) ?? (row.upstreamModel ? priceMap.get(row.upstreamModel.trim().toLowerCase()) : undefined)
       return synced ? { ...row, priceText: synced.text } : row
     })
-  }, [activeProfile.id, settings.apiPriceByProfileId, settings.textModel, settings.textVideoModel, settings.videoModel])
+  }, [activeProfile.id, settings.apiPriceByProfileId])
 
   const loadPerformance = async () => {
     setIsLoadingPerformance(true)

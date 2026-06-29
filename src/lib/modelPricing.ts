@@ -86,7 +86,7 @@ export function getImageModelOptionsForProfile(profileId: string) {
   return [...FIXED_IMAGE_MODEL_OPTIONS]
 }
 
-export function buildFixedModelPriceRows(profileId: string, extraModels: Array<string | undefined> = []): ModelPriceRow[] {
+export function buildFixedModelPriceRows(profileId: string): ModelPriceRow[] {
   const knownModels = new Set<string>()
   const rows: ModelPriceRow[] = getImageModelOptionsForProfile(profileId).map((option) => {
     const pricing = getFixedImagePricing(option.value)
@@ -101,23 +101,6 @@ export function buildFixedModelPriceRows(profileId: string, extraModels: Array<s
       resolutionText: pricing?.resolutionText,
     }
   })
-
-  // 文字和视频模型也放在同一个弹窗里，但没有图片扣费时展示占位。
-  for (const model of extraModels) {
-    const normalized = model?.trim()
-    if (!normalized) continue
-    const key = normalized.toLowerCase()
-    if (knownModels.has(key)) continue
-    const pricing = getFixedImagePricing(normalized)
-    knownModels.add(key)
-    if (pricing) knownModels.add(pricing.requestModel.toLowerCase())
-    rows.push({
-      model: normalized,
-      upstreamModel: pricing && pricing.requestModel !== normalized ? pricing.requestModel : undefined,
-      priceText: pricing?.unitCostText ?? 'HUHN --',
-      resolutionText: pricing?.resolutionText,
-    })
-  }
 
   return rows
 }
