@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import axios from "axios";
 
 import { DEFAULT_SETTINGS, LOCKED_PUBLIC_PROFILE_ID } from "../../../lib/apiProfiles";
 import { useStore } from "../../../store";
 import { defaultConfig } from "../../stores/use-config-store";
-import { requestEdit, requestGeneration } from "./image";
+import { requestEdit, requestGeneration, requestImageQuestion } from "./image";
 
 describe("canvas image api", () => {
     const initialSettings = useStore.getState().settings;
@@ -96,6 +97,49 @@ describe("canvas image api", () => {
         expect((init as RequestInit).headers).toMatchObject({
             Authorization: "Bearer public-key",
         });
+    });
+
+    it("uses text API settings for canvas text nodes even when stale canvas mode is remote", async () => {
+        const postMock = vi.spyOn(axios, "post").mockResolvedValue({ data: "" });
+        const onDelta = vi.fn();
+
+        await requestImageQuestion(
+            {
+                ...defaultConfig,
+                channelMode: "remote",
+                baseUrl: "https://image.example.com/v1",
+                apiKey: "image-key",
+                textBaseUrl: "https://text.example.com/v1",
+                textApiKey: "text-key",
+                textModel: "text-model",
+            },
+            [{ role: "user", content: "识别图片" }],
+            onDelta,
+        );
+
+        expect(postMock).toHaveBeenCalledWith(
+            "https://text.example.com/v1/chat/completions",
+            expect.objectContaining({ model: "text-model" }),
+            expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer text-key" }) }),
+        );
+        expect(postMock.mock.calls.map((call) => call[0])).not.toContain("/api/v1/chat/completions");
+    });
+
+    it("requires text API settings for canvas text nodes instead of falling back to image API", async () => {
+        await expect(requestImageQuestion(
+            {
+                ...defaultConfig,
+                baseUrl: "https://image.example.com/v1",
+                apiKey: "image-key",
+                textBaseUrl: "",
+                textApiKey: "",
+                textVideoBaseUrl: "https://legacy-text-video.example.com/v1",
+                textVideoApiKey: "legacy-key",
+                textModel: "text-model",
+            },
+            [{ role: "user", content: "识别图片" }],
+            vi.fn(),
+        )).rejects.toThrow("请先在设置里填写文字 API URL 和 Key");
     });
 
     it.each([

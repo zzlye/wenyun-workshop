@@ -31,34 +31,19 @@ class VideoAttemptError extends Error {
 }
 
 function resolveVideoApiSources(config: AiConfig): VideoApiSource[] {
-    if (config.channelMode === "remote") return [{ label: "系统后端", baseUrl: "", apiKey: "", apiProxy: false, timeout: Number(config.videoTimeout || config.textVideoTimeout || config.textTimeout || config.timeout), versioned: true }];
     const candidates = [
         {
             label: "视频 API",
             baseUrl: config.videoBaseUrl.trim(),
-            apiKey: config.videoApiKey.trim() || config.textVideoApiKey.trim() || config.textApiKey.trim() || config.apiKey,
+            apiKey: config.videoApiKey.trim(),
             apiProxy: Boolean(config.videoApiProxy),
-            timeout: Number(config.videoTimeout || config.textVideoTimeout || config.textTimeout || config.timeout),
-        },
-        {
-            label: "旧文字视频 API",
-            baseUrl: config.textVideoBaseUrl.trim(),
-            apiKey: config.textVideoApiKey.trim() || config.videoApiKey.trim() || config.textApiKey.trim() || config.apiKey,
-            apiProxy: Boolean(config.textVideoApiProxy || config.videoApiProxy),
-            timeout: Number(config.textVideoTimeout || config.videoTimeout || config.textTimeout || config.timeout),
-        },
-        {
-            label: "文字 API",
-            baseUrl: config.textBaseUrl.trim(),
-            apiKey: config.textApiKey.trim() || config.videoApiKey.trim() || config.textVideoApiKey.trim() || config.apiKey,
-            apiProxy: Boolean(config.textApiProxy || config.videoApiProxy || config.textVideoApiProxy),
-            timeout: Number(config.textTimeout || config.videoTimeout || config.textVideoTimeout || config.timeout),
+            timeout: Number(config.videoTimeout || config.timeout),
         },
     ];
     const sources: VideoApiSource[] = [];
     const seen = new Set<string>();
     for (const candidate of candidates) {
-        if (!candidate.baseUrl) continue;
+        if (!candidate.baseUrl || !candidate.apiKey) continue;
         const normalizedBaseUrl = candidate.baseUrl.replace(/\/+$/, "");
         const key = `${normalizedBaseUrl}|${candidate.apiKey}|${candidate.apiProxy}`;
         if (!seen.has(key)) {
@@ -78,7 +63,7 @@ function resolveVideoApiSources(config: AiConfig): VideoApiSource[] {
 }
 
 function aiApiUrl(config: AiConfig, source: VideoApiSource, path: string) {
-    if (config.channelMode === "remote") return `/api/v1${path}`;
+    if (config.channelMode === "remote" && !source.baseUrl) return `/api/v1${path}`;
 
     const proxyConfig = readClientDevProxyConfig();
     if (shouldUseApiProxyForBaseUrl(source.apiProxy, source.baseUrl, proxyConfig)) return buildDevApiUrl(source.baseUrl, path, proxyConfig, true);
@@ -90,11 +75,11 @@ function aiApiUrl(config: AiConfig, source: VideoApiSource, path: string) {
 function aiHeaders(config: AiConfig, source: VideoApiSource) {
     const token = useUserStore.getState().token;
     const apiKey = source.apiKey;
-    return config.channelMode === "remote" ? (token ? { Authorization: `Bearer ${token}` } : undefined) : { Authorization: `Bearer ${apiKey}` };
+    return config.channelMode === "remote" && !source.baseUrl ? (token ? { Authorization: `Bearer ${token}` } : undefined) : { Authorization: `Bearer ${apiKey}` };
 }
 
 function refreshRemoteUser(config: AiConfig) {
-    if (config.channelMode === "remote") void useUserStore.getState().hydrateUser();
+    if (config.channelMode === "remote" && !config.videoBaseUrl.trim()) void useUserStore.getState().hydrateUser();
 }
 
 function requestTimeout(source: VideoApiSource) {

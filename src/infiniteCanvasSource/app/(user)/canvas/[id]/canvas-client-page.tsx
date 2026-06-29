@@ -3758,15 +3758,10 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
 function isCanvasGenerationConfigReady(config: AiConfig, mode: CanvasNodeGenerationMode, isAiConfigReady: (config: AiConfig, model: string) => boolean) {
     const model = mode === "image" ? config.imageModel || config.model : mode === "video" ? config.videoModel || config.model : config.textModel || config.model;
     if (!model.trim()) return false;
-    if (config.channelMode === "remote") return true;
     if (mode === "image") return isAiConfigReady(config, model);
-    if (mode === "text") return Boolean((config.textBaseUrl.trim() && config.textApiKey.trim()) || (config.textVideoBaseUrl.trim() && config.textVideoApiKey.trim()) || (config.baseUrl.trim() && config.apiKey.trim()));
-    // 视频节点只使用视频相关接口，避免误把出图 API 当成视频接口后连续返回 404。
-    return Boolean(
-        (config.videoBaseUrl.trim() && (config.videoApiKey.trim() || config.textVideoApiKey.trim() || config.textApiKey.trim() || config.apiKey.trim())) ||
-            (config.textVideoBaseUrl.trim() && (config.textVideoApiKey.trim() || config.videoApiKey.trim() || config.textApiKey.trim() || config.apiKey.trim())) ||
-            (config.textBaseUrl.trim() && (config.textApiKey.trim() || config.videoApiKey.trim() || config.textVideoApiKey.trim() || config.apiKey.trim())),
-    );
+    if (mode === "text") return Boolean(config.textBaseUrl.trim() && config.textApiKey.trim());
+    // 视频节点只使用视频 API 配置，避免误走系统后端、文字 API 或出图 API。
+    return Boolean(config.videoBaseUrl.trim() && config.videoApiKey.trim());
 }
 
 function findRetrySourceNode(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {

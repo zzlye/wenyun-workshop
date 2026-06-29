@@ -193,8 +193,8 @@ function withSystemPrompt(config: AiConfig, prompt: string) {
 }
 
 function aiApiUrl(config: AiConfig, path: string, target: "image" | "textVideo" = "image") {
-    const baseUrl = target === "textVideo" && (config.textBaseUrl.trim() || config.textVideoBaseUrl.trim()) ? config.textBaseUrl.trim() || config.textVideoBaseUrl : config.baseUrl;
-    if (config.channelMode === "remote") return `/api/v1${path}`;
+    const baseUrl = target === "textVideo" ? config.textBaseUrl.trim() : config.baseUrl;
+    if (target !== "textVideo" && config.channelMode === "remote") return `/api/v1${path}`;
 
     const proxyConfig = readClientDevProxyConfig();
     return buildDevApiUrl(baseUrl, path, proxyConfig, false);
@@ -202,8 +202,8 @@ function aiApiUrl(config: AiConfig, path: string, target: "image" | "textVideo" 
 
 function aiHeaders(config: AiConfig, contentType?: string, target: "image" | "textVideo" = "image") {
     const token = useUserStore.getState().token;
-    const apiKey = target === "textVideo" && (config.textApiKey.trim() || config.textVideoApiKey.trim()) ? config.textApiKey.trim() || config.textVideoApiKey : config.apiKey;
-    return config.channelMode === "remote"
+    const apiKey = target === "textVideo" ? config.textApiKey.trim() : config.apiKey;
+    return target !== "textVideo" && config.channelMode === "remote"
         ? {
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
               ...(contentType ? { "Content-Type": contentType } : {}),
@@ -219,7 +219,7 @@ function refreshRemoteUser(config: AiConfig) {
 }
 
 function requestTimeout(config: AiConfig, target: "image" | "textVideo" = "image") {
-    const seconds = target === "textVideo" ? config.textTimeout || config.textVideoTimeout : config.timeout;
+    const seconds = target === "textVideo" ? config.textTimeout : config.timeout;
     return Math.max(1, Number(seconds) || 120) * 1000;
 }
 
@@ -274,6 +274,7 @@ export async function requestImageQuestion(config: AiConfig, messages: ChatCompl
     let processedLength = 0;
 
     try {
+        if (!config.textBaseUrl.trim() || !config.textApiKey.trim()) throw new Error("请先在设置里填写文字 API URL 和 Key");
         const response = await axios.post(
             aiApiUrl(config, "/chat/completions", "textVideo"),
             {

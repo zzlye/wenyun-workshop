@@ -290,13 +290,8 @@ describe("canvas video api", () => {
         expect(blob.type).toBe("video/mp4");
     });
 
-    it("falls back to text API settings when dedicated video API is empty", async () => {
-        (axios.post as Mock).mockResolvedValueOnce({ data: { data: { task_id: "task-1", status: "queued" } } });
-        (axios.get as Mock)
-            .mockResolvedValueOnce({ data: { data: { id: "task-1", status: "completed", video_url: "https://cdn.example.com/video.mp4" } } });
-        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(new Blob(["video"], { type: "video/mp4" })));
-
-        await requestVideoGeneration({
+    it("requires dedicated video API settings instead of falling back to text API", async () => {
+        await expect(requestVideoGeneration({
             ...defaultConfig,
             baseUrl: "https://image.example.com/v1",
             apiKey: "image-key",
@@ -305,13 +300,33 @@ describe("canvas video api", () => {
             videoBaseUrl: "",
             videoApiKey: "",
             videoModel: "veo_3_1",
+        }, "prompt")).rejects.toThrow("请先在设置里填写支持视频生成的 API URL 和 Key");
+
+        expect(axios.post).not.toHaveBeenCalled();
+    });
+
+    it("uses dedicated video API settings even when stale canvas mode is remote", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-video", status: "queued" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: { id: "task-video", status: "completed", video_url: "https://cdn.example.com/video.mp4" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: new Blob(["video"], { type: "video/mp4" }) });
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(new Blob(["video"], { type: "video/mp4" })));
+
+        await requestVideoGeneration({
+            ...defaultConfig,
+            channelMode: "remote",
+            videoBaseUrl: "https://api.geeknow.ai/v1",
+            videoApiKey: "video-key",
+            videoModel: "sora-2",
+            videoSeconds: "8",
         }, "prompt");
 
-        expect(axios.post).toHaveBeenCalledWith(
-            "https://text.example.com/v1/videos",
-            expect.objectContaining({ model: "veo_3_1", prompt: "prompt" }),
-            expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer text-key" }) }),
+        expect(axios.post).toHaveBeenNthCalledWith(
+            1,
+            "https://api.geeknow.ai/v1/videos",
+            expect.objectContaining({ model: "sora-2", prompt: "prompt" }),
+            expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer video-key" }) }),
         );
+        expect((axios.post as Mock).mock.calls.map((call) => call[0])).not.toContain("/api/v1/videos");
     });
 
     it("tries task video endpoint for Sora when JSON videos endpoint returns 404", async () => {

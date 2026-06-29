@@ -57,16 +57,16 @@ function getExternalModelSource(config: AiConfig, mode: ExternalModelTarget) {
     if (mode === "video") {
         return {
             target: mode,
-            baseUrl: config.videoBaseUrl.trim() || config.textVideoBaseUrl.trim(),
-            apiKey: config.videoApiKey.trim() || config.textVideoApiKey.trim(),
+            baseUrl: config.videoBaseUrl.trim(),
+            apiKey: config.videoApiKey.trim(),
             model: config.videoModel || config.model,
         };
     }
 
     return {
         target: mode,
-        baseUrl: config.textBaseUrl.trim() || config.textVideoBaseUrl.trim(),
-        apiKey: config.textApiKey.trim() || config.textVideoApiKey.trim(),
+        baseUrl: config.textBaseUrl.trim(),
+        apiKey: config.textApiKey.trim(),
         model: config.textModel || config.model,
     };
 }
