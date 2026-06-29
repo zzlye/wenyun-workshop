@@ -102,6 +102,44 @@ describe("canvas video api", () => {
         expect(fetch).not.toHaveBeenCalled();
     });
 
+    it("uses GeekNow Sora payload shape without unsupported JSON video fields", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-sora", status: "queued" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: { id: "task-sora", status: "completed", video_url: "https://cdn.example.com/sora.mp4" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: new Blob(["video"], { type: "video/mp4" }) });
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(new Blob(["video"], { type: "video/mp4" })));
+
+        const reference = {
+            id: "ref-1",
+            name: "reference.png",
+            type: "image/png",
+            dataUrl: "data:image/png;base64,cmVm",
+        };
+
+        await requestVideoGeneration({
+            ...defaultConfig,
+            videoBaseUrl: "https://api.geeknow.ai/v1",
+            videoApiKey: "video-key",
+            videoModel: "sora-2",
+            videoSeconds: "8",
+            vquality: "720",
+            size: "16:9",
+        }, "prompt", [reference]);
+
+        const body = (axios.post as Mock).mock.calls[0][1];
+        expect(body).toEqual({
+            model: "sora-2",
+            prompt: "prompt",
+            size: "1280x720",
+            seconds: "8",
+            input_reference: "data:image/png;base64,cmVm",
+        });
+        expect(body).not.toHaveProperty("aspect_ratio");
+        expect(body).not.toHaveProperty("resolution");
+        expect(body).not.toHaveProperty("generate_audio");
+        expect(body).not.toHaveProperty("image_urls");
+        expect(body).not.toHaveProperty("image");
+    });
+
     it("normalizes invalid Sora seconds before sending requests", async () => {
         (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-sora", status: "queued" } });
         (axios.get as Mock).mockResolvedValueOnce({ data: { id: "task-sora", status: "completed", output: "https://cdn.example.com/sora.mp4" } });
@@ -360,6 +398,35 @@ describe("canvas video api", () => {
         );
     });
 
+    it("tries compatible task endpoint when JSON videos endpoint reports unavailable upstream tokens", async () => {
+        const noTokens = Object.assign(new Error("no active tokens available"), {
+            isAxiosError: true,
+            response: { status: 400, data: { error: { message: "no active tokens available" } } },
+        });
+        (axios.post as Mock)
+            .mockRejectedValueOnce(noTokens)
+            .mockResolvedValueOnce({ data: { data: { task_id: "task-compatible", status: "queued" } } });
+        (axios.get as Mock)
+            .mockResolvedValueOnce({ data: { data: { id: "task-compatible", status: "completed", video_url: "https://cdn.example.com/video.mp4" } } })
+            .mockResolvedValueOnce({ data: new Blob(["video"], { type: "video/mp4" }) });
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(new Blob(["video"], { type: "video/mp4" })));
+
+        await expect(requestVideoGeneration({
+            ...defaultConfig,
+            videoBaseUrl: "https://api.geeknow.ai/v1",
+            videoApiKey: "video-key",
+            videoModel: "sora-2",
+        }, "prompt")).resolves.toEqual(expect.any(Blob));
+
+        expect(axios.post).toHaveBeenNthCalledWith(1, "https://api.geeknow.ai/v1/videos", expect.any(Object), expect.any(Object));
+        expect(axios.post).toHaveBeenNthCalledWith(
+            2,
+            "https://api.geeknow.ai/v1/video/generations",
+            expect.objectContaining({ model: "sora-2", prompt: "prompt" }),
+            expect.any(Object),
+        );
+    });
+
     it("tries unversioned API root when versioned video root returns 404", async () => {
         const notFound = Object.assign(new Error("not found"), {
             isAxiosError: true,
@@ -436,14 +503,13 @@ describe("canvas video api", () => {
 
         const [url, body] = (axios.post as Mock).mock.calls[0];
         expect(url).toBe("https://api.example.com/v1/videos");
-        expect(body).toEqual(expect.objectContaining({
+        expect(body).toEqual({
             model: "sora-2",
             prompt: "prompt",
             seconds: "8",
             size: "1280x720",
-            image: "data:image/png;base64,cmVm",
             input_reference: "data:image/png;base64,cmVm",
-        }));
+        });
         expect(axios.get).toHaveBeenNthCalledWith(
             1,
             "https://api.example.com/v1/videos/task-1",

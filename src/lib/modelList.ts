@@ -45,6 +45,7 @@ function collectModelIds(input: unknown, output: Set<string>, depth = 0) {
 
 const VIDEO_MODEL_PRIORITY = [
   'sora-2',
+  'sora-2-pro',
   'sora-2-8s',
   'sora-2-12s',
   'sora2',

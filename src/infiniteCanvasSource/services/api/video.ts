@@ -137,16 +137,18 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
 
 async function requestOpenAiVideosJsonGeneration(config: AiConfig, source: VideoApiSource, prompt: string, references: ReferenceImage[], model: string) {
     const seconds = normalizeVideoSecondsForModel(config.videoSeconds, model);
-    const payload: Record<string, unknown> = {
-        model,
-        prompt,
-        aspect_ratio: normalizeVideoAspectRatio(config.size, model),
-        duration: Number(seconds),
-        seconds,
-        size: normalizeVideoSize(config.size) || undefined,
-        resolution: normalizeVideoResolutionForModel(config.vquality, model),
-        generate_audio: true,
-    };
+    const payload: Record<string, unknown> = isGeekNowSoraModel(model)
+        ? { model, prompt, size: normalizeSoraVideoSize(config.size, model), seconds }
+        : {
+              model,
+              prompt,
+              aspect_ratio: normalizeVideoAspectRatio(config.size, model),
+              duration: Number(seconds),
+              seconds,
+              size: normalizeVideoSize(config.size) || undefined,
+              resolution: normalizeVideoResolutionForModel(config.vquality, model),
+              generate_audio: true,
+          };
     const images = (await Promise.all(references.slice(0, getJsonVideoReferenceLimit(model)).map((image) => imageToDataUrl(image)))).filter(Boolean);
     appendJsonVideoReferenceFields(payload, images, model);
     const created = unwrapVideoTask((await axios.post<ApiVideoResponse>(aiApiUrl(config, source, "/videos"), payload, { headers: { ...aiHeaders(config, source), "Content-Type": "application/json" }, timeout: requestTimeout(source) })).data);
@@ -319,6 +321,10 @@ function readVideoAspectRatio(value: string) {
 
 function appendJsonVideoReferenceFields(payload: Record<string, unknown>, images: string[], model: string) {
     if (!images.length) return;
+    if (isGeekNowSoraModel(model)) {
+        payload.input_reference = images.length === 1 ? images[0] : images;
+        return;
+    }
     if (isSoraV3VideoModel(model)) {
         // 兼容 NewAPI 的 image_urls，以及 Sora V3 上游的 image_url/reference_image_urls。
         payload.image_urls = images;
@@ -336,7 +342,7 @@ function appendJsonVideoReferenceFields(payload: Record<string, unknown>, images
 }
 
 function getJsonVideoReferenceLimit(model: string) {
-    if (isSora2VideoModel(model) || isVeo31FastVideoModel(model) || /^kling-video-3\.0$/i.test(model.trim())) return 1;
+    if (isGeekNowSoraModel(model) || isSora2VideoModel(model) || isVeo31FastVideoModel(model) || /^kling-video-3\.0$/i.test(model.trim())) return 1;
     if (isSoraV3VideoModel(model)) return 4;
     if (/^kling-video-o3-omni$/i.test(model.trim())) return 7;
     return 7;
@@ -352,6 +358,12 @@ function normalizeVideoSize(value: string) {
     if (size === "3:4") return "768x1024";
     if (size === "16:9") return "1280x720";
     return ["9:16", "2:3", "3:4"].includes(size) ? "720x1280" : "1280x720";
+}
+
+function normalizeSoraVideoSize(value: string, model: string) {
+    const size = normalizeVideoSize(value) || "1280x720";
+    if (/^sora-2-pro$/i.test(model.trim()) && ["720x1280", "1280x720", "1792x1024", "1024x1792"].includes(size)) return size;
+    return size === "720x1280" ? "720x1280" : "1280x720";
 }
 
 function normalizeVideoResolution(value: string) {
@@ -577,7 +589,14 @@ function shouldFallbackToTaskVideoApi(error: unknown) {
 }
 
 function shouldFallbackToNextVideoSource(error: unknown) {
-    return shouldFallbackToTaskVideoApi(error) || (error instanceof Error && /没有返回视频地址/.test(error.message));
+    return shouldFallbackToTaskVideoApi(error) || shouldFallbackToCompatibleVideoApi(error) || (error instanceof Error && /没有返回视频地址/.test(error.message));
+}
+
+function shouldFallbackToCompatibleVideoApi(error: unknown) {
+    if (!axios.isAxiosError(error) || error.response?.status !== 400) return false;
+    const message = extractApiErrorMessage(error.response.data);
+    // 上游 token 池不可用不是请求参数错误，继续尝试兼容接口，避免单一路径直接卡死。
+    return /no active tokens available|no available tokens?|tokens? unavailable|no available channel|channel unavailable/i.test(message);
 }
 
 function isGrokVideosMultipartModel(model: string) {
@@ -590,6 +609,10 @@ function isChatCompletionsFirstModel(model: string) {
 
 function isSora2VideoModel(model: string) {
     return /^sora-?2(?:-|$)/i.test(model.trim());
+}
+
+function isGeekNowSoraModel(model: string) {
+    return /^sora-2(?:-pro)?$/i.test(model.trim());
 }
 
 function isSoraV3VideoModel(model: string) {
