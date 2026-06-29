@@ -546,7 +546,8 @@ export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile
 
 async function callImagesApi(opts: CallApiOptions, profile: ApiProfile, customProvider?: CustomProviderDefinition | null): Promise<CallApiResult> {
   const n = opts.params.n > 0 ? opts.params.n : 1
-  if ((profile.codexCli || (profile.streamImages && n > 1)) && n > 1) {
+  const isEdit = opts.inputImageDataUrls.length > 0
+  if ((profile.codexCli || (profile.streamImages && !isEdit && n > 1)) && n > 1) {
     return callImagesApiConcurrent(opts, profile, n, customProvider)
   }
 
@@ -603,6 +604,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
     ? `${PROMPT_REWRITE_GUARD_PREFIX}\n${originalPrompt}`
     : originalPrompt
   const isEdit = inputImageDataUrls.length > 0
+  const shouldStreamImages = Boolean(profile.streamImages && !isEdit)
   const mime = MIME_MAP[params.output_format] || 'image/png'
   const proxyConfig = readClientDevProxyConfig()
   const useApiProxy = shouldUseApiProxyForBaseUrl(profile.apiProxy, profile.baseUrl, proxyConfig)
@@ -637,7 +639,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       if (profile.responseFormatB64Json) {
         formData.append('response_format', 'b64_json')
       }
-      if (profile.streamImages) {
+      if (shouldStreamImages) {
         formData.append('stream', 'true')
         formData.append('partial_images', String(getStreamPartialImages(profile)))
       }
@@ -700,7 +702,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       if (profile.responseFormatB64Json) {
         body.response_format = 'b64_json'
       }
-      if (profile.streamImages) {
+      if (shouldStreamImages) {
         body.stream = true
         body.partial_images = getStreamPartialImages(profile)
       }
@@ -723,7 +725,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       throw new Error(await getApiErrorMessage(response))
     }
 
-    if (profile.streamImages && isEventStreamResponse(response)) {
+    if (isEventStreamResponse(response)) {
       return parseImagesApiStreamResponse(response, mime, opts.onPartialImage)
     }
 

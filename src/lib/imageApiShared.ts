@@ -169,17 +169,33 @@ export function getSafeImageDisplayUrl(url: string): string {
 }
 
 export async function getApiErrorMessage(response: Response): Promise<string> {
-  let errorMsg = `HTTP ${response.status}`
+  let rawText = ''
   try {
-    const errJson = await response.json()
-    if (errJson.error?.message) errorMsg = errJson.error.message
-    else if (typeof errJson.detail === 'string') errorMsg = errJson.detail
-    else if (Array.isArray(errJson.detail)) errorMsg = errJson.detail.map((item: unknown) => typeof item === 'string' ? item : JSON.stringify(item)).join('\n')
-    else if (typeof errJson.error === 'string') errorMsg = errJson.error
-    else if (errJson.message) errorMsg = errJson.message
+    rawText = await response.text()
   } catch {
+    /* ignore */
+  }
+
+  let errorMsg = rawText.trim() || `HTTP ${response.status}`
+  if (rawText.trim()) {
     try {
-      errorMsg = await response.text()
+      const errJson = JSON.parse(rawText) as unknown
+      if (errJson && typeof errJson === 'object') {
+        const record = errJson as Record<string, unknown>
+        const error = record.error
+        if (error && typeof error === 'object' && !Array.isArray(error)) {
+          const message = (error as Record<string, unknown>).message
+          if (typeof message === 'string' && message.trim()) errorMsg = message
+        } else if (typeof error === 'string' && error.trim()) {
+          errorMsg = error
+        } else if (typeof record.detail === 'string' && record.detail.trim()) {
+          errorMsg = record.detail
+        } else if (Array.isArray(record.detail)) {
+          errorMsg = record.detail.map((item: unknown) => typeof item === 'string' ? item : JSON.stringify(item)).join('\n')
+        } else if (typeof record.message === 'string' && record.message.trim()) {
+          errorMsg = record.message
+        }
+      }
     } catch {
       /* ignore */
     }

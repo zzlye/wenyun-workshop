@@ -415,6 +415,48 @@ describe('callImageApi', () => {
     })
   })
 
+  it('does not send streaming fields on GPT Image 2 4K image edits', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.startsWith('data:')) return new Response(new Blob(['ref'], { type: 'image/png' }))
+      return new Response(JSON.stringify({
+        data: [{ b64_json: 'ZWRpdGVk' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      apiKey: 'test-key',
+      model: 'gpt-image-2-4k',
+      streamImages: true,
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
+        ...profile,
+        apiKey: 'test-key',
+        model: 'gpt-image-2-4k',
+        streamImages: true,
+      })),
+    }
+
+    await callImageApi({
+      settings,
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS, size: '3840x2160' },
+      inputImageDataUrls: ['data:image/png;base64,cmVm'],
+    } as any)
+
+    const apiCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/images/edits'))
+    expect(apiCall).toBeTruthy()
+    const [, init] = apiCall!
+    const formData = (init as RequestInit).body as FormData
+    expect(formData.get('model')).toBe('gpt-image-2-4k')
+    expect(formData.get('size')).toBe('3840x2160')
+    expect(formData.get('stream')).toBeNull()
+    expect(formData.get('partial_images')).toBeNull()
+  })
+
   it('routes Banana image models through standard NewAPI image generations', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
       data: [{ b64_json: 'ZmluYWw=' }],

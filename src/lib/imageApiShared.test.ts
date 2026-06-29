@@ -31,6 +31,15 @@ describe('getApiErrorMessage', () => {
 
     await expect(getApiErrorMessage(response)).resolves.toBe(GENERIC_QUOTA_ERROR_MESSAGE)
   })
+
+  it('keeps plain text server errors instead of replacing them with JSON parse errors', async () => {
+    const response = new Response('upstream engine error', {
+      status: 500,
+      headers: { 'Content-Type': 'text/plain' },
+    })
+
+    await expect(getApiErrorMessage(response)).resolves.toBe('upstream engine error')
+  })
 })
 
 describe('fetchImageUrlAsDataUrl', () => {
