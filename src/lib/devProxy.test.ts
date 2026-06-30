@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildApiUrl, getLockedAssetProxyUrl, getLockedNewApiPerformanceProxyUrl, getLockedNewApiProxyUrl, shouldUseApiProxyForBaseUrl } from './devProxy'
+import { buildApiUrl, getLockedAssetProxyUrl, getLockedNewApiPerformanceProxyUrl, getLockedNewApiPricingProxyUrl, getLockedNewApiProxyUrl, shouldUseApiProxyForBaseUrl } from './devProxy'
 
 describe('buildApiUrl', () => {
   it('uses the same-origin proxy prefix when API proxy is enabled', () => {
@@ -64,6 +64,16 @@ describe('buildApiUrl', () => {
       '/model-performance-proxy/public/api/perf-metrics/summary?hours=24',
     )
     expect(getLockedNewApiPerformanceProxyUrl('https://zzlye.xyz:60/api/models/')).toBeNull()
+  })
+
+  it('routes only locked NewAPI pricing through the credentialed proxy', () => {
+    expect(getLockedNewApiPricingProxyUrl('https://zzlye.xyz:60/api/pricing')).toBe(
+      '/model-pricing-proxy/wenyun/api/pricing',
+    )
+    expect(getLockedNewApiPricingProxyUrl('https://1520635.xyz:3901/api/pricing')).toBe(
+      '/model-pricing-proxy/public/api/pricing',
+    )
+    expect(getLockedNewApiPricingProxyUrl('https://zzlye.xyz:60/api/ratio_config')).toBeNull()
   })
 
   it('routes third-party image assets through the generic same-origin asset proxy', () => {

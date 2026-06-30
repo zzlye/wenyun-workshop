@@ -176,6 +176,42 @@ describe('newApi model unit cost', () => {
     expect(fetchMock.mock.calls[1][0]).toBe('https://example.com/api/pricing')
   })
 
+  it('uses the locked same-origin pricing proxy for the Wenyun site', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          'general_setting.custom_currency_symbol': 'HUHN',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        success: true,
+        data: [
+          { model_name: 'gpt-image-2-4k', model_price: 0.09 },
+        ],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+
+    const result = await queryNewApiPriceTable({
+      ...DEFAULT_SETTINGS.profiles[0],
+      baseUrl: 'https://zzlye.xyz:60/v1',
+      apiKey: 'test-key',
+    })
+
+    expect(result).toMatchObject({
+      found: true,
+      items: [
+        { model: 'gpt-image-2-4k', rawPrice: 0.09, text: 'HUHN 0.09' },
+      ],
+    })
+    expect(String(fetchMock.mock.calls[1][0])).toBe('/model-pricing-proxy/wenyun/api/pricing')
+    expect((fetchMock.mock.calls[1][1]?.headers as Record<string, string> | undefined)?.Authorization).toBeUndefined()
+  })
+
   it('does not request protected price endpoints without an access token', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({

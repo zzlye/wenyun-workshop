@@ -14,7 +14,7 @@ describe('fixed image model pricing', () => {
 
     expect(rows).toEqual(expect.arrayContaining([
       expect.objectContaining({ model: 'gpt-image-2', resolutionText: '1K', priceText: 'HUHN 0.06' }),
-      expect.objectContaining({ model: 'gpt-image-2-4k', resolutionText: '1K、2K、4K', priceText: 'HUHN 0.15' }),
+      expect.objectContaining({ model: 'gpt-image-2-4k', resolutionText: '1K、2K、4K', priceText: 'HUHN 0.09' }),
       expect.objectContaining({ model: 'Nano-Banana-2', resolutionText: '1K、2K、4K' }),
       expect.objectContaining({ model: 'Nano-Banana-Pro', resolutionText: '1K、2K、4K' }),
     ]))

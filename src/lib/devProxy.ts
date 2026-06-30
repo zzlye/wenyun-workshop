@@ -17,6 +17,7 @@ const LOCKED_PROXY_TARGETS = [
     apiPrefix: '/api-proxy/wenyun',
     newApiPrefix: '/newapi-proxy/wenyun',
     performancePrefix: '/model-performance-proxy/wenyun',
+    pricingPrefix: '/model-pricing-proxy/wenyun',
   },
   {
     baseUrl: 'https://1520635.xyz:3901/v1',
@@ -24,6 +25,7 @@ const LOCKED_PROXY_TARGETS = [
     apiPrefix: '/api-proxy/public',
     newApiPrefix: '/newapi-proxy/public',
     performancePrefix: '/model-performance-proxy/public',
+    pricingPrefix: '/model-pricing-proxy/public',
   },
 ] as const
 
@@ -99,6 +101,19 @@ export function getLockedNewApiPerformanceProxyUrl(url: string): string | null {
     // 成功率接口需要 NewAPI 前台登录态，Docker 里用只读同源代理在服务端注入凭证。
     if (parsed.pathname !== '/api/perf-metrics/summary') return null
     return `${target.performancePrefix}${parsed.pathname}${parsed.search}`
+  } catch {
+    return null
+  }
+}
+
+export function getLockedNewApiPricingProxyUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    const target = LOCKED_PROXY_TARGETS.find((item) => item.origin.toLowerCase() === parsed.origin.toLowerCase())
+    if (!target) return null
+    // NewAPI 价格接口可配置为需要前台登录态，内置站点走只读代理在服务端注入凭证。
+    if (parsed.pathname !== '/api/pricing') return null
+    return `${target.pricingPrefix}${parsed.pathname}${parsed.search}`
   } catch {
     return null
   }

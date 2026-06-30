@@ -56,6 +56,28 @@ const lockedFetchProxyRoutes: LockedFetchProxyRoute[] = [
     },
   },
   {
+    prefix: '/model-pricing-proxy/wenyun/api/pricing',
+    target: 'https://zzlye.xyz:60',
+    rewrite: (path) => path.replace(/^\/model-pricing-proxy\/wenyun/, ''),
+    exact: true,
+    auth: {
+      accessTokenEnv: 'NEWAPI_WENYUN_ACCESS_TOKEN',
+      userIdEnv: 'NEWAPI_WENYUN_USER_ID',
+      label: '文运站价格代理',
+    },
+  },
+  {
+    prefix: '/model-pricing-proxy/public/api/pricing',
+    target: 'https://1520635.xyz:3901',
+    rewrite: (path) => path.replace(/^\/model-pricing-proxy\/public/, ''),
+    exact: true,
+    auth: {
+      accessTokenEnv: 'NEWAPI_PUBLIC_ACCESS_TOKEN',
+      userIdEnv: 'NEWAPI_PUBLIC_USER_ID',
+      label: '公益站价格代理',
+    },
+  },
+  {
     prefix: '/api-proxy/wenyun',
     target: 'https://zzlye.xyz:60',
     rewrite: (path) => path.replace(/^\/api-proxy\/wenyun/, '/v1'),

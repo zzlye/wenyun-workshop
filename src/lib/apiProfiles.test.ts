@@ -639,7 +639,7 @@ describe('custom providers', () => {
     })
 
     expect(getApiModelUnitCostText(withPrices, LOCKED_WENYUN_PROFILE_ID, 'gpt-image-2-4k')).toBe('HUHN 0.11')
-    expect(getApiModelUnitCostText(withPrices, LOCKED_WENYUN_PROFILE_ID, 'gpt-image-2-vip')).toBe('HUHN 0.15')
+    expect(getApiModelUnitCostText(withPrices, LOCKED_WENYUN_PROFILE_ID, 'gpt-image-2-vip')).toBe('HUHN 0.11')
   })
 
   it('keeps Codex CLI compatibility disabled for locked profiles', () => {
@@ -701,9 +701,9 @@ describe('custom providers', () => {
 
   it('uses fixed display prices for built-in image models', () => {
     expect(getFixedImageModelUnitCostText(DEFAULT_IMAGES_MODEL)).toBe('HUHN 0.06')
-    expect(getFixedImageModelUnitCostText(GPT_IMAGE_2_VIP_MODEL)).toBe('HUHN 0.15')
-    expect(getFixedImageModelUnitCostText('gpt-image-2-vip')).toBe('HUHN 0.15')
-    expect(getFixedImageModelUnitCostText('gpt-image-2-4k')).toBe('HUHN 0.15')
+    expect(getFixedImageModelUnitCostText(GPT_IMAGE_2_VIP_MODEL)).toBe('HUHN 0.09')
+    expect(getFixedImageModelUnitCostText('gpt-image-2-vip')).toBe('HUHN 0.09')
+    expect(getFixedImageModelUnitCostText('gpt-image-2-4k')).toBe('HUHN 0.09')
     expect(getFixedImageModelUnitCostText('Nano-Banana-2')).toBe('HUHN 0.09')
     expect(getFixedImageModelUnitCostText('Nano-Banana-Pro')).toBe('HUHN 0.15')
     expect(getFixedImageRequestModel(GPT_IMAGE_2_VIP_MODEL)).toBe('gpt-image-2-4k')

@@ -114,7 +114,11 @@ function normalizeApiPriceSnapshot(value: unknown): ApiPriceSnapshot | null {
 export function getApiModelUnitCostText(settings: AppSettings, profileId: string, model: string): string | null {
   const snapshot = settings.apiPriceByProfileId[profileId]
   const normalizedModel = model.trim().toLowerCase()
-  const synced = snapshot?.items.find((item) => item.model.trim().toLowerCase() === normalizedModel)
+  const normalizedRequestModel = getFixedImageRequestModel(model).trim().toLowerCase()
+  const synced = snapshot?.items.find((item) => {
+    const itemModel = item.model.trim().toLowerCase()
+    return itemModel === normalizedModel || itemModel === normalizedRequestModel
+  })
   return synced?.text ?? getFixedImageModelUnitCostText(model)
 }
 

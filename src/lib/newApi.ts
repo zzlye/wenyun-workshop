@@ -1,6 +1,6 @@
 import type { ApiProfile } from '../types'
 import { getFixedImageRequestModel } from './apiProfiles'
-import { getLockedNewApiPerformanceProxyUrl, getLockedNewApiProxyUrl } from './devProxy'
+import { getLockedNewApiPerformanceProxyUrl, getLockedNewApiPricingProxyUrl, getLockedNewApiProxyUrl } from './devProxy'
 import type { ApiPriceSnapshot } from '../types'
 
 export interface NewApiBalanceResult {
@@ -170,6 +170,15 @@ async function fetchPublicJsonWithCorsFallback(url: string, timeoutMs = PUBLIC_F
 }
 
 async function fetchPublicPriceJson(url: string, apiKey?: string, timeoutMs = 2500): Promise<unknown> {
+  const lockedPricingProxyUrl = getLockedNewApiPricingProxyUrl(url)
+  if (lockedPricingProxyUrl) {
+    try {
+      return await fetchJsonWithTimeout(lockedPricingProxyUrl, undefined, timeoutMs)
+    } catch (err) {
+      // 价格代理需要服务端配置 NewAPI 前台凭证；未配置时继续走原公开接口兜底。
+      if (!(err instanceof HttpStatusError) || err.status !== 503) throw err
+    }
+  }
   const sameOriginProxyUrl = getWenyunPublicProxyUrl(url)
   if (sameOriginProxyUrl) return fetchJsonWithTimeout(sameOriginProxyUrl, apiKey, timeoutMs)
   return fetchPublicJsonWithCorsFallback(url, timeoutMs)

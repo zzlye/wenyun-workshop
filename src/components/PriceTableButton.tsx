@@ -34,6 +34,7 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
   const [open, setOpen] = useState(false)
   const [contactOpen, setContactOpen] = useState(false)
   const [isLoadingPerformance, setIsLoadingPerformance] = useState(false)
+  const [priceError, setPriceError] = useState('')
   const [performanceError, setPerformanceError] = useState('')
   const [performanceItems, setPerformanceItems] = useState<NewApiModelPerformanceItem[]>([])
   const [performanceUpdatedAt, setPerformanceUpdatedAt] = useState<number | null>(null)
@@ -50,7 +51,9 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
 
   const loadPerformance = async () => {
     setIsLoadingPerformance(true)
+    setPriceError('')
     setPerformanceError('')
+
     try {
       const priceTable = await queryNewApiPriceTable(activeProfile)
       if (priceTable.found) {
@@ -63,7 +66,14 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
           updatedAt: priceTable.updatedAt,
           found: priceTable.found,
         }))
+      } else {
+        setPriceError('本次价格同步未获取到数据，已沿用上次同步价格或固定价格')
       }
+    } catch (err) {
+      setPriceError(err instanceof Error ? `价格同步失败：${err.message}` : '价格同步失败，已沿用上次同步价格或固定价格')
+    }
+
+    try {
       const result = await queryNewApiModelPerformance(activeProfile, 24)
       setPerformanceItems(result.items)
       setPerformanceUpdatedAt(result.found ? result.updatedAt : null)
@@ -160,6 +170,11 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
               {performanceError ? (
                 <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
                   {performanceError}
+                </div>
+              ) : null}
+              {priceError ? (
+                <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-400/20 dark:bg-blue-500/10 dark:text-blue-200">
+                  {priceError}
                 </div>
               ) : null}
               <div className="overflow-x-auto rounded-xl border border-gray-200/70 dark:border-white/[0.08]">
