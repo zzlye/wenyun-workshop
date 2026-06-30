@@ -8,19 +8,26 @@ import { installMobileViewportGuards } from './lib/viewport'
 
 installMobileViewportGuards()
 
-if ('serviceWorker' in navigator) {
-  if (import.meta.env.PROD) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch((error) => {
-        console.error('Service worker registration failed:', error)
-      })
-    })
-  } else {
+function clearLegacyAppShellCache() {
+  // 旧版本注册过 Service Worker，会缓存入口 HTML；新版本禁用并清掉它，避免用户更新后白屏。
+  if ('serviceWorker' in navigator) {
     navigator.serviceWorker.getRegistrations().then((registrations) => {
       registrations.forEach((registration) => registration.unregister())
-    })
+    }).catch(() => {})
+  }
+
+  if ('caches' in window) {
+    caches.keys().then((keys) => {
+      keys.forEach((key) => {
+        if (/gpt-image-playground|wenyun-workshop|workbox|vite/i.test(key)) {
+          caches.delete(key)
+        }
+      })
+    }).catch(() => {})
   }
 }
+
+clearLegacyAppShellCache()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
