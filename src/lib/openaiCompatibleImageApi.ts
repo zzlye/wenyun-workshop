@@ -24,7 +24,6 @@ import {
 } from './imageApiShared'
 
 const PROMPT_REWRITE_GUARD_PREFIX = 'Use the following text as the complete prompt. Do not rewrite it:'
-const BANANA_SUPPORTED_ASPECT_RATIOS = ['1:1', '3:2', '2:3', '4:3', '3:4', '16:9', '9:16'] as const
 
 function getStreamPartialImages(profile: ApiProfile): number {
   return profile.streamPartialImages ?? DEFAULT_STREAM_PARTIAL_IMAGES
@@ -44,26 +43,10 @@ function getBananaImageSize(size: string): '1K' | '2K' | '4K' {
 
 function getBananaAspectRatio(size: string): string {
   const match = normalizeImageSize(size).match(/^(\d+)x(\d+)$/)
-  if (match) return normalizeBananaAspectRatio(Number(match[1]), Number(match[2]))
+  if (match) return formatImageRatio(Number(match[1]), Number(match[2])).replace(/^≈/, '') || '1:1'
   const ratio = parseRatio(size)
-  if (ratio) return normalizeBananaAspectRatio(ratio.width, ratio.height)
+  if (ratio) return formatImageRatio(ratio.width, ratio.height).replace(/^≈/, '') || '1:1'
   return '1:1'
-}
-
-function normalizeBananaAspectRatio(width: number, height: number): string {
-  const label = formatImageRatio(width, height).replace(/^≈/, '')
-  if ((BANANA_SUPPORTED_ASPECT_RATIOS as readonly string[]).includes(label)) return label
-
-  const target = width / Math.max(1, height)
-  return BANANA_SUPPORTED_ASPECT_RATIOS
-    .map((item) => {
-      const ratio = parseRatio(item)
-      return {
-        value: item,
-        delta: ratio ? Math.abs(target - ratio.width / ratio.height) : Number.POSITIVE_INFINITY,
-      }
-    })
-    .sort((a, b) => a.delta - b.delta)[0]?.value || '1:1'
 }
 
 function appendBananaGenerationFields(target: Record<string, unknown>, profile: ApiProfile, params: TaskParams) {
