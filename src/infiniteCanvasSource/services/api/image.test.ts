@@ -184,17 +184,19 @@ describe("canvas image api", () => {
     it.each([
         ["文运站 Banana 2", "Nano-Banana-2", "nano-banana-2"],
         ["文运站 Banana Pro", "Nano-Banana-Pro", "nano-banana-pro"],
-    ])("routes %s canvas image edits through Wenyun JSON generation compatibility", async (
+    ])("routes %s canvas image edits through standard NewAPI edits like public site", async (
         _label,
         model,
         requestModel,
     ) => {
-        const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-            new Response(JSON.stringify({ results: [{ url: "data:image/png;base64,ZWRpdGVk" }] }), {
+        const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+            const url = String(input);
+            if (url.startsWith("data:")) return new Response(new Blob(["ref"], { type: "image/png" }));
+            return new Response(JSON.stringify({ data: [{ b64_json: "ZWRpdGVk" }] }), {
                 status: 200,
                 headers: { "Content-Type": "application/json" },
-            }),
-        );
+            });
+        });
 
         useStore.setState({
             settings: {
@@ -222,19 +224,17 @@ describe("canvas image api", () => {
             [{ id: "ref-1", name: "ref.png", type: "image/png", dataUrl: "data:image/png;base64,cmVm" }],
         );
 
-        const apiCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/images/generations"));
+        const apiCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/images/edits"));
         expect(apiCall).toBeTruthy();
         const [url, init] = apiCall!;
-        const body = JSON.parse(String((init as RequestInit).body));
-        expect(String(url)).toBe("/api-proxy/wenyun/images/generations");
-        expect(body).toMatchObject({
-            model: requestModel,
-            prompt: "帮我美化封面",
-            images: ["data:image/png;base64,cmVm"],
-            aspectRatio: "16:9",
-            imageSize: "2K",
-            replyType: "json",
-        });
+        const formData = (init as RequestInit).body as FormData;
+        expect(String(url)).toBe("/api-proxy/wenyun/images/edits");
+        expect(formData.get("model")).toBe(requestModel);
+        expect(formData.get("prompt")).toBe("帮我美化封面");
+        expect(formData.get("aspectRatio")).toBe("16:9");
+        expect(formData.get("imageSize")).toBe("2K");
+        expect(formData.get("replyType")).toBe("json");
+        expect(formData.getAll("image[]")).toHaveLength(1);
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZWRpdGVk" }]);
     });
 
