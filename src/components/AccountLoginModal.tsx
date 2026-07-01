@@ -87,7 +87,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
       })
       updateAccountSession(session, { accountApiKeyMode: session.boundApiKey && !normalizedSettings.profiles.find((profile) => profile.id === LOCKED_WENYUN_PROFILE_ID)?.apiKey.trim() ? 'account' : normalizedSettings.accountApiKeyMode })
       setAccountPassword('')
-      showToast(session.boundApiKey ? '登录成功' : '登录成功，账号暂未返回可用 Key', 'success')
+      showToast('登录成功', 'success')
     } catch (err) {
       showToast(err instanceof Error ? err.message : '登录失败', 'error')
     } finally {
@@ -111,7 +111,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
       })
       updateAccountSession(session, { accountApiKeyMode: session.boundApiKey && !normalizedSettings.profiles.find((profile) => profile.id === LOCKED_WENYUN_PROFILE_ID)?.apiKey.trim() ? 'account' : normalizedSettings.accountApiKeyMode })
       setAccountPassword('')
-      showToast(session.boundApiKey ? '注册成功' : '注册成功，账号暂未返回可用 Key', 'success')
+      showToast('注册成功', 'success')
     } catch (err) {
       showToast(err instanceof Error ? err.message : '注册失败', 'error')
     } finally {
@@ -205,11 +205,6 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
                 <span className="text-gray-500 dark:text-gray-400">绑定 Key</span>
                 <span className="font-mono text-xs text-gray-700 dark:text-gray-200">{maskApiKey(accountSession.boundApiKey)}</span>
               </div>
-              {!accountSession.boundApiKey && (
-                <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">
-                  当前 NewAPI 登录接口没有返回可管理的 Access Token，暂时不能自动创建绑定 Key。可继续使用设置里的自定义 Key。
-                </div>
-              )}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-gray-500 dark:text-gray-400">账号余额</span>
                 <span className="text-gray-700 dark:text-gray-200">{accountSession.balanceText || '未查询'}</span>

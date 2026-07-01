@@ -81,15 +81,18 @@ async function newApiRequest<T>(
     method?: RequestMethod
     body?: unknown
     accessToken?: string
+    userId?: number | string
   } = {},
 ): Promise<T> {
   const headers: Record<string, string> = {}
   if (options.body !== undefined) headers['Content-Type'] = 'application/json'
   if (options.accessToken) headers.Authorization = `Bearer ${options.accessToken}`
+  if (options.userId !== undefined && options.userId !== '') headers['New-Api-User'] = String(options.userId)
 
   const response = await fetch(proxiedNewApiUrl(profile, path), {
     method: options.method ?? 'GET',
     cache: 'no-store',
+    credentials: 'include',
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   })
@@ -106,6 +109,7 @@ async function newApiRequest<T>(
 }
 
 export function readAccessToken(payload: unknown): string {
+  if (typeof payload === 'string') return payload.trim()
   const record = getRecord(payload)
   if (!record) return ''
   const direct =
@@ -171,6 +175,10 @@ function readTokenName(payload: unknown): string | undefined {
   return getString(record.name) || getString(record.token_name) || getString(record.tokenName) || undefined
 }
 
+function isMaskedTokenKey(key: string): boolean {
+  return key.includes('*')
+}
+
 function normalizeTokenList(payload: unknown): Record<string, unknown>[] {
   const data = getPayloadData(payload)
   const record = getRecord(data)
@@ -192,12 +200,9 @@ function isBoundToken(token: Record<string, unknown>, expectedName?: string) {
   return name.startsWith(ACCOUNT_BOUND_TOKEN_PREFIX)
 }
 
-function pickLatestBoundToken(tokens: Record<string, unknown>[], expectedName?: string): NewApiBoundKeyResult | null {
+function pickLatestBoundTokenRecord(tokens: Record<string, unknown>[], expectedName?: string): Record<string, unknown> | null {
   const candidates = tokens.filter((token) => isBoundToken(token, expectedName))
-  const token = candidates[candidates.length - 1] ?? tokens[tokens.length - 1]
-  const key = token ? readTokenKey(token) : ''
-  if (!token || !key) return null
-  return { key, id: readTokenId(token), name: readTokenName(token) }
+  return candidates[candidates.length - 1] ?? null
 }
 
 function makeBoundTokenName(username: string) {
@@ -208,6 +213,17 @@ export async function sendNewApiEmailVerification(profile: ApiProfile, email: st
   await newApiRequest(profile, `/api/verification?email=${encodeURIComponent(email.trim())}`)
 }
 
+export async function fetchNewApiUserAccessToken(
+  profile: Pick<ApiProfile, 'baseUrl'>,
+  userId: number | string | undefined,
+): Promise<string> {
+  if (userId === undefined || userId === '') throw new Error('登录成功，但没有返回用户 ID')
+  const result = await newApiRequest<unknown>(profile, '/api/user/token', { userId })
+  const accessToken = readAccessToken(result)
+  if (!accessToken) throw new Error('登录成功，但没有获取到账号管理 Token')
+  return accessToken
+}
+
 export async function loginNewApiAccount(profile: ApiProfile, payload: NewApiLoginPayload): Promise<NewApiAccountSession> {
   const result = await newApiRequest<unknown>(profile, '/api/user/login', {
     method: 'POST',
@@ -216,24 +232,18 @@ export async function loginNewApiAccount(profile: ApiProfile, payload: NewApiLog
       password: payload.password,
     },
   })
-  const accessToken = readAccessToken(result)
+  const userId = readUserId(result)
+  const accessToken = readAccessToken(result) || await fetchNewApiUserAccessToken(profile, userId)
 
   const session: NewApiAccountSession = {
     siteProfileId: profile.id,
     username: payload.username.trim(),
     accessToken,
-    userId: readUserId(result),
+    userId,
     email: readEmail(result),
     displayName: readDisplayName(result),
   }
-  if (!accessToken) return session
-
-  try {
-    return await ensureNewApiBoundKey(profile, session)
-  } catch {
-    // 有些 NewAPI 实例登录接口只返回 Session，不返回管理 Access Token；此时先保留账号状态。
-    return session
-  }
+  return ensureNewApiBoundKey(profile, session)
 }
 
 export async function registerNewApiAccount(profile: ApiProfile, payload: NewApiRegisterPayload): Promise<NewApiAccountSession> {
@@ -259,9 +269,43 @@ export async function fetchNewApiAccountBalance(profile: ApiProfile, session: Ne
   }
 }
 
-export async function fetchNewApiTokens(profile: ApiProfile, accessToken: string): Promise<Record<string, unknown>[]> {
-  const payload = await newApiRequest<unknown>(profile, '/api/token/?p=0&page_size=100', { accessToken })
+export async function fetchNewApiTokens(
+  profile: ApiProfile,
+  accessToken: string,
+  userId?: number | string,
+): Promise<Record<string, unknown>[]> {
+  const payload = await newApiRequest<unknown>(profile, '/api/token/?p=1&size=100', { accessToken, userId })
   return normalizeTokenList(payload)
+}
+
+export async function fetchNewApiTokenFullKey(
+  profile: ApiProfile,
+  session: NewApiAccountSession,
+  tokenId: number | string | undefined,
+): Promise<string> {
+  if (tokenId === undefined || tokenId === '') return ''
+  const result = await newApiRequest<unknown>(profile, `/api/token/${encodeURIComponent(String(tokenId))}/key`, {
+    method: 'POST',
+    accessToken: session.accessToken,
+    userId: session.userId,
+  })
+  return readTokenKey(result)
+}
+
+async function toUsableBoundToken(
+  profile: ApiProfile,
+  session: NewApiAccountSession,
+  token: Record<string, unknown> | null,
+): Promise<NewApiBoundKeyResult | null> {
+  if (!token) return null
+  const id = readTokenId(token)
+  const name = readTokenName(token)
+  const listedKey = readTokenKey(token)
+  const fullKey = !listedKey || isMaskedTokenKey(listedKey)
+    ? await fetchNewApiTokenFullKey(profile, session, id)
+    : listedKey
+  if (!fullKey || isMaskedTokenKey(fullKey)) return null
+  return { key: fullKey, id, name }
 }
 
 export async function createNewApiBoundToken(profile: ApiProfile, session: NewApiAccountSession): Promise<NewApiBoundKeyResult> {
@@ -269,30 +313,41 @@ export async function createNewApiBoundToken(profile: ApiProfile, session: NewAp
   const result = await newApiRequest<unknown>(profile, '/api/token/', {
     method: 'POST',
     accessToken: session.accessToken,
-    body: { name },
+    userId: session.userId,
+    body: {
+      name,
+      expired_time: -1,
+      unlimited_quota: true,
+    },
   })
   const directKey = readTokenKey(result)
-  if (directKey) return { key: directKey, id: readTokenId(result), name: readTokenName(result) ?? name }
+  if (directKey && !isMaskedTokenKey(directKey)) return { key: directKey, id: readTokenId(result), name: readTokenName(result) ?? name }
 
-  const tokens = await fetchNewApiTokens(profile, session.accessToken)
-  const created = pickLatestBoundToken(tokens, name)
+  const tokens = await fetchNewApiTokens(profile, session.accessToken, session.userId)
+  const created = await toUsableBoundToken(profile, session, pickLatestBoundTokenRecord(tokens, name))
   if (!created) throw new Error('已创建账号 Key，但无法读取 Key 内容')
   return created
 }
 
-export async function deleteNewApiToken(profile: ApiProfile, accessToken: string, tokenId: number | string | undefined): Promise<void> {
+export async function deleteNewApiToken(
+  profile: ApiProfile,
+  accessToken: string,
+  tokenId: number | string | undefined,
+  userId?: number | string,
+): Promise<void> {
   if (tokenId === undefined || tokenId === '') return
-  await newApiRequest(profile, `/api/token/${encodeURIComponent(String(tokenId))}`, {
+  await newApiRequest(profile, `/api/token/${encodeURIComponent(String(tokenId))}/`, {
     method: 'DELETE',
     accessToken,
+    userId,
   })
 }
 
 export async function ensureNewApiBoundKey(profile: ApiProfile, session: NewApiAccountSession): Promise<NewApiAccountSession> {
   if (session.boundApiKey) return session
 
-  const tokens = await fetchNewApiTokens(profile, session.accessToken)
-  const existing = pickLatestBoundToken(tokens)
+  const tokens = await fetchNewApiTokens(profile, session.accessToken, session.userId)
+  const existing = await toUsableBoundToken(profile, session, pickLatestBoundTokenRecord(tokens))
   const bound = existing ?? await createNewApiBoundToken(profile, session)
   return {
     ...session,
@@ -313,7 +368,7 @@ export async function refreshNewApiBoundKey(profile: ApiProfile, session: NewApi
   const created = await createNewApiBoundToken(profile, session)
   if (previousId !== undefined && previousId !== created.id) {
     try {
-      await deleteNewApiToken(profile, session.accessToken, previousId)
+      await deleteNewApiToken(profile, session.accessToken, previousId, session.userId)
     } catch {
       // 新 Key 已经创建成功，删除旧 Key 失败时不要影响用户继续生成。
     }
@@ -332,6 +387,7 @@ export async function redeemNewApiCode(profile: ApiProfile, session: NewApiAccou
   await newApiRequest(profile, '/api/user/topup', {
     method: 'POST',
     accessToken: session.accessToken,
+    userId: session.userId,
     body: { key: code.trim() },
   })
   return fetchNewApiAccountBalance(profile, session)
