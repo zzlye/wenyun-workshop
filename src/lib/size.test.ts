@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateImageSize } from './size'
+import { calculateImageSize, formatImageRatioWithRequestedSize } from './size'
 
 describe('calculateImageSize', () => {
   it('uses common 16:9 display resolutions for the built-in tiers', () => {
@@ -16,5 +16,15 @@ describe('calculateImageSize', () => {
 
   it('falls back to budget-based sizing for custom ratios', () => {
     expect(calculateImageSize('2K', '5:4')).toBe('2288x1824')
+  })
+})
+
+describe('formatImageRatioWithRequestedSize', () => {
+  it('uses requested size ratio before actual provider pixels', () => {
+    expect(formatImageRatioWithRequestedSize(5632, 3072, '3840x1648')).toBe('21:9')
+  })
+
+  it('keeps 21:9 preset labels for normalized preset sizes', () => {
+    expect(formatImageRatioWithRequestedSize(3840, 1600, '3840x1600')).toBe('21:9')
   })
 })

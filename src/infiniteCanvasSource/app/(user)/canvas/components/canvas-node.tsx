@@ -6,7 +6,7 @@ import { ChevronRight, Clock, Image as ImageIcon, Plus, RefreshCw, Star, Upload,
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { formatImageRatio } from "../../../../../lib/size";
+import { formatImageRatioWithRequestedSize } from "../../../../../lib/size";
 import { CanvasNodeType, type CanvasNodeData, type Position } from "../types";
 
 type ResizeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
@@ -687,7 +687,7 @@ function ImageInfoBar({ node }: { node: CanvasNodeData }) {
                 </span>
             ) : (
                 <>
-                    <span className="rounded bg-black/50 px-1.5 py-0.5 font-mono text-[11px] leading-none text-white backdrop-blur-sm">{formatImageRatio(width, height)}</span>
+                    <span className="rounded bg-black/50 px-1.5 py-0.5 font-mono text-[11px] leading-none text-white backdrop-blur-sm">{formatImageRatioWithRequestedSize(width, height, node.metadata?.size)}</span>
                     <span className="rounded bg-black/50 px-1.5 py-0.5 text-[11px] font-medium leading-none text-white/90 backdrop-blur-sm">{width}×{height}</span>
                 </>
             )}

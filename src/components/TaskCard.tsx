@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, type ReactNode } from 'react'
 import type { TaskRecord } from '../types'
 import { useStore, ensureImageCached, ensureImageThumbnailCached, subscribeImageThumbnail, updateTaskInStore, retryTask } from '../store'
-import { formatImageRatio } from '../lib/size'
+import { formatImageRatioWithRequestedSize } from '../lib/size'
 import { getParamDisplay, ActualValueBadge } from '../lib/paramDisplay'
 import { DEFAULT_IMAGES_MODEL, DEFAULT_FAL_MODEL } from '../lib/apiProfiles'
 import { getSafeImageDisplayUrl } from '../lib/imageApiShared'
@@ -59,13 +59,18 @@ function TaskActionButton({
 }
 
 function getTaskImageSize(task: TaskRecord, imageId: string) {
-  const size = task.actualParamsByImage?.[imageId]?.size || task.actualParams?.size || task.params.size
-  if (typeof size !== 'string') return null
+  const size = getTaskRequestedSize(task, imageId)
+  if (!size) return null
   const match = size.match(/^(\d+)x(\d+)$/)
   if (!match) return null
   const width = Number(match[1])
   const height = Number(match[2])
   return width > 0 && height > 0 ? { width, height } : null
+}
+
+function getTaskRequestedSize(task: TaskRecord, imageId: string) {
+  const size = task.actualParamsByImage?.[imageId]?.size || task.actualParams?.size || task.params.size
+  return typeof size === 'string' ? size : undefined
 }
 
 export default function TaskCard({
@@ -269,7 +274,7 @@ export default function TaskCard({
       if (cancelled) return
       setThumbSrc(thumbnail.dataUrl)
       if (thumbnail.width && thumbnail.height) {
-        setCoverRatio(formatImageRatio(thumbnail.width, thumbnail.height))
+        setCoverRatio(formatImageRatioWithRequestedSize(thumbnail.width, thumbnail.height, getTaskRequestedSize(task, imageId)))
         setCoverSize(`${thumbnail.width}×${thumbnail.height}`)
       }
     }
@@ -281,7 +286,7 @@ export default function TaskCard({
       setThumbSrc(getSafeImageDisplayUrl(dataUrl))
       const fallbackSize = getTaskImageSize(task, imageId)
       if (fallbackSize) {
-        setCoverRatio(formatImageRatio(fallbackSize.width, fallbackSize.height))
+        setCoverRatio(formatImageRatioWithRequestedSize(fallbackSize.width, fallbackSize.height, getTaskRequestedSize(task, imageId)))
         setCoverSize(`${fallbackSize.width}×${fallbackSize.height}`)
       }
     }

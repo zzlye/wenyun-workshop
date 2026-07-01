@@ -3,7 +3,7 @@ import { useStore, getCachedImage, ensureImageCached, reuseConfig, editOutputs, 
 import { useCloseOnEscape } from '../hooks/useCloseOnEscape'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
 import { useTooltip } from '../hooks/useTooltip'
-import { formatImageRatio } from '../lib/size'
+import { formatImageRatioWithRequestedSize } from '../lib/size'
 import { ActualValueBadge, DetailParamValue } from '../lib/paramDisplay'
 import { copyImageSourceToClipboard, copyTextToClipboard, getClipboardFailureMessage } from '../lib/clipboard'
 import { createMaskPreviewDataUrl } from '../lib/canvasImage'
@@ -449,7 +449,11 @@ export default function DetailModal() {
                   if (currentOutputImageId && image.naturalWidth > 0 && image.naturalHeight > 0) {
                     setImageRatios((prev) => ({
                       ...prev,
-                      [currentOutputImageId]: formatImageRatio(image.naturalWidth, image.naturalHeight),
+                      [currentOutputImageId]: formatImageRatioWithRequestedSize(
+                        image.naturalWidth,
+                        image.naturalHeight,
+                        task.actualParamsByImage?.[currentOutputImageId]?.size || task.actualParams?.size || task.params.size,
+                      ),
                     }))
                     setImageSizes((prev) => ({
                       ...prev,

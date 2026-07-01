@@ -164,6 +164,11 @@ export function formatImageRatio(width: number, height: number) {
   return friendlyNearest && friendlyNearest.delta <= 0.04 ? `≈${friendlyNearest.label}` : simplified
 }
 
+export function formatImageRatioWithRequestedSize(width: number, height: number, requestedSize?: string | null) {
+  const requestedRatio = formatImageRatioFromSize(requestedSize)
+  return requestedRatio || formatImageRatio(width, height)
+}
+
 /**
  * 每个档位的像素预算上限。
  * 在该预算内、满足所有 OpenAI 约束的前提下，选取总像素最大的候选尺寸。
@@ -209,6 +214,31 @@ const COMMON_SIZE_PRESETS: Record<SizeTier, Record<PresetRatio, string>> = {
     '3:4': '2400x3200',
     '21:9': '3840x1600',
   },
+}
+
+function findCommonPresetRatioByDimensions(width: number, height: number): PresetRatio | null {
+  for (const presetSizes of Object.values(COMMON_SIZE_PRESETS)) {
+    for (const [ratio, size] of Object.entries(presetSizes) as Array<[PresetRatio, string]>) {
+      const match = size.match(SIZE_PATTERN)
+      if (!match) continue
+      if (Number(match[1]) === width && Number(match[2]) === height) return ratio
+    }
+  }
+  return null
+}
+
+export function formatImageRatioFromSize(size?: string | null) {
+  if (!size) return ''
+  const parsed = parseRatio(size)
+  if (!parsed) return ''
+
+  const width = Math.round(parsed.width)
+  const height = Math.round(parsed.height)
+  const presetRatio = findCommonPresetRatioByDimensions(width, height)
+  if (presetRatio) return presetRatio
+
+  // 上游有时会返回和请求尺寸不等比的实际像素，展示比例时优先保留用户选择的尺寸语义。
+  return formatImageRatio(width, height).replace(/^≈/, '')
 }
 
 function getPresetRatioKey(ratioWidth: number, ratioHeight: number): PresetRatio | null {
