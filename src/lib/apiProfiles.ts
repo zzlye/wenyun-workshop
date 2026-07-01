@@ -1,4 +1,5 @@
 import type {
+  AccountApiKeyMode,
   ApiMode,
   ApiBalanceSnapshot,
   ApiPriceSnapshot,
@@ -15,6 +16,7 @@ import type {
   CustomProviderResultMapping,
   CustomProviderSubmitMapping,
   CustomProviderTemplate,
+  NewApiAccountSession,
   ReferenceImageEditAction,
 } from '../types'
 import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_STREAM_PARTIAL_IMAGES } from '../types'
@@ -457,6 +459,43 @@ function normalizeCloudSyncSettings(value: unknown): CloudSyncSettings {
   }
 }
 
+function normalizeAccountApiKeyMode(value: unknown): AccountApiKeyMode {
+  return value === 'account' ? 'account' : 'manual'
+}
+
+function normalizeNewApiAccountSession(value: unknown, siteProfileId: string): NewApiAccountSession | null {
+  if (!isRecord(value)) return null
+  const username = typeof value.username === 'string' ? value.username.trim() : ''
+  const accessToken = typeof value.accessToken === 'string' ? value.accessToken.trim() : ''
+  if (!username || !accessToken) return null
+
+  return {
+    siteProfileId,
+    username,
+    accessToken,
+    userId: typeof value.userId === 'string' || typeof value.userId === 'number' ? value.userId : undefined,
+    email: typeof value.email === 'string' && value.email.trim() ? value.email.trim() : undefined,
+    displayName: typeof value.displayName === 'string' && value.displayName.trim() ? value.displayName.trim() : undefined,
+    boundApiKey: typeof value.boundApiKey === 'string' ? value.boundApiKey.trim() : undefined,
+    boundApiKeyId: typeof value.boundApiKeyId === 'string' || typeof value.boundApiKeyId === 'number' ? value.boundApiKeyId : undefined,
+    boundApiKeyName: typeof value.boundApiKeyName === 'string' && value.boundApiKeyName.trim() ? value.boundApiKeyName.trim() : undefined,
+    lastKeyRefreshAt: normalizeApiBalanceUpdatedAt(value.lastKeyRefreshAt),
+    balanceText: typeof value.balanceText === 'string' && value.balanceText.trim() ? normalizeApiBalanceText(value.balanceText) : undefined,
+    balanceUpdatedAt: normalizeApiBalanceUpdatedAt(value.balanceUpdatedAt),
+  }
+}
+
+function normalizeNewApiAccountSessions(input: unknown, profileIds: Set<string>): Record<string, NewApiAccountSession> {
+  if (!isRecord(input)) return {}
+  const sessions: Record<string, NewApiAccountSession> = {}
+  for (const [profileId, value] of Object.entries(input)) {
+    if (!profileIds.has(profileId)) continue
+    const session = normalizeNewApiAccountSession(value, profileId)
+    if (session) sessions[profileId] = session
+  }
+  return sessions
+}
+
 function normalizeRequestMethod(value: unknown, fallback: CustomProviderRequestMethod = 'POST'): CustomProviderRequestMethod {
   return value === 'GET' || value === 'POST' ? value : fallback
 }
@@ -805,6 +844,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
   const profileIds = new Set(profiles.map((profile) => profile.id))
   const apiBalanceByProfileId = normalizeApiBalanceByProfileId(record, profileIds)
   const apiPriceByProfileId = normalizeApiPriceByProfileId(record, profileIds)
+  const newApiAccountSessions = normalizeNewApiAccountSessions(record.newApiAccountSessions, profileIds)
   const activeProfileId = typeof record.activeProfileId === 'string' && profiles.some((p) => p.id === record.activeProfileId)
     ? record.activeProfileId
     : profiles[0].id
@@ -869,6 +909,8 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     apiBalanceProfileId: typeof record.apiBalanceProfileId === 'string' ? record.apiBalanceProfileId : undefined,
     apiBalanceByProfileId,
     apiPriceByProfileId,
+    accountApiKeyMode: normalizeAccountApiKeyMode(record.accountApiKeyMode),
+    newApiAccountSessions,
     announcementDismissedDate: typeof record.announcementDismissedDate === 'string' ? record.announcementDismissedDate : undefined,
     announcementDismissedHash: typeof record.announcementDismissedHash === 'string' ? record.announcementDismissedHash : undefined,
     announcementDismissedForever: typeof record.announcementDismissedForever === 'boolean' ? record.announcementDismissedForever : false,
@@ -1183,5 +1225,7 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   agentMaxToolRounds: DEFAULT_AGENT_MAX_TOOL_ROUNDS,
   agentWebSearch: false,
   apiPriceByProfileId: {},
+  accountApiKeyMode: 'manual',
+  newApiAccountSessions: {},
   cloudSync: DEFAULT_CLOUD_SYNC_SETTINGS,
 })

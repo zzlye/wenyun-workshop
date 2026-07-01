@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Cloud, CloudDownload, CloudUpload, HardDrive, RefreshCw } from 'lucide-react'
 import { normalizeBaseUrl } from '../lib/api'
+import { getEffectiveImageApiProfile } from '../lib/accountApiKey'
 import { buildApiUrl, isApiProxyAvailable, isApiProxyLocked, readClientDevProxyConfig, shouldUseApiProxy } from '../lib/devProxy'
 import { useStore, exportData, importData, clearData, type SettingsTab } from '../store'
 import {
@@ -28,6 +29,16 @@ import {
 } from '../lib/apiProfiles'
 import { copyTextToClipboard, getClipboardFailureMessage } from '../lib/clipboard'
 import { queryNewApiBalance } from '../lib/newApi'
+import {
+  ACCOUNT_KEY_REFRESH_COOLDOWN_MS,
+  fetchNewApiAccountBalance,
+  loginNewApiAccount,
+  maskApiKey,
+  redeemNewApiCode,
+  refreshNewApiBoundKey,
+  registerNewApiAccount,
+  sendNewApiEmailVerification,
+} from '../lib/newApiAccount'
 import { parseModelListPayload } from '../lib/modelList'
 import { CLOUD_SYNC_PROVIDER_OPTIONS, getCloudSyncProviderInfo, hasCloudSyncPullScope, hasCloudSyncUploadScope, isCloudSyncReady, pullDataBackupFromCloud, uploadDataBackupToCloud } from '../lib/cloudSync'
 import { chooseLocalSyncFile, clearLocalSyncFile, getLocalSyncFileInfo, hasLocalSyncFileHandle, isLocalFileSyncSupported } from '../lib/localFileSync'
@@ -94,6 +105,11 @@ function saveCopyImportUrlOptions(options: CopyImportUrlOptions) {
   } catch {
     // localStorage 不可用时只保留当前会话状态。
   }
+}
+
+function formatAccountKeyCooldown(ms: number) {
+  if (ms <= 0) return ''
+  return `${Math.ceil(ms / 60_000)} 分钟后可刷新`
 }
 
 interface CustomProviderForm {
@@ -675,6 +691,17 @@ export default function SettingsModal() {
   const [draggedProfileId, setDraggedProfileId] = useState<string | null>(null)
   const [dragOverProfileId, setDragOverProfileId] = useState<string | null>(null)
   const [dragDropPosition, setDragDropPosition] = useState<'before' | 'after' | null>(null)
+  const [accountMode, setAccountMode] = useState<'login' | 'register'>('login')
+  const [accountUsername, setAccountUsername] = useState('')
+  const [accountPassword, setAccountPassword] = useState('')
+  const [accountEmail, setAccountEmail] = useState('')
+  const [accountVerificationCode, setAccountVerificationCode] = useState('')
+  const [accountInviteCode, setAccountInviteCode] = useState('')
+  const [accountRedeemCode, setAccountRedeemCode] = useState('')
+  const [isAccountBusy, setIsAccountBusy] = useState(false)
+  const [isSendingVerificationCode, setIsSendingVerificationCode] = useState(false)
+  const [isRedeemingCode, setIsRedeemingCode] = useState(false)
+  const [isRefreshingAccountKey, setIsRefreshingAccountKey] = useState(false)
   const [profileTouchDragPreview, setProfileTouchDragPreview] = useState<{
     label: string
     providerLabel: string
@@ -703,6 +730,9 @@ export default function SettingsModal() {
   const activeProfileBalance = getApiBalanceSnapshot(draft, activeProfile.id)
   const activeProfileBalanceText = activeProfileBalance?.text ?? ''
   const activeProfileBalanceUpdatedAt = activeProfileBalance?.updatedAt
+  const accountSession = draft.newApiAccountSessions[activeProfile.id] ?? null
+  const effectiveActiveProfile = getEffectiveImageApiProfile(draft, activeProfile)
+  const accountKeyCooldownRemainingMs = Math.max(0, ACCOUNT_KEY_REFRESH_COOLDOWN_MS - (Date.now() - (accountSession?.lastKeyRefreshAt ?? 0)))
   const defaultProviderOrder = ['openai', 'fal', ...draft.customProviders.map(p => p.id)]
   const providerOrder = draft.providerOrder || defaultProviderOrder
 
@@ -1558,7 +1588,7 @@ export default function SettingsModal() {
   const queryActiveProfileBalance = async () => {
     setIsQueryingBalance(true)
     try {
-      const balance = await queryNewApiBalance(activeProfile)
+      const balance = await queryNewApiBalance(effectiveActiveProfile)
       commitSettings({
         ...draft,
         ...setApiBalanceSnapshot(draft, activeProfile.id, balance),
@@ -1566,6 +1596,143 @@ export default function SettingsModal() {
       showToast('余额已更新', 'success')
     } catch (err) {
       showToast(err instanceof Error ? err.message : '余额查询失败', 'error')
+    } finally {
+      setIsQueryingBalance(false)
+    }
+  }
+
+  const updateAccountSession = (profileId: string, session: AppSettings['newApiAccountSessions'][string] | null, patch: Partial<AppSettings> = {}) => {
+    const nextSessions = { ...draft.newApiAccountSessions }
+    if (session) nextSessions[profileId] = session
+    else delete nextSessions[profileId]
+    commitSettings({
+      ...draft,
+      ...patch,
+      newApiAccountSessions: nextSessions,
+    })
+  }
+
+  const resetAccountPasswordInput = () => {
+    setAccountPassword('')
+  }
+
+  const handleSendVerificationCode = async () => {
+    if (!accountEmail.trim()) {
+      showToast('请先填写邮箱', 'error')
+      return
+    }
+    setIsSendingVerificationCode(true)
+    try {
+      await sendNewApiEmailVerification(activeProfile, accountEmail)
+      showToast('验证码已发送', 'success')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '验证码发送失败', 'error')
+    } finally {
+      setIsSendingVerificationCode(false)
+    }
+  }
+
+  const handleAccountLogin = async () => {
+    if (!accountUsername.trim() || !accountPassword) {
+      showToast('请填写账号和密码', 'error')
+      return
+    }
+    setIsAccountBusy(true)
+    try {
+      const session = await loginNewApiAccount(activeProfile, {
+        username: accountUsername,
+        password: accountPassword,
+      })
+      updateAccountSession(activeProfile.id, session, { accountApiKeyMode: draft.accountApiKeyMode === 'manual' && activeProfile.apiKey.trim() ? 'manual' : 'account' })
+      resetAccountPasswordInput()
+      showToast('账号已绑定', 'success')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '登录失败', 'error')
+    } finally {
+      setIsAccountBusy(false)
+    }
+  }
+
+  const handleAccountRegister = async () => {
+    if (!accountUsername.trim() || !accountPassword || !accountEmail.trim() || !accountVerificationCode.trim() || !accountInviteCode.trim()) {
+      showToast('请完整填写注册信息', 'error')
+      return
+    }
+    setIsAccountBusy(true)
+    try {
+      const session = await registerNewApiAccount(activeProfile, {
+        username: accountUsername,
+        password: accountPassword,
+        email: accountEmail,
+        verificationCode: accountVerificationCode,
+        inviteCode: accountInviteCode,
+      })
+      updateAccountSession(activeProfile.id, session, { accountApiKeyMode: draft.accountApiKeyMode === 'manual' && activeProfile.apiKey.trim() ? 'manual' : 'account' })
+      resetAccountPasswordInput()
+      showToast('注册并绑定成功', 'success')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '注册失败', 'error')
+    } finally {
+      setIsAccountBusy(false)
+    }
+  }
+
+  const handleAccountLogout = () => {
+    updateAccountSession(activeProfile.id, null, { accountApiKeyMode: activeProfile.apiKey.trim() ? 'manual' : draft.accountApiKeyMode })
+    showToast('账号已解绑', 'success')
+  }
+
+  const handleRefreshAccountKey = async () => {
+    if (!accountSession) return
+    setIsRefreshingAccountKey(true)
+    try {
+      const session = await refreshNewApiBoundKey(activeProfile, accountSession)
+      updateAccountSession(activeProfile.id, session)
+      showToast('账号 Key 已刷新', 'success')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '刷新 Key 失败', 'error')
+    } finally {
+      setIsRefreshingAccountKey(false)
+    }
+  }
+
+  const handleRedeemCode = async () => {
+    if (!accountSession) {
+      showToast('请先登录账号', 'error')
+      return
+    }
+    if (!accountRedeemCode.trim()) {
+      showToast('请输入兑换码', 'error')
+      return
+    }
+    setIsRedeemingCode(true)
+    try {
+      const session = await redeemNewApiCode(activeProfile, accountSession, accountRedeemCode)
+      updateAccountSession(activeProfile.id, session)
+      setAccountRedeemCode('')
+      showToast('兑换成功', 'success')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '兑换失败', 'error')
+    } finally {
+      setIsRedeemingCode(false)
+    }
+  }
+
+  const handleRefreshAccountBalance = async () => {
+    if (!accountSession) return
+    setIsQueryingBalance(true)
+    try {
+      const session = await fetchNewApiAccountBalance(activeProfile, accountSession)
+      updateAccountSession(activeProfile.id, session, {
+        ...setApiBalanceSnapshot(draft, activeProfile.id, {
+          text: session.balanceText ?? '',
+          currency: '',
+          updatedAt: session.balanceUpdatedAt ?? Date.now(),
+        }),
+      })
+      showToast('账号余额已更新', 'success')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '账号余额查询失败', 'error')
     } finally {
       setIsQueryingBalance(false)
     }
@@ -2148,6 +2315,174 @@ export default function SettingsModal() {
                 </div>
                 <div className="mt-1.5 text-xs text-gray-500 dark:text-gray-500" />
               </div>
+
+              {activeProviderIsOpenAICompatible && (
+                <div className="rounded-2xl border border-gray-200/70 bg-white/60 p-4 shadow-sm backdrop-blur-xl dark:border-white/[0.08] dark:bg-white/[0.04]">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-100">账号绑定</h4>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">不填手动 Key 时，图片生成会使用账号绑定 Key。</p>
+                    </div>
+                    {accountSession && (
+                      <button
+                        type="button"
+                        onClick={handleAccountLogout}
+                        className="rounded-xl border border-gray-200/70 bg-white/70 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:border-red-400/30 dark:hover:bg-red-500/15 dark:hover:text-red-200"
+                      >
+                        解绑
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="mb-3 grid grid-cols-2 gap-2 rounded-xl bg-gray-100/80 p-1 text-xs dark:bg-black/20">
+                    <button
+                      type="button"
+                      onClick={() => commitSettings({ ...draft, accountApiKeyMode: 'manual' })}
+                      className={`rounded-lg px-3 py-2 font-medium transition ${draft.accountApiKeyMode === 'manual' ? 'bg-white text-blue-600 shadow-sm dark:bg-white/[0.08] dark:text-blue-200' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                    >
+                      使用手动 Key
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!accountSession?.boundApiKey) {
+                          showToast('请先登录账号并创建绑定 Key', 'error')
+                          return
+                        }
+                        commitSettings({ ...draft, accountApiKeyMode: 'account' })
+                      }}
+                      className={`rounded-lg px-3 py-2 font-medium transition ${draft.accountApiKeyMode === 'account' ? 'bg-white text-blue-600 shadow-sm dark:bg-white/[0.08] dark:text-blue-200' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                    >
+                      使用账号 Key
+                    </button>
+                  </div>
+
+                  {accountSession ? (
+                    <div className="space-y-3">
+                      <div className="grid gap-3 rounded-xl border border-gray-200/70 bg-white/70 p-3 text-sm dark:border-white/[0.08] dark:bg-white/[0.03]">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-gray-500 dark:text-gray-400">当前账号</span>
+                          <span className="font-medium text-gray-800 dark:text-gray-100">{accountSession.displayName || accountSession.username}</span>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-gray-500 dark:text-gray-400">绑定 Key</span>
+                          <span className="font-mono text-xs text-gray-700 dark:text-gray-200">{maskApiKey(accountSession.boundApiKey)}</span>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-gray-500 dark:text-gray-400">账号余额</span>
+                          <span className="text-gray-700 dark:text-gray-200">{accountSession.balanceText || '未查询'}</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={handleRefreshAccountBalance}
+                          disabled={isQueryingBalance}
+                          className="rounded-xl border border-gray-200/70 bg-white/70 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:border-blue-400/30 dark:hover:bg-blue-500/15 dark:hover:text-blue-200"
+                        >
+                          {isQueryingBalance ? '查询中...' : '查询账号余额'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRefreshAccountKey}
+                          disabled={isRefreshingAccountKey || accountKeyCooldownRemainingMs > 0}
+                          className="rounded-xl border border-gray-200/70 bg-white/70 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:border-blue-400/30 dark:hover:bg-blue-500/15 dark:hover:text-blue-200"
+                        >
+                          {isRefreshingAccountKey ? '刷新中...' : accountKeyCooldownRemainingMs > 0 ? formatAccountKeyCooldown(accountKeyCooldownRemainingMs) : '刷新绑定 Key'}
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          value={accountRedeemCode}
+                          onChange={(event) => setAccountRedeemCode(event.target.value)}
+                          placeholder="兑换码"
+                          className="min-w-0 flex-1 rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleRedeemCode}
+                          disabled={isRedeemingCode}
+                          className="shrink-0 rounded-xl bg-blue-500 px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isRedeemingCode ? '兑换中...' : '兑换'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-2 rounded-xl bg-gray-100/80 p-1 text-xs dark:bg-black/20">
+                        <button
+                          type="button"
+                          onClick={() => setAccountMode('login')}
+                          className={`rounded-lg px-3 py-2 font-medium transition ${accountMode === 'login' ? 'bg-white text-blue-600 shadow-sm dark:bg-white/[0.08] dark:text-blue-200' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                        >
+                          登录
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAccountMode('register')}
+                          className={`rounded-lg px-3 py-2 font-medium transition ${accountMode === 'register' ? 'bg-white text-blue-600 shadow-sm dark:bg-white/[0.08] dark:text-blue-200' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                        >
+                          注册
+                        </button>
+                      </div>
+                      <input
+                        value={accountUsername}
+                        onChange={(event) => setAccountUsername(event.target.value)}
+                        placeholder="账号"
+                        className="w-full rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                      />
+                      <input
+                        value={accountPassword}
+                        onChange={(event) => setAccountPassword(event.target.value)}
+                        type="password"
+                        placeholder="密码"
+                        className="w-full rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                      />
+                      {accountMode === 'register' && (
+                        <>
+                          <div className="flex gap-2">
+                            <input
+                              value={accountEmail}
+                              onChange={(event) => setAccountEmail(event.target.value)}
+                              placeholder="邮箱"
+                              className="min-w-0 flex-1 rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleSendVerificationCode}
+                              disabled={isSendingVerificationCode}
+                              className="shrink-0 rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-xs font-medium text-gray-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:border-blue-400/30 dark:hover:bg-blue-500/15 dark:hover:text-blue-200"
+                            >
+                              {isSendingVerificationCode ? '发送中...' : '发验证码'}
+                            </button>
+                          </div>
+                          <input
+                            value={accountVerificationCode}
+                            onChange={(event) => setAccountVerificationCode(event.target.value)}
+                            placeholder="邮箱验证码"
+                            className="w-full rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                          />
+                          <input
+                            value={accountInviteCode}
+                            onChange={(event) => setAccountInviteCode(event.target.value)}
+                            placeholder="邀请码"
+                            className="w-full rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                          />
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        onClick={accountMode === 'login' ? handleAccountLogin : handleAccountRegister}
+                        disabled={isAccountBusy}
+                        className="w-full rounded-xl bg-blue-500 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isAccountBusy ? '处理中...' : accountMode === 'login' ? '登录并绑定 Key' : '注册并绑定 Key'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 6. API 接口（Images/Responses） */}
               {activeProfile.provider === 'openai' && (

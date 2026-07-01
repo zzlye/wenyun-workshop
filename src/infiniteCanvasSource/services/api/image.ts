@@ -6,6 +6,7 @@ import { nanoid } from "nanoid";
 import { imageToDataUrl } from "@/services/image-storage";
 import type { ReferenceImage } from "@/types/image";
 import { callImageApi } from "../../../lib/api";
+import { getEffectiveImageApiProfile } from "../../../lib/accountApiKey";
 import { normalizeSettings } from "../../../lib/apiProfiles";
 import { buildApiUrl as buildDevApiUrl, readClientDevProxyConfig } from "../../../lib/devProxy";
 import { sanitizeApiErrorMessage } from "../../../lib/imageApiShared";
@@ -96,8 +97,9 @@ function buildCanvasImageSettings(config: AiConfig): AppSettings {
     const current = normalizeSettings(useStore.getState().settings);
     const model = config.imageModel || config.model || current.model;
     const activeProfile = current.profiles.find((profile) => profile.id === current.activeProfileId);
-    const requestApiKey = activeProfile?.apiKey || config.apiKey || current.apiKey;
-    const requestTimeout = config.timeout || activeProfile?.timeout || current.timeout;
+    const effectiveProfile = activeProfile ? getEffectiveImageApiProfile(current, activeProfile) : null;
+    const requestApiKey = effectiveProfile?.apiKey || config.apiKey || current.apiKey;
+    const requestTimeout = config.timeout || effectiveProfile?.timeout || activeProfile?.timeout || current.timeout;
 
     return normalizeSettings({
         ...current,
@@ -109,7 +111,7 @@ function buildCanvasImageSettings(config: AiConfig): AppSettings {
                 ? {
                       ...profile,
                       // 画布本地配置可能残留切站前的 key，生成时必须优先使用设置里当前站点的 key。
-                      apiKey: profile.apiKey || config.apiKey,
+                      apiKey: profile.id === activeProfile?.id ? requestApiKey : profile.apiKey || config.apiKey,
                       model,
                       timeout: requestTimeout || profile.timeout,
                   }

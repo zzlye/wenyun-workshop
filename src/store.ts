@@ -18,6 +18,7 @@ import type {
 } from './types'
 import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_PARAMS } from './types'
 import { DEFAULT_SETTINGS, getActiveApiProfile, getCustomProviderDefinition, mergeImportedSettings, normalizeSettings, validateApiProfile } from './lib/apiProfiles'
+import { getEffectiveImageApiProfile, validateEffectiveImageApiProfile } from './lib/accountApiKey'
 import { dismissAllTooltips } from './lib/tooltipDismiss'
 import { remapImageMentionsForOrder, replaceImageMentionsForApi } from './lib/promptImageMentions'
 import {
@@ -2098,11 +2099,15 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     }
   }
 
-  if (validateApiProfile(activeProfile)) {
-    showToast(`请先完善请求 API 配置：${validateApiProfile(activeProfile)}`, 'error')
+  const effectiveProfile = getEffectiveImageApiProfile(normalizedSettings, activeProfile)
+  const profileValidation = validateApiProfile(effectiveProfile) || validateEffectiveImageApiProfile(normalizedSettings, activeProfile)
+  if (profileValidation) {
+    showToast(`请先完善请求 API 配置：${profileValidation}`, 'error')
     useStore.getState().setShowSettings(true)
     return
   }
+  activeProfile = effectiveProfile
+  requestSettings = createSettingsForApiProfile(normalizedSettings, effectiveProfile)
 
   if (!prompt.trim()) {
     showToast('请输入提示词', 'error')
@@ -2893,15 +2898,16 @@ export async function submitAgentMessage() {
   const state = useStore.getState()
   const { settings, prompt, inputImages, maskDraft, params, showToast } = state
   const normalizedSettings = normalizeSettings(settings)
-  const activeProfile = getActiveApiProfile(normalizedSettings)
+  const activeProfile = getEffectiveImageApiProfile(normalizedSettings, getActiveApiProfile(normalizedSettings))
 
   if (activeProfile.provider !== 'openai' || activeProfile.apiMode !== 'responses') {
     state.setAppMode('agent')
     return
   }
 
-  if (validateApiProfile(activeProfile)) {
-    showToast(`请先完善请求 API 配置：${validateApiProfile(activeProfile)}`, 'error')
+  const profileValidation = validateApiProfile(activeProfile)
+  if (profileValidation) {
+    showToast(`请先完善请求 API 配置：${profileValidation}`, 'error')
     state.setShowSettings(true)
     return
   }
@@ -3043,15 +3049,16 @@ export async function regenerateAgentAssistantMessage(conversationId: string, ro
   const state = useStore.getState()
   const { settings, params, showToast } = state
   const normalizedSettings = normalizeSettings(settings)
-  const activeProfile = getActiveApiProfile(normalizedSettings)
+  const activeProfile = getEffectiveImageApiProfile(normalizedSettings, getActiveApiProfile(normalizedSettings))
 
   if (activeProfile.provider !== 'openai' || activeProfile.apiMode !== 'responses') {
     state.setAppMode('agent')
     return
   }
 
-  if (validateApiProfile(activeProfile)) {
-    showToast(`请先完善请求 API 配置：${validateApiProfile(activeProfile)}`, 'error')
+  const profileValidation = validateApiProfile(activeProfile)
+  if (profileValidation) {
+    showToast(`请先完善请求 API 配置：${profileValidation}`, 'error')
     state.setShowSettings(true)
     return
   }
@@ -3777,7 +3784,7 @@ async function executeTask(taskId: string) {
     })
     return
   }
-  const activeProfile = taskProfile ?? getActiveApiProfile(settings)
+  const activeProfile = getEffectiveImageApiProfile(settings, taskProfile ?? getActiveApiProfile(settings))
   const requestSettings = createSettingsForApiProfile(settings, activeProfile)
   const taskProvider = task.apiProvider ?? activeProfile.provider
   let falRequestInfo: { requestId: string; endpoint: string } | null = task.falRequestId && task.falEndpoint

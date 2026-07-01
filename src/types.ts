@@ -113,6 +113,23 @@ export interface ApiPriceSnapshot {
   found?: boolean
 }
 
+export type AccountApiKeyMode = 'manual' | 'account'
+
+export interface NewApiAccountSession {
+  siteProfileId: string
+  username: string
+  accessToken: string
+  userId?: number | string
+  email?: string
+  displayName?: string
+  boundApiKey?: string
+  boundApiKeyId?: number | string
+  boundApiKeyName?: string
+  lastKeyRefreshAt?: number
+  balanceText?: string
+  balanceUpdatedAt?: number
+}
+
 export interface CloudSyncSettings {
   /** 是否启用数据同步 */
   enabled: boolean
@@ -231,6 +248,10 @@ export interface AppSettings {
   apiBalanceByProfileId: Record<string, ApiBalanceSnapshot>
   /** 各固定站点最近一次查询到的价格表 */
   apiPriceByProfileId: Record<string, ApiPriceSnapshot>
+  /** 图片生成优先使用手动填写 Key，还是登录账号绑定 Key */
+  accountApiKeyMode: AccountApiKeyMode
+  /** 每个固定站点对应的 NewAPI 登录账号和绑定 Key */
+  newApiAccountSessions: Record<string, NewApiAccountSession>
   /** 公告当天不再提醒日期，格式为 YYYY-MM-DD */
   announcementDismissedDate?: string
   /** 当天不再提醒对应的公告内容指纹，公告更新后会重新弹出 */
