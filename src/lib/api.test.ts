@@ -547,6 +547,9 @@ describe('callImageApi', () => {
     ['2880x2880', '1:1', '4K'],
     ['3840x2160', '16:9', '4K'],
     ['2160x3840', '9:16', '4K'],
+    ['21:9', '16:9', '1K'],
+    ['3840x1648', '16:9', '4K'],
+    ['3840x1600', '16:9', '4K'],
   ])('maps Banana size %s to native aspect and tier', async (
     size,
     expectedAspectRatio,
