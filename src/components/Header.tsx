@@ -46,13 +46,14 @@ export default function Header({ onOpenCanvas }: HeaderProps) {
     }
   }
 
-  const switchKeyMode = (mode: 'manual' | 'account') => {
-    if (mode === 'account' && !accountSession?.boundApiKey) {
+  const switchKeyMode = () => {
+    const nextMode = settings.accountApiKeyMode === 'account' ? 'manual' : 'account'
+    if (nextMode === 'account' && !accountSession?.boundApiKey) {
       setShowAccountLogin(true)
       showToast('请先登录文运站账号', 'error')
       return
     }
-    setSettings({ accountApiKeyMode: mode })
+    setSettings({ accountApiKeyMode: nextMode })
   }
 
   return (
@@ -88,30 +89,12 @@ export default function Header({ onOpenCanvas }: HeaderProps) {
                 {isQueryingBalance ? '查询中' : '查询'}
               </button>
               {isWenyunProfile && (
-                <div className="ml-1 flex overflow-hidden rounded-full border border-gray-200/70 bg-white/70 p-0.5 dark:border-white/[0.08] dark:bg-white/[0.04]">
-                  <button
-                    type="button"
-                    onClick={() => switchKeyMode('manual')}
-                    className={`rounded-full px-2 py-0.5 text-[11px] transition ${settings.accountApiKeyMode !== 'account' ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
-                  >
-                    手动Key
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => switchKeyMode('account')}
-                    className={`rounded-full px-2 py-0.5 text-[11px] transition ${settings.accountApiKeyMode === 'account' ? 'bg-blue-500 text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
-                  >
-                    账号Key
-                  </button>
-                </div>
-              )}
-              {isWenyunProfile && (
                 <button
                   type="button"
-                  onClick={() => setShowAccountLogin(true)}
-                  className="shrink-0 rounded-full bg-gray-900/80 px-2 py-0.5 text-[11px] font-medium text-white transition hover:bg-gray-900 dark:bg-white/[0.12] dark:text-gray-100 dark:hover:bg-white/[0.18]"
+                  onClick={switchKeyMode}
+                  className="shrink-0 rounded-full border border-gray-200/70 bg-white/70 px-2 py-0.5 text-[11px] font-medium text-gray-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:border-blue-400/30 dark:hover:bg-blue-500/15 dark:hover:text-blue-200"
                 >
-                  充值
+                  {settings.accountApiKeyMode === 'account' ? '账号Key' : '自定义Key'}
                 </button>
               )}
               <PriceTableButton activeProfile={activeProfile} />

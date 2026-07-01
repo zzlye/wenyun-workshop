@@ -217,7 +217,6 @@ export async function loginNewApiAccount(profile: ApiProfile, payload: NewApiLog
     },
   })
   const accessToken = readAccessToken(result)
-  if (!accessToken) throw new Error('登录成功但没有返回登录凭证')
 
   const session: NewApiAccountSession = {
     siteProfileId: profile.id,
@@ -227,7 +226,14 @@ export async function loginNewApiAccount(profile: ApiProfile, payload: NewApiLog
     email: readEmail(result),
     displayName: readDisplayName(result),
   }
-  return ensureNewApiBoundKey(profile, session)
+  if (!accessToken) return session
+
+  try {
+    return await ensureNewApiBoundKey(profile, session)
+  } catch {
+    // 有些 NewAPI 实例登录接口只返回 Session，不返回管理 Access Token；此时先保留账号状态。
+    return session
+  }
 }
 
 export async function registerNewApiAccount(profile: ApiProfile, payload: NewApiRegisterPayload): Promise<NewApiAccountSession> {
