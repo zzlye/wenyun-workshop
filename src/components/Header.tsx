@@ -5,6 +5,7 @@ import { dismissAllTooltips } from '../lib/tooltipDismiss'
 import { LOCKED_WENYUN_PROFILE_ID, getActiveApiProfile, getApiBalanceSnapshot, setApiBalanceSnapshot } from '../lib/apiProfiles'
 import { getEffectiveImageApiProfile } from '../lib/accountApiKey'
 import { queryNewApiBalance } from '../lib/newApi'
+import { fetchNewApiAccountBalance } from '../lib/newApiAccount'
 import { AnimatedThemeToggler } from '../infiniteCanvasSource/components/ui/animated-theme-toggler'
 import ViewportTooltip from './ViewportTooltip'
 import HelpModal from './HelpModal'
@@ -26,7 +27,10 @@ export default function Header({ onOpenCanvas }: HeaderProps) {
   const effectiveActiveProfile = getEffectiveImageApiProfile(settings, activeProfile)
   const isWenyunProfile = activeProfile.id === LOCKED_WENYUN_PROFILE_ID
   const accountSession = settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] ?? null
-  const apiBalanceText = getApiBalanceSnapshot(settings, activeProfile.id)?.text ?? ''
+  const useAccountKey = isWenyunProfile && settings.accountApiKeyMode === 'account' && Boolean(accountSession?.boundApiKey)
+  const apiBalanceText = useAccountKey
+    ? accountSession?.balanceSource === 'user' ? accountSession.balanceText ?? '' : ''
+    : getApiBalanceSnapshot(settings, activeProfile.id)?.text ?? ''
   const [isQueryingBalance, setIsQueryingBalance] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
   const [showAccountLogin, setShowAccountLogin] = useState(false)
@@ -36,6 +40,23 @@ export default function Header({ onOpenCanvas }: HeaderProps) {
   const queryActiveProfileBalance = async () => {
     setIsQueryingBalance(true)
     try {
+      if (useAccountKey && accountSession) {
+        const session = await fetchNewApiAccountBalance(activeProfile, accountSession)
+        const current = useStore.getState().settings
+        setSettings({
+          ...setApiBalanceSnapshot(current, activeProfile.id, {
+            text: session.balanceText ?? '',
+            currency: '',
+            updatedAt: session.balanceUpdatedAt ?? Date.now(),
+          }),
+          newApiAccountSessions: {
+            ...current.newApiAccountSessions,
+            [LOCKED_WENYUN_PROFILE_ID]: session,
+          },
+        })
+        showToast('账号余额已更新', 'success')
+        return
+      }
       const balance = await queryNewApiBalance(effectiveActiveProfile)
       setSettings(setApiBalanceSnapshot(useStore.getState().settings, activeProfile.id, balance))
       showToast('余额已更新', 'success')
@@ -78,7 +99,7 @@ export default function Header({ onOpenCanvas }: HeaderProps) {
           <div className="absolute left-1/2 top-1/2 hidden max-w-[48vw] -translate-x-1/2 -translate-y-1/2 sm:block">
             <div className="flex items-center gap-2 rounded-full border border-gray-200/70 bg-white/75 py-1 pl-3 pr-1 text-xs font-medium text-gray-600 shadow-none backdrop-blur dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-gray-300">
               <span className="min-w-0 truncate">
-                {activeProfile.name}：{apiBalanceText || '未查询'}
+                {activeProfile.name}{useAccountKey ? '账号' : ''}：{apiBalanceText || '未查询'}
               </span>
               <button
                 type="button"

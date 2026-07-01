@@ -55,7 +55,7 @@ export interface NewApiModelPerformanceResult {
   found: boolean
 }
 
-interface NewApiStatusInfo {
+export interface NewApiStatusInfo {
   currencySymbol: string
   quotaPerUnit: number
   raw: unknown
@@ -366,7 +366,7 @@ function parseCreditGrantBalance(payload: unknown, status: NewApiStatusInfo): st
   return null
 }
 
-function parseUserBalance(payload: unknown, status: NewApiStatusInfo): string | null {
+export function parseNewApiUserBalance(payload: unknown, status: NewApiStatusInfo): string | null {
   const data = isRecord(payload) && isRecord(payload.data) ? payload.data : payload
   if (!isRecord(data)) return null
   const quota = readNumber(data, ['quota', 'remain_quota', 'remainQuota', 'balance'])
@@ -384,7 +384,7 @@ export async function queryNewApiBalance(profile: ApiProfile): Promise<NewApiBal
   const status = await fetchNewApiStatus(apiRoot, origin)
 
   const attempts: Array<() => Promise<string | null>> = [
-    async () => parseUserBalance(await fetchJson(`${origin}/api/user/self`, profile.apiKey, { noCache: true }), status),
+    async () => parseNewApiUserBalance(await fetchJson(`${origin}/api/user/self`, profile.apiKey, { noCache: true }), status),
     async () => {
       const [subscription, usage] = await Promise.all([
         fetchJson(`${apiRoot}/dashboard/billing/subscription`, profile.apiKey, { noCache: true }),

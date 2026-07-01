@@ -127,6 +127,7 @@ export interface NewApiAccountSession {
   boundApiKeyName?: string
   lastKeyRefreshAt?: number
   balanceText?: string
+  balanceSource?: 'user'
   balanceUpdatedAt?: number
 }
 

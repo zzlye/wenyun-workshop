@@ -1,6 +1,6 @@
 import type { ApiProfile, NewApiAccountSession } from '../types'
 import { getLockedNewApiProxyUrl } from './devProxy'
-import { queryNewApiBalance } from './newApi'
+import { parseNewApiUserBalance, type NewApiStatusInfo } from './newApi'
 
 export const ACCOUNT_KEY_REFRESH_COOLDOWN_MS = 30 * 60 * 1000
 const ACCOUNT_BOUND_TOKEN_PREFIX = '文运工坊绑定 Key'
@@ -11,8 +11,7 @@ export interface NewApiLoginPayload {
 }
 
 export interface NewApiRegisterPayload extends NewApiLoginPayload {
-  email: string
-  verificationCode: string
+  email?: string
   inviteCode: string
 }
 
@@ -20,6 +19,12 @@ export interface NewApiBoundKeyResult {
   key: string
   id?: number | string
   name?: string
+}
+
+const ACCOUNT_DEFAULT_STATUS: NewApiStatusInfo = {
+  currencySymbol: 'HUHN',
+  quotaPerUnit: 500_000,
+  raw: null,
 }
 
 type RequestMethod = 'GET' | 'POST' | 'DELETE'
@@ -209,10 +214,6 @@ function makeBoundTokenName(username: string) {
   return `${ACCOUNT_BOUND_TOKEN_PREFIX}-${username}-${Date.now()}`
 }
 
-export async function sendNewApiEmailVerification(profile: ApiProfile, email: string): Promise<void> {
-  await newApiRequest(profile, `/api/verification?email=${encodeURIComponent(email.trim())}`)
-}
-
 export async function fetchNewApiUserAccessToken(
   profile: Pick<ApiProfile, 'baseUrl'>,
   userId: number | string | undefined,
@@ -243,7 +244,13 @@ export async function loginNewApiAccount(profile: ApiProfile, payload: NewApiLog
     email: readEmail(result),
     displayName: readDisplayName(result),
   }
-  return ensureNewApiBoundKey(profile, session)
+  const boundSession = await ensureNewApiBoundKey(profile, session)
+  try {
+    return await fetchNewApiAccountBalance(profile, boundSession)
+  } catch {
+    // 登录和绑定 Key 已经成功，余额临时查询失败时保留账号可用状态。
+    return boundSession
+  }
 }
 
 export async function registerNewApiAccount(profile: ApiProfile, payload: NewApiRegisterPayload): Promise<NewApiAccountSession> {
@@ -252,8 +259,7 @@ export async function registerNewApiAccount(profile: ApiProfile, payload: NewApi
     body: {
       username: payload.username.trim(),
       password: payload.password,
-      email: payload.email.trim(),
-      verification_code: payload.verificationCode.trim(),
+      email: payload.email?.trim() ?? '',
       aff_code: payload.inviteCode.trim(),
     },
   })
@@ -261,11 +267,17 @@ export async function registerNewApiAccount(profile: ApiProfile, payload: NewApi
 }
 
 export async function fetchNewApiAccountBalance(profile: ApiProfile, session: NewApiAccountSession): Promise<NewApiAccountSession> {
-  const balance = await queryNewApiBalance({ ...profile, apiKey: session.boundApiKey || profile.apiKey })
+  const payload = await newApiRequest<unknown>(profile, '/api/user/self', {
+    accessToken: session.accessToken,
+    userId: session.userId,
+  })
+  const text = parseNewApiUserBalance(payload, ACCOUNT_DEFAULT_STATUS)
+  if (!text) throw new Error('账号余额查询失败')
   return {
     ...session,
-    balanceText: balance.text,
-    balanceUpdatedAt: balance.updatedAt,
+    balanceText: text,
+    balanceSource: 'user',
+    balanceUpdatedAt: Date.now(),
   }
 }
 

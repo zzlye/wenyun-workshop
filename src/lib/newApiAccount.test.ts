@@ -55,6 +55,15 @@ describe('readAccessToken', () => {
           },
         }), { status: 200 })
       }
+      if (url.includes('/api/user/self')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            quota: 5_000_000,
+            used_quota: 0,
+          },
+        }), { status: 200 })
+      }
       return new Response(JSON.stringify({ success: false, message: 'unexpected request' }), { status: 500 })
     })
 
@@ -67,6 +76,7 @@ describe('readAccessToken', () => {
       displayName: '1',
       boundApiKey: 'abcd-full-token-wxyz',
       boundApiKeyId: 8,
+      balanceText: '可用 HUHN 10 / 已用 HUHN 0',
     })
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -80,6 +90,15 @@ describe('readAccessToken', () => {
     )
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/token/?p=1&size=100'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer user-access-token',
+          'New-Api-User': '2',
+        }),
+      }),
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/user/self'),
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: 'Bearer user-access-token',

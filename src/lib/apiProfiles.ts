@@ -481,6 +481,7 @@ function normalizeNewApiAccountSession(value: unknown, siteProfileId: string): N
     boundApiKeyName: typeof value.boundApiKeyName === 'string' && value.boundApiKeyName.trim() ? value.boundApiKeyName.trim() : undefined,
     lastKeyRefreshAt: normalizeApiBalanceUpdatedAt(value.lastKeyRefreshAt),
     balanceText: typeof value.balanceText === 'string' && value.balanceText.trim() ? normalizeApiBalanceText(value.balanceText) : undefined,
+    balanceSource: value.balanceSource === 'user' ? 'user' : undefined,
     balanceUpdatedAt: normalizeApiBalanceUpdatedAt(value.balanceUpdatedAt),
   }
 }

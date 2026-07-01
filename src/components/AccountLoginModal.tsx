@@ -8,7 +8,6 @@ import {
   redeemNewApiCode,
   refreshNewApiBoundKey,
   registerNewApiAccount,
-  sendNewApiEmailVerification,
 } from '../lib/newApiAccount'
 import { useStore } from '../store'
 import type { AppSettings, NewApiAccountSession } from '../types'
@@ -32,11 +31,9 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
   const [accountUsername, setAccountUsername] = useState('')
   const [accountPassword, setAccountPassword] = useState('')
   const [accountEmail, setAccountEmail] = useState('')
-  const [accountVerificationCode, setAccountVerificationCode] = useState('')
   const [accountInviteCode, setAccountInviteCode] = useState('')
   const [accountRedeemCode, setAccountRedeemCode] = useState('')
   const [isAccountBusy, setIsAccountBusy] = useState(false)
-  const [isSendingVerificationCode, setIsSendingVerificationCode] = useState(false)
   const [isRedeemingCode, setIsRedeemingCode] = useState(false)
   const [isRefreshingAccountKey, setIsRefreshingAccountKey] = useState(false)
   const [isQueryingBalance, setIsQueryingBalance] = useState(false)
@@ -50,28 +47,22 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
   const updateAccountSession = (session: NewApiAccountSession | null, patch: Partial<AppSettings> = {}) => {
     const current = normalizeSettings(useStore.getState().settings)
     const nextSessions = { ...current.newApiAccountSessions }
-    if (session) nextSessions[LOCKED_WENYUN_PROFILE_ID] = { ...session, siteProfileId: LOCKED_WENYUN_PROFILE_ID }
+    const previousSession = current.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]
+    if (session) {
+      nextSessions[LOCKED_WENYUN_PROFILE_ID] = {
+        ...session,
+        siteProfileId: LOCKED_WENYUN_PROFILE_ID,
+        lastKeyRefreshAt: session.lastKeyRefreshAt ?? previousSession?.lastKeyRefreshAt,
+        balanceText: session.balanceText ?? (previousSession?.balanceSource === 'user' ? previousSession.balanceText : undefined),
+        balanceSource: session.balanceSource ?? (previousSession?.balanceSource === 'user' ? previousSession.balanceSource : undefined),
+        balanceUpdatedAt: session.balanceUpdatedAt ?? previousSession?.balanceUpdatedAt,
+      }
+    }
     else delete nextSessions[LOCKED_WENYUN_PROFILE_ID]
     setSettings({
       ...patch,
       newApiAccountSessions: nextSessions,
     })
-  }
-
-  const handleSendVerificationCode = async () => {
-    if (!accountEmail.trim()) {
-      showToast('请先填写邮箱', 'error')
-      return
-    }
-    setIsSendingVerificationCode(true)
-    try {
-      await sendNewApiEmailVerification(wenyunProfile, accountEmail)
-      showToast('验证码已发送', 'success')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : '验证码发送失败', 'error')
-    } finally {
-      setIsSendingVerificationCode(false)
-    }
   }
 
   const handleAccountLogin = async () => {
@@ -96,7 +87,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
   }
 
   const handleAccountRegister = async () => {
-    if (!accountUsername.trim() || !accountPassword || !accountEmail.trim() || !accountVerificationCode.trim() || !accountInviteCode.trim()) {
+    if (!accountUsername.trim() || !accountPassword || !accountInviteCode.trim()) {
       showToast('请完整填写注册信息', 'error')
       return
     }
@@ -106,7 +97,6 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
         username: accountUsername,
         password: accountPassword,
         email: accountEmail,
-        verificationCode: accountVerificationCode,
         inviteCode: accountInviteCode,
       })
       updateAccountSession(session, { accountApiKeyMode: session.boundApiKey && !normalizedSettings.profiles.find((profile) => profile.id === LOCKED_WENYUN_PROFILE_ID)?.apiKey.trim() ? 'account' : normalizedSettings.accountApiKeyMode })
@@ -207,7 +197,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-gray-500 dark:text-gray-400">账号余额</span>
-                <span className="text-gray-700 dark:text-gray-200">{accountSession.balanceText || '未查询'}</span>
+                <span className="text-gray-700 dark:text-gray-200">{accountSession.balanceSource === 'user' && accountSession.balanceText ? accountSession.balanceText : '未查询'}</span>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -238,13 +228,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
             <input value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)} type="password" placeholder="密码" className="w-full rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50" />
             {accountMode === 'register' && (
               <>
-                <div className="flex gap-2">
-                  <input value={accountEmail} onChange={(event) => setAccountEmail(event.target.value)} placeholder="邮箱" className="min-w-0 flex-1 rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50" />
-                  <button type="button" onClick={handleSendVerificationCode} disabled={isSendingVerificationCode} className="shrink-0 rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-xs font-medium text-gray-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:border-blue-400/30 dark:hover:bg-blue-500/15 dark:hover:text-blue-200">
-                    {isSendingVerificationCode ? '发送中...' : '发验证码'}
-                  </button>
-                </div>
-                <input value={accountVerificationCode} onChange={(event) => setAccountVerificationCode(event.target.value)} placeholder="邮箱验证码" className="w-full rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50" />
+                <input value={accountEmail} onChange={(event) => setAccountEmail(event.target.value)} placeholder="邮箱（可选）" className="w-full rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50" />
                 <input value={accountInviteCode} onChange={(event) => setAccountInviteCode(event.target.value)} placeholder="邀请码" className="w-full rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50" />
               </>
             )}
