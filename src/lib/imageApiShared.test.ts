@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { fetchImageUrlAsDataUrl, GENERIC_QUOTA_ERROR_MESSAGE, getApiErrorMessage, getImageRequestTimeoutSeconds, getSafeImageDisplayUrl, isLongImageRequest, sanitizeApiErrorMessage } from './imageApiShared'
+import { FAST_HAND_ERROR_MESSAGE, fetchImageUrlAsDataUrl, GENERIC_QUOTA_ERROR_MESSAGE, getApiErrorMessage, getImageRequestTimeoutSeconds, getSafeImageDisplayUrl, isLongImageRequest, sanitizeApiErrorMessage } from './imageApiShared'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -15,6 +15,14 @@ describe('sanitizeApiErrorMessage', () => {
 
   it('keeps ordinary API errors unchanged', () => {
     expect(sanitizeApiErrorMessage('Invalid token')).toBe('Invalid token')
+  })
+
+  it.each([
+    'status_code=429, 服务器繁忙，请求过于频繁，请稍后重试 (rate limited)（上游原因：Resource has been exhausted (e.g. check quota).）',
+    'status_code=400, 请求参数有误，请检查请求内容 (invalid argument)（上游原因：Request contains an invalid argument.）',
+    'status_code=502, 认证失败，recaptcha 验证未通过，请稍后再试 (auth failed)（上游原因：Could not fetch recaptcha token.）',
+  ])('uses a friendly retry message for transient upstream errors: %s', (message) => {
+    expect(sanitizeApiErrorMessage(message)).toBe(FAST_HAND_ERROR_MESSAGE)
   })
 })
 
@@ -39,6 +47,19 @@ describe('getApiErrorMessage', () => {
     })
 
     await expect(getApiErrorMessage(response)).resolves.toBe('upstream engine error')
+  })
+
+  it('sanitizes transient upstream errors from JSON error responses', async () => {
+    const response = new Response(JSON.stringify({
+      error: {
+        message: 'status_code=502, 认证失败，recaptcha 验证未通过，请稍后再试 (auth failed)（上游原因：Could not fetch recaptcha token.）',
+      },
+    }), {
+      status: 502,
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    await expect(getApiErrorMessage(response)).resolves.toBe(FAST_HAND_ERROR_MESSAGE)
   })
 })
 

@@ -101,6 +101,7 @@ async function blobToDataUrl(blob: Blob, fallbackMime: string): Promise<string> 
 
 export const IMAGE_FETCH_CORS_HINT = ' 可点链接按钮复制结果链接，或尝试开启「返回 Base64 图片数据」避免此问题。'
 export const GENERIC_QUOTA_ERROR_MESSAGE = '额度不足，无法完成本次请求，请联系管理员处理。'
+export const FAST_HAND_ERROR_MESSAGE = '手速太快了，请歇会再试吧~'
 
 export function sanitizeApiErrorMessage(message: string): string {
   const text = message.trim()
@@ -109,6 +110,15 @@ export function sanitizeApiErrorMessage(message: string): string {
   // 上游预扣费失败会暴露内部额度和成本，这里只保留面向客户的通用提示。
   if (/预扣费额度失败|需要预扣费额度|用户剩余额度|insufficient[_\s-]*quota|quota\s+(?:exceeded|insufficient)/i.test(text)) {
     return GENERIC_QUOTA_ERROR_MESSAGE
+  }
+
+  // 部分上游会把限流、参数异常、recaptcha 临时认证失败直接透给终端用户，统一成更友好的重试提示。
+  if (
+    /status_code=429|rate\s*limited|Resource has been exhausted/i.test(text) ||
+    /status_code=400|invalid\s*argument|Request contains an invalid argument/i.test(text) ||
+    /status_code=502|auth\s*failed|recaptcha|Could not fetch recaptcha token/i.test(text)
+  ) {
+    return FAST_HAND_ERROR_MESSAGE
   }
 
   return text
