@@ -105,13 +105,24 @@ async function newApiRequest<T>(
   return getPayloadData(payload) as T
 }
 
-function readAccessToken(payload: unknown): string {
+export function readAccessToken(payload: unknown): string {
   const record = getRecord(payload)
   if (!record) return ''
-  const direct = getString(record.access_token) || getString(record.accessToken) || getString(record.token)
+  const direct =
+    getString(record.access_token) ||
+    getString(record.accessToken) ||
+    getString(record.access_token_value) ||
+    getString(record.accessTokenValue) ||
+    getString(record.token) ||
+    getString(record.session_token)
   if (direct) return direct
-  const nested = getRecord(record.user)
-  return nested ? readAccessToken(nested) : ''
+  for (const value of Object.values(record)) {
+    const nested = getRecord(value)
+    if (!nested) continue
+    const token = readAccessToken(nested)
+    if (token) return token
+  }
+  return ''
 }
 
 function readUserId(payload: unknown): number | string | undefined {

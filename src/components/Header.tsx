@@ -2,13 +2,15 @@ import { useState } from 'react'
 import { useStore } from '../store'
 import { useTooltip } from '../hooks/useTooltip'
 import { dismissAllTooltips } from '../lib/tooltipDismiss'
-import { getActiveApiProfile, getApiBalanceSnapshot, setApiBalanceSnapshot } from '../lib/apiProfiles'
+import { LOCKED_WENYUN_PROFILE_ID, getActiveApiProfile, getApiBalanceSnapshot, setApiBalanceSnapshot } from '../lib/apiProfiles'
+import { getEffectiveImageApiProfile } from '../lib/accountApiKey'
 import { queryNewApiBalance } from '../lib/newApi'
 import { AnimatedThemeToggler } from '../infiniteCanvasSource/components/ui/animated-theme-toggler'
 import ViewportTooltip from './ViewportTooltip'
 import HelpModal from './HelpModal'
 import { HelpCircleIcon, SettingsIcon, SparklesIcon } from './icons'
 import PriceTableButton from './PriceTableButton'
+import AccountLoginModal from './AccountLoginModal'
 
 type HeaderProps = {
   onOpenCanvas?: () => void
@@ -21,16 +23,20 @@ export default function Header({ onOpenCanvas }: HeaderProps) {
   const settings = useStore((s) => s.settings)
   const appearanceNightMode = settings.appearanceNightMode
   const activeProfile = getActiveApiProfile(settings)
+  const effectiveActiveProfile = getEffectiveImageApiProfile(settings, activeProfile)
+  const isWenyunProfile = activeProfile.id === LOCKED_WENYUN_PROFILE_ID
+  const accountSession = settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] ?? null
   const apiBalanceText = getApiBalanceSnapshot(settings, activeProfile.id)?.text ?? ''
   const [isQueryingBalance, setIsQueryingBalance] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
+  const [showAccountLogin, setShowAccountLogin] = useState(false)
   const helpTooltip = useTooltip()
   const settingsTooltip = useTooltip()
 
   const queryActiveProfileBalance = async () => {
     setIsQueryingBalance(true)
     try {
-      const balance = await queryNewApiBalance(activeProfile)
+      const balance = await queryNewApiBalance(effectiveActiveProfile)
       setSettings(setApiBalanceSnapshot(useStore.getState().settings, activeProfile.id, balance))
       showToast('余额已更新', 'success')
     } catch (err) {
@@ -38,6 +44,15 @@ export default function Header({ onOpenCanvas }: HeaderProps) {
     } finally {
       setIsQueryingBalance(false)
     }
+  }
+
+  const switchKeyMode = (mode: 'manual' | 'account') => {
+    if (mode === 'account' && !accountSession?.boundApiKey) {
+      setShowAccountLogin(true)
+      showToast('请先登录文运站账号', 'error')
+      return
+    }
+    setSettings({ accountApiKeyMode: mode })
   }
 
   return (
@@ -72,10 +87,44 @@ export default function Header({ onOpenCanvas }: HeaderProps) {
               >
                 {isQueryingBalance ? '查询中' : '查询'}
               </button>
+              {isWenyunProfile && (
+                <div className="ml-1 flex overflow-hidden rounded-full border border-gray-200/70 bg-white/70 p-0.5 dark:border-white/[0.08] dark:bg-white/[0.04]">
+                  <button
+                    type="button"
+                    onClick={() => switchKeyMode('manual')}
+                    className={`rounded-full px-2 py-0.5 text-[11px] transition ${settings.accountApiKeyMode !== 'account' ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                  >
+                    手动Key
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => switchKeyMode('account')}
+                    className={`rounded-full px-2 py-0.5 text-[11px] transition ${settings.accountApiKeyMode === 'account' ? 'bg-blue-500 text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                  >
+                    账号Key
+                  </button>
+                </div>
+              )}
+              {isWenyunProfile && (
+                <button
+                  type="button"
+                  onClick={() => setShowAccountLogin(true)}
+                  className="shrink-0 rounded-full bg-gray-900/80 px-2 py-0.5 text-[11px] font-medium text-white transition hover:bg-gray-900 dark:bg-white/[0.12] dark:text-gray-100 dark:hover:bg-white/[0.18]"
+                >
+                  充值
+                </button>
+              )}
               <PriceTableButton activeProfile={activeProfile} />
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowAccountLogin(true)}
+              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 shadow-none transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-900 dark:hover:text-gray-100"
+            >
+              {accountSession ? accountSession.username : '登录'}
+            </button>
             <div
               className="relative"
               {...helpTooltip.handlers}
@@ -124,6 +173,7 @@ export default function Header({ onOpenCanvas }: HeaderProps) {
         <div className="safe-header-inner" />
       </div>
       {showHelp && <HelpModal appMode="gallery" onClose={() => setShowHelp(false)} />}
+      <AccountLoginModal open={showAccountLogin} onClose={() => setShowAccountLogin(false)} />
     </>
   )
 }
