@@ -61,6 +61,9 @@ describe('readAccessToken', () => {
           data: {
             quota: 5_000_000,
             used_quota: 0,
+            aff_code: 'PC7X',
+            inviter_id: 1,
+            inviter_name: '邀请人账号',
           },
         }), { status: 200 })
       }
@@ -77,6 +80,9 @@ describe('readAccessToken', () => {
       boundApiKey: 'abcd-full-token-wxyz',
       boundApiKeyId: 8,
       balanceText: '可用 HUHN 10 / 已用 HUHN 0',
+      inviteCode: 'PC7X',
+      inviter: '邀请人账号',
+      inviterId: 1,
     })
 
     expect(fetchMock).toHaveBeenCalledWith(

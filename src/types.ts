@@ -122,6 +122,9 @@ export interface NewApiAccountSession {
   userId?: number | string
   email?: string
   displayName?: string
+  inviteCode?: string
+  inviter?: string
+  inviterId?: number | string
   boundApiKey?: string
   boundApiKeyId?: number | string
   boundApiKeyName?: string

@@ -11,7 +11,6 @@ export interface NewApiLoginPayload {
 }
 
 export interface NewApiRegisterPayload extends NewApiLoginPayload {
-  email?: string
   inviteCode: string
 }
 
@@ -178,6 +177,38 @@ function readDisplayName(payload: unknown): string | undefined {
   return nested ? readDisplayName(nested) : undefined
 }
 
+function readInviteCode(payload: unknown): string | undefined {
+  const record = getRecord(payload)
+  if (!record) return undefined
+  const direct = getString(record.aff_code) || getString(record.affCode) || getString(record.invite_code) || getString(record.inviteCode) || getString(record.referral_code) || getString(record.referralCode)
+  if (direct) return direct
+  const nested = getRecord(record.user)
+  return nested ? readInviteCode(nested) : undefined
+}
+
+function readInviterId(payload: unknown): number | string | undefined {
+  const record = getRecord(payload)
+  if (!record) return undefined
+  const direct = record.inviter_id ?? record.inviterId ?? record.referrer_id ?? record.referrerId ?? record.aff_inviter_id ?? record.affInviterId
+  if (typeof direct === 'number' || typeof direct === 'string') return direct
+  const nested = getRecord(record.user)
+  return nested ? readInviterId(nested) : undefined
+}
+
+function readInviter(payload: unknown): string | undefined {
+  const record = getRecord(payload)
+  if (!record) return undefined
+  const direct = getString(record.inviter) || getString(record.inviter_name) || getString(record.inviterName) || getString(record.referrer) || getString(record.referrer_name) || getString(record.referrerName)
+  if (direct) return direct
+  const inviterRecord = getRecord(record.inviter) || getRecord(record.referrer)
+  if (inviterRecord) {
+    const name = getString(inviterRecord.username) || getString(inviterRecord.name) || getString(inviterRecord.display_name) || getString(inviterRecord.displayName)
+    if (name) return name
+  }
+  const nested = getRecord(record.user)
+  return nested ? readInviter(nested) : undefined
+}
+
 function readTokenKey(payload: unknown): string {
   const record = getRecord(payload)
   if (!record) return ''
@@ -260,6 +291,9 @@ export async function loginNewApiAccount(profile: ApiProfile, payload: NewApiLog
     userId,
     email: readEmail(result),
     displayName: readDisplayName(result),
+    inviteCode: readInviteCode(result),
+    inviter: readInviter(result),
+    inviterId: readInviterId(result),
   }
   const boundSession = await ensureNewApiBoundKey(profile, session)
   try {
@@ -276,7 +310,6 @@ export async function registerNewApiAccount(profile: ApiProfile, payload: NewApi
     body: {
       username: payload.username.trim(),
       password: payload.password,
-      email: payload.email?.trim() ?? '',
       aff_code: payload.inviteCode.trim(),
     },
   })
@@ -292,6 +325,9 @@ export async function fetchNewApiAccountBalance(profile: ApiProfile, session: Ne
   if (!text) throw new Error('账号余额查询失败')
   return {
     ...session,
+    inviteCode: readInviteCode(payload) ?? session.inviteCode,
+    inviter: readInviter(payload) ?? session.inviter,
+    inviterId: readInviterId(payload) ?? session.inviterId,
     balanceText: text,
     balanceSource: 'user',
     balanceUpdatedAt: Date.now(),
