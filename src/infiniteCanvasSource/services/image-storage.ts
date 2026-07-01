@@ -61,7 +61,14 @@ export async function imageToDataUrl(image: { url?: string; dataUrl?: string; st
     if (!directUrl) return "";
     const url = await resolveImageUrl(image.storageKey, directUrl);
     if (!url || url.startsWith("data:")) return url;
-    return blobToDataUrl(await fetchImageBlob(url));
+    try {
+        return blobToDataUrl(await fetchImageBlob(url));
+    } catch (error) {
+        if (!image.storageKey) throw error;
+        const storedBlob = await store.getItem<Blob>(image.storageKey);
+        if (storedBlob) return blobToDataUrl(storedBlob);
+        throw error;
+    }
 }
 
 export async function deleteStoredImages(keys: Iterable<string>) {

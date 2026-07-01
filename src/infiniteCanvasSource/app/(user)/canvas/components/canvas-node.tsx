@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { ChevronRight, Clock, Image as ImageIcon, Plus, RefreshCw, Star, Upload, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { resolveImageUrl } from "@/services/image-storage";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { formatImageRatioWithRequestedSize } from "../../../../../lib/size";
 import { CanvasNodeType, type CanvasNodeData, type Position } from "../types";
@@ -611,12 +612,26 @@ function ImageContent({
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const isBatchChild = Boolean(node.metadata?.batchRootId);
+    const [imageSrc, setImageSrc] = useState(node.metadata?.content || "");
+
+    useEffect(() => {
+        let cancelled = false;
+        const fallback = node.metadata?.content || "";
+        setImageSrc(fallback);
+        if (!node.metadata?.storageKey) return;
+        resolveImageUrl(node.metadata.storageKey, fallback).then((url) => {
+            if (!cancelled && url) setImageSrc(url);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [node.id, node.metadata?.content, node.metadata?.storageKey]);
 
     return (
         <BatchFrame batchCount={isBatchRoot ? batchCount : 0} batchExpanded={batchExpanded} batchOpening={batchOpening} batchRecovering={batchRecovering} onToggleBatch={onToggleBatch}>
             <div className="h-full w-full overflow-hidden rounded-3xl">
                 <img
-                    src={node.metadata!.content!}
+                    src={imageSrc}
                     alt={node.title}
                     draggable={false}
                     onDragStart={(event) => event.preventDefault()}
