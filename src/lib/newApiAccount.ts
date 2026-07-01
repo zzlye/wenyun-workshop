@@ -63,10 +63,27 @@ function getPayloadData(payload: unknown): unknown {
   return payload
 }
 
+export function normalizeNewApiAccountErrorMessage(message: string): string {
+  const value = message.trim()
+  if (!value) return ''
+  if (/Password.+failed on the 'min' tag/i.test(value)) return '密码至少 8 位'
+  if (/Password.+failed on the 'max' tag/i.test(value)) return '密码太长，请换短一点的密码'
+  if (/Username.+failed on the 'min' tag/i.test(value)) return '账号太短，请换一个更长的账号'
+  if (/Username.+failed on the 'max' tag/i.test(value)) return '账号太长，请换短一点的账号'
+  if (/Email.+failed/i.test(value)) return '邮箱格式不正确'
+  if (/Invite|AffCode|aff_code|邀请码/i.test(value) && /invalid|failed|无效|错误/i.test(value)) return '邀请码无效'
+  return value
+}
+
 function readErrorMessage(payload: unknown): string {
+  if (Array.isArray(payload)) return normalizeNewApiAccountErrorMessage(payload.map(readErrorMessage).filter(Boolean).join('；'))
   const record = getRecord(payload)
-  if (!record) return typeof payload === 'string' ? payload : ''
-  return getString(record.message) || getString(record.msg) || getString(record.error) || readErrorMessage(record.error)
+  if (!record) return typeof payload === 'string' ? normalizeNewApiAccountErrorMessage(payload) : ''
+  const nested = readErrorMessage(record.details) || readErrorMessage(record.errors) || readErrorMessage(record.data) || (typeof record.error === 'object' ? readErrorMessage(record.error) : '')
+  const direct = getString(record.message) || getString(record.msg) || (typeof record.error === 'string' ? getString(record.error) : '')
+  // NewAPI 校验失败时外层常见提示是“操作失败，请查看详情”，真正原因放在 details/data 里。
+  if (nested && (!direct || /查看详情|details/i.test(direct))) return normalizeNewApiAccountErrorMessage(nested)
+  return normalizeNewApiAccountErrorMessage(direct || nested)
 }
 
 async function readJsonSafely(response: Response): Promise<unknown> {

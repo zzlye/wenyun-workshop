@@ -18,6 +18,8 @@ interface AccountLoginModalProps {
   onClose: () => void
 }
 
+const REGISTER_PASSWORD_MIN_LENGTH = 8
+
 function formatAccountKeyCooldown(ms: number) {
   if (ms <= 0) return ''
   return `${Math.ceil(ms / 60_000)} 分钟后可刷新`
@@ -89,6 +91,10 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
   const handleAccountRegister = async () => {
     if (!accountUsername.trim() || !accountPassword || !accountInviteCode.trim()) {
       showToast('请完整填写注册信息', 'error')
+      return
+    }
+    if (accountPassword.length < REGISTER_PASSWORD_MIN_LENGTH) {
+      showToast(`密码至少 ${REGISTER_PASSWORD_MIN_LENGTH} 位`, 'error')
       return
     }
     setIsAccountBusy(true)

@@ -19,14 +19,14 @@ import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { getActiveApiProfile, getApiBalanceSnapshot, setApiBalanceSnapshot, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
+import { getActiveApiProfile, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
+import { validateEffectiveImageApiProfile } from "../../../../../lib/accountApiKey";
 import { copyImageSourceToClipboard, getClipboardFailureMessage } from "../../../../../lib/clipboard";
 import { getImageBlobExtension, getImageSourceBlob } from "../../../../../lib/imageTransfer";
 import { storeImage } from "../../../../../lib/db";
-import { queryNewApiBalance } from "../../../../../lib/newApi";
 import { replaceImageMentionsForApi, stripImageMentionMarkers } from "../../../../../lib/promptImageMentions";
 import { primeImageCache, useStore } from "../../../../../store";
-import PriceTableButton from "../../../../../components/PriceTableButton";
+import AccountBalanceBar from "../../../../../components/AccountBalanceBar";
 import { cropDataUrl, cropGridDataUrl } from "../utils/canvas-image-data";
 import { isCanvasEditableTarget } from "../utils/canvas-dom-events";
 import { clearCanvasGenerationSession, getCanvasGenerationSessionIds, isCanvasNodeGenerationLocked, markCanvasGenerationSession, resetInterruptedCanvasGenerations, withRunningCanvasNode, withoutRunningCanvasNodes } from "../utils/canvas-generation-running";
@@ -305,25 +305,18 @@ function InfiniteCanvasPage() {
     const effectiveConfig = useEffectiveConfig();
     const settings = useStore((state) => state.settings);
     const activeProfile = useMemo(() => getActiveApiProfile(normalizeSettings(settings)), [settings]);
-    const setSettings = useStore((state) => state.setSettings);
     const setLightboxImageId = useStore((state) => state.setLightboxImageId);
     const [isPureBackground, setIsPureBackground] = useState(false);
-    const [isQueryingBalance, setIsQueryingBalance] = useState(false);
-    const apiBalanceText = getApiBalanceSnapshot(settings, activeProfile.id)?.text ?? "";
-
-    const queryActiveProfileBalance = async () => {
-        setIsQueryingBalance(true);
-        try {
-            const balance = await queryNewApiBalance(activeProfile);
-            setSettings(setApiBalanceSnapshot(useStore.getState().settings, activeProfile.id, balance));
-            message.success("余额已更新");
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : "余额查询失败");
-        } finally {
-            setIsQueryingBalance(false);
-        }
-    };
-    const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
+    const isImageConfigReady = useCallback(
+        (config: AiConfig, model: string) => {
+            if (!model.trim()) return false;
+            if (config.channelMode === "remote") return true;
+            const current = normalizeSettings(useStore.getState().settings);
+            const profile = getActiveApiProfile(current);
+            return !validateEffectiveImageApiProfile(current, profile);
+        },
+        [],
+    );
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
     const cleanupAssetImages = useAssetStore((state) => state.cleanupImages);
@@ -2132,7 +2125,7 @@ function InfiniteCanvasPage() {
         async (node: CanvasNodeData, params: CanvasImageAngleParams) => {
             if (!node.metadata?.content) return;
             const generationConfig = { ...buildGenerationConfig(effectiveConfig, node, "image", activeProfile.id), count: "1" };
-            if (!isCanvasGenerationConfigReady(generationConfig, "image", isAiConfigReady)) {
+            if (!isCanvasGenerationConfigReady(generationConfig, "image", isImageConfigReady)) {
                 openConfigDialog(true);
                 return;
             }
@@ -2175,7 +2168,7 @@ function InfiniteCanvasPage() {
                 clearCanvasNodeRunning([childId]);
             }
         },
-        [activeProfile.id, clearCanvasNodeRunning, commitGenerationConnections, commitGenerationNodes, effectiveConfig, markCanvasNodeRunning, openConfigDialog],
+        [activeProfile.id, clearCanvasNodeRunning, commitGenerationConnections, commitGenerationNodes, effectiveConfig, isImageConfigReady, markCanvasNodeRunning, openConfigDialog],
     );
 
     const handleFontSizeChange = useCallback((nodeId: string, fontSize: number) => {
@@ -2313,7 +2306,7 @@ function InfiniteCanvasPage() {
             const sourceNode = nodesRef.current.find((node) => node.id === nodeId);
             if (isCanvasNodeGenerationLocked(sourceNode, runningNodeIdsRef.current)) return;
             const generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode, activeProfile.id);
-            if (!isCanvasGenerationConfigReady(generationConfig, mode, isAiConfigReady)) {
+            if (!isCanvasGenerationConfigReady(generationConfig, mode, isImageConfigReady)) {
                 openConfigDialog(true);
                 return;
             }
@@ -2593,7 +2586,7 @@ function InfiniteCanvasPage() {
                 clearCanvasNodeRunning([nodeId, ...pendingChildIds]);
             }
         },
-        [activeProfile.id, clearCanvasNodeRunning, commitGenerationConnections, commitGenerationNodes, effectiveConfig, markCanvasNodeRunning, openConfigDialog],
+        [activeProfile.id, clearCanvasNodeRunning, commitGenerationConnections, commitGenerationNodes, effectiveConfig, isImageConfigReady, markCanvasNodeRunning, openConfigDialog],
     );
 
     const handleRetryNode = useCallback(
@@ -2616,7 +2609,7 @@ function InfiniteCanvasPage() {
                     }
                     : { ...buildGenerationConfig(effectiveConfig, sourceNode, node.type === CanvasNodeType.Text ? "text" : node.type === CanvasNodeType.Video ? "video" : "image", activeProfile.id), count: "1" };
             const generationMode = node.type === CanvasNodeType.Text ? "text" : node.type === CanvasNodeType.Video ? "video" : "image";
-            if (!isCanvasGenerationConfigReady(generationConfig, generationMode, isAiConfigReady)) {
+            if (!isCanvasGenerationConfigReady(generationConfig, generationMode, isImageConfigReady)) {
                 openConfigDialog(true);
                 return;
             }
@@ -2689,7 +2682,7 @@ function InfiniteCanvasPage() {
                 clearCanvasNodeRunning([node.id]);
             }
         },
-        [activeProfile.id, clearCanvasNodeRunning, commitGenerationNodes, effectiveConfig, markCanvasNodeRunning, message, openConfigDialog],
+        [activeProfile.id, clearCanvasNodeRunning, commitGenerationNodes, effectiveConfig, isImageConfigReady, markCanvasNodeRunning, message, openConfigDialog],
     );
 
     const generateImageFromTextNode = useCallback(
@@ -2846,10 +2839,7 @@ function InfiniteCanvasPage() {
                     onOpenSettings={() => router.openSettings()}
                     isPureBackground={isPureBackground}
                     onTogglePureBackground={() => setIsPureBackground(!isPureBackground)}
-                    apiBalanceText={apiBalanceText}
                     activeProfile={activeProfile}
-                    onQueryBalance={queryActiveProfileBalance}
-                    isQueryingBalance={isQueryingBalance}
                 />
 
                 <InfiniteCanvas
@@ -3362,10 +3352,7 @@ function CanvasTopBar({
     onOpenSettings,
     isPureBackground,
     onTogglePureBackground,
-    apiBalanceText,
     activeProfile,
-    onQueryBalance,
-    isQueryingBalance,
 }: {
     title: string;
     titleDraft: string;
@@ -3386,10 +3373,7 @@ function CanvasTopBar({
     onOpenSettings: () => void;
     isPureBackground: boolean;
     onTogglePureBackground: () => void;
-    apiBalanceText: string;
     activeProfile: any;
-    onQueryBalance: () => void;
-    isQueryingBalance: boolean;
 }) {
     const router = useRouter();
     const fallbackTheme = useThemeStore((state) => state.theme);
@@ -3469,22 +3453,18 @@ function CanvasTopBar({
                 </div>
 
                 {/* 中间余额面板和文运工坊保持一致，展示当前固定站点名称。 */}
-                <div className="pointer-events-auto flex max-w-[48vw] items-center gap-2 rounded-full border py-1 pl-3 pr-1 text-xs font-medium shadow-sm backdrop-blur" style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke, color: theme.node.text }}>
-                    <span className="min-w-0 truncate">{activeProfile?.name || "当前站点"}：{apiBalanceText || "未查询"}</span>
-                    <button
-                        type="button"
-                        onClick={onQueryBalance}
-                        disabled={isQueryingBalance}
-                        className="shrink-0 rounded-full bg-blue-500 px-2 py-0.5 text-[11px] font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                        {isQueryingBalance ? "查询中" : "查询"}
-                    </button>
-                    <PriceTableButton
-                        activeProfile={activeProfile}
-                        buttonClassName="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
-                        buttonStyle={{ background: theme.node.fill, color: theme.node.text }}
-                    />
-                </div>
+                <AccountBalanceBar
+                    activeProfile={activeProfile}
+                    showLoginButton
+                    className="pointer-events-auto flex max-w-[48vw] items-center gap-2 rounded-full border py-1 pl-3 pr-1 text-xs font-medium shadow-sm backdrop-blur"
+                    style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke, color: theme.node.text }}
+                    actionButtonClassName="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
+                    actionButtonStyle={{ background: theme.node.fill, color: theme.node.text }}
+                    priceButtonClassName="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
+                    priceButtonStyle={{ background: theme.node.fill, color: theme.node.text }}
+                    loginButtonClassName="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
+                    loginButtonStyle={{ background: theme.node.fill, color: theme.node.text }}
+                />
 
                 <div className="pointer-events-auto flex items-center gap-1.5">
                     {/* 切换纯色背景按钮 */}
@@ -3755,10 +3735,10 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
     };
 }
 
-function isCanvasGenerationConfigReady(config: AiConfig, mode: CanvasNodeGenerationMode, isAiConfigReady: (config: AiConfig, model: string) => boolean) {
+function isCanvasGenerationConfigReady(config: AiConfig, mode: CanvasNodeGenerationMode, isImageConfigReady: (config: AiConfig, model: string) => boolean) {
     const model = mode === "image" ? config.imageModel || config.model : mode === "video" ? config.videoModel || config.model : config.textModel || config.model;
     if (!model.trim()) return false;
-    if (mode === "image") return isAiConfigReady(config, model);
+    if (mode === "image") return isImageConfigReady(config, model);
     if (mode === "text") return Boolean(config.textBaseUrl.trim() && config.textApiKey.trim());
     // 视频节点只使用视频 API 配置，避免误走系统后端、文字 API 或出图 API。
     return Boolean(config.videoBaseUrl.trim() && config.videoApiKey.trim());

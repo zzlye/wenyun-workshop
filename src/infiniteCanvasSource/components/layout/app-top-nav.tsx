@@ -11,9 +11,8 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useStore } from "../../../store";
-import { getActiveApiProfile, getApiBalanceSnapshot, setApiBalanceSnapshot } from "../../../lib/apiProfiles";
-import { queryNewApiBalance } from "../../../lib/newApi";
-import PriceTableButton from "../../../components/PriceTableButton";
+import { getActiveApiProfile } from "../../../lib/apiProfiles";
+import AccountBalanceBar from "../../../components/AccountBalanceBar";
 
 export function AppTopNav() {
     const pathname = usePathname();
@@ -22,27 +21,11 @@ export function AppTopNav() {
     const fallbackTheme = useThemeStore((state) => state.theme);
     const setTheme = useThemeStore((state) => state.setTheme);
     const settings = useStore((state) => state.settings);
-    const setSettings = useStore((state) => state.setSettings);
-    const showToast = useStore((state) => state.showToast);
     const theme = router.appearanceTheme || fallbackTheme;
     const activeProfile = getActiveApiProfile(settings);
-    const apiBalanceText = getApiBalanceSnapshot(settings, activeProfile.id)?.text ?? "";
-    const [isQueryingBalance, setIsQueryingBalance] = useState(false);
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = navigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
-    const queryActiveProfileBalance = async () => {
-        setIsQueryingBalance(true);
-        try {
-            const balance = await queryNewApiBalance(activeProfile);
-            setSettings(setApiBalanceSnapshot(useStore.getState().settings, activeProfile.id, balance));
-            showToast("余额已更新", "success");
-        } catch (error) {
-            showToast(error instanceof Error ? error.message : "余额查询失败", "error");
-        } finally {
-            setIsQueryingBalance(false);
-        }
-    };
 
     return (
         <>
@@ -70,20 +53,7 @@ export function AppTopNav() {
                         </div>
 
                         <div className="absolute left-1/2 top-1/2 hidden max-w-[48vw] -translate-x-1/2 -translate-y-1/2 sm:block">
-                            <div className="flex items-center gap-2 rounded-full border border-gray-200/70 bg-white/75 py-1 pl-3 pr-1 text-xs font-medium text-gray-600 shadow-none backdrop-blur dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-gray-300">
-                                <span className="min-w-0 truncate">
-                                    {activeProfile.name}：{apiBalanceText || "未查询"}
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={queryActiveProfileBalance}
-                                    disabled={isQueryingBalance}
-                                    className="shrink-0 rounded-full bg-blue-500 px-2 py-0.5 text-[11px] font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                    {isQueryingBalance ? "查询中" : "查询"}
-                                </button>
-                                <PriceTableButton activeProfile={activeProfile} />
-                            </div>
+                            <AccountBalanceBar activeProfile={activeProfile} showLoginButton />
                         </div>
 
                         <div className="flex min-w-0 items-center justify-end gap-1 justify-self-end whitespace-nowrap">
