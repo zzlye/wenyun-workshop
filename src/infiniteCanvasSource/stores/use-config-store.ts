@@ -68,7 +68,7 @@ export const defaultConfig: AiConfig = {
     systemPrompt: "",
     models: [],
     quality: "auto",
-    size: "1:1",
+    size: "1024x1024",
     count: "1",
 };
 

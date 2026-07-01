@@ -14,6 +14,12 @@ import { calculateImageSize, normalizeImageSize, parseRatio, type SizeTier } fro
 import { useStore } from "../../../../../store";
 
 const ALL_TIERS: SizeTier[] = ["1K", "2K", "4K"];
+const QUALITY_OPTIONS = [
+    { value: "auto", label: "auto" },
+    { value: "high", label: "高" },
+    { value: "medium", label: "中" },
+    { value: "low", label: "低" },
+];
 const RATIOS = [
     { label: "1:1", value: "1:1" },
     { label: "3:2", value: "3:2" },
@@ -47,6 +53,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
     const [open, setOpen] = useState(false);
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    const quality = config.quality || "auto";
     const activeSize = normalizeImageSizeForProfile(normalizeImageSize(config.size || "1024x1024"), activeProfile.id);
 
     const updateOpen = (nextOpen: boolean) => {
@@ -82,7 +89,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
             <span ref={buttonRef} className="inline-flex min-w-0">
                 <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[180px] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => updateOpen(!open)}>
                     <span className="truncate">
-                        {activeSize} · {count} 张
+                        {activeSize} · {imageQualityLabel(quality)} · {count} 张
                     </span>
                 </Button>
             </span>
@@ -207,6 +214,15 @@ function CanvasImageSizePanel({ config, allowedTiers, allowCustomRatio, onConfig
         <ImageSettingsTheme theme={theme}>
             <div className="space-y-4" style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
                 <div className="text-lg font-semibold">图像设置</div>
+                <SettingGroup title="品质" color={theme.node.muted}>
+                    <div className="grid grid-cols-4 gap-2.5">
+                        {QUALITY_OPTIONS.map((item) => (
+                            <OptionPill key={item.value} selected={(config.quality || "auto") === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
+                                {item.label}
+                            </OptionPill>
+                        ))}
+                    </div>
+                </SettingGroup>
                 <SettingGroup title="基准分辨率" color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
                         {tiers.map((item) => (
@@ -339,4 +355,8 @@ function readRatioFromSize(size: string) {
     const match = size?.match(/^\s*(\d+)\s*[xX×]\s*(\d+)\s*$/);
     if (!match) return "";
     return `${match[1]}:${match[2]}`;
+}
+
+function imageQualityLabel(value: string) {
+    return ({ auto: "auto", high: "高", medium: "中", low: "低" } as Record<string, string>)[value] || value;
 }

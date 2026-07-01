@@ -56,8 +56,46 @@ describe("canvas image api", () => {
         const [, init] = fetchMock.mock.calls[0];
         const body = JSON.parse(String((init as RequestInit).body));
         expect(body.quality).toBe("auto");
-        expect(body.size).toBe("2880x2880");
+        expect(body.size).toBe("1024x1024");
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZmluYWw=" }]);
+    });
+
+    it("keeps selected canvas image quality when building image requests", async () => {
+        const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+            new Response(JSON.stringify({ data: [{ b64_json: "ZmluYWw=" }] }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+            }),
+        );
+
+        useStore.setState({
+            settings: {
+                ...DEFAULT_SETTINGS,
+                profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
+                    ...profile,
+                    apiKey: "test-key",
+                })),
+            },
+        });
+
+        await requestGeneration(
+            {
+                ...defaultConfig,
+                baseUrl: "",
+                apiKey: "test-key",
+                model: "gpt-image-2",
+                imageModel: "gpt-image-2",
+                size: "1:1",
+                quality: "high",
+                count: "1",
+            },
+            "prompt",
+        );
+
+        const [, init] = fetchMock.mock.calls[0];
+        const body = JSON.parse(String((init as RequestInit).body));
+        expect(body.quality).toBe("high");
+        expect(body.size).toBe("2880x2880");
     });
 
     it("uses the active settings profile token after switching sites instead of stale canvas config", async () => {
