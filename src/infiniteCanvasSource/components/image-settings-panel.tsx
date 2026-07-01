@@ -7,6 +7,7 @@ import { type CanvasTheme } from "@/lib/canvas-theme";
 import type { AiConfig } from "@/stores/use-config-store";
 
 const qualityOptions = [
+    { value: "auto", label: "auto" },
     { value: "high", label: "高" },
     { value: "medium", label: "中" },
     { value: "low", label: "低" },
@@ -38,7 +39,7 @@ type ImageSettingsPanelProps = {
 };
 
 export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
-    const quality = config.quality === "auto" ? "high" : config.quality || "high";
+    const quality = config.quality || "auto";
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
     const selectedAspect = aspectOptions.find((item) => (item.size || item.value) === activeSize || item.value === activeSize);
@@ -122,7 +123,7 @@ export function ImageSettingsTheme({ theme, children }: { theme: CanvasTheme; ch
 }
 
 export function imageQualityLabel(value: string) {
-    return ({ auto: "高", high: "高", medium: "中", low: "低" } as Record<string, string>)[value] || value;
+    return ({ auto: "auto", high: "高", medium: "中", low: "低" } as Record<string, string>)[value] || value;
 }
 
 export function imageSizeLabel(size: string) {

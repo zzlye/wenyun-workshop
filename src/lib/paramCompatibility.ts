@@ -21,8 +21,7 @@ export function normalizeParamsForSettings(
   const nextParams: TaskParams = {
     ...params,
     size: normalizedSize === 'auto' ? DEFAULT_PARAMS.size : normalizedSize || DEFAULT_PARAMS.size,
-    // 旧配置里保存的 auto 统一按最高品质提交，避免不同上游把 auto 解释成低档位。
-    quality: params.quality === 'auto' ? 'high' : params.quality,
+    quality: params.quality || DEFAULT_PARAMS.quality,
     output_format: 'png',
     output_compression: DEFAULT_PARAMS.output_compression,
     n: Math.min(outputImageLimit, Math.max(1, params.n || DEFAULT_PARAMS.n)),

@@ -17,6 +17,12 @@ import SizePickerModal from './SizePickerModal'
 import ViewportTooltip from './ViewportTooltip'
 import { CloseIcon } from './icons'
 
+const QUALITY_OPTIONS = [
+  { value: 'auto', label: '自动' },
+  { value: 'high', label: '高' },
+  { value: 'medium', label: '中' },
+  { value: 'low', label: '低' },
+]
 
 function getMentionTagTextLength(el: Element) {
   return el.textContent?.length ?? 0
@@ -1726,6 +1732,15 @@ export default function InputBar() {
           {displaySize}
         </button>
       </label>
+      <label className="relative flex flex-col gap-0.5">
+        <span className="text-gray-400 dark:text-gray-500 ml-1">品质</span>
+        <Select
+          value={params.quality}
+          onChange={(quality) => setParams({ quality })}
+          options={QUALITY_OPTIONS}
+          className="px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/[0.06] focus:outline-none text-xs transition-all duration-200 shadow-sm"
+        />
+      </label>
       <label
         className="relative flex flex-col gap-0.5"
         onMouseEnter={showAgentNHint}
@@ -2023,7 +2038,7 @@ export default function InputBar() {
           <div className="mt-3">
             {/* 桌面端布局 */}
             <div className="hidden sm:flex items-end justify-between gap-3">
-              {renderParams('grid-cols-3')}
+              {renderParams('grid-cols-4')}
 
               <div className="flex gap-2 flex-shrink-0 mb-0.5">
                 <div
@@ -2087,7 +2102,7 @@ export default function InputBar() {
             <div className="sm:hidden flex flex-col gap-2">
               <div className={`collapse-section${mobileCollapsed ? ' collapsed' : ''}`}>
                 <div className="collapse-inner">
-                  {renderParams('grid-cols-3')}
+                  {renderParams('grid-cols-4')}
                   <div className="h-2" />
                 </div>
               </div>

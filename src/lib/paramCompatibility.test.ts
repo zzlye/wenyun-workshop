@@ -39,7 +39,7 @@ describe('parameter compatibility', () => {
     expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 4 }, settings).n).toBe(4)
   })
 
-  it('maps legacy auto image quality to high for every image provider', () => {
+  it('keeps auto image quality for OpenAI compatible image providers', () => {
     const openAIProfile = createDefaultOpenAIProfile({ apiKey: 'test-key' })
     const settings = normalizeSettings({
       ...DEFAULT_SETTINGS,
@@ -47,7 +47,7 @@ describe('parameter compatibility', () => {
       activeProfileId: openAIProfile.id,
     })
 
-    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, quality: 'auto' }, settings).quality).toBe('high')
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, quality: 'auto' }, settings).quality).toBe('auto')
   })
 
   it('normalizes auto size through fixed-site defaults when stale settings contain fal.ai', () => {

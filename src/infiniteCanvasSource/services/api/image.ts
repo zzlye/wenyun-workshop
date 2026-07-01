@@ -87,7 +87,8 @@ function buildTaskParams(config: AiConfig): TaskParams {
         ...DEFAULT_PARAMS,
         n,
         quality,
-        size: resolveRequestSize(quality === "auto" ? undefined : quality, config.size) || DEFAULT_PARAMS.size,
+        // 品质可以交给模型自动判断，但比例仍要转成接口能识别的具体尺寸。
+        size: resolveRequestSize(quality === "auto" ? "high" : quality, config.size) || DEFAULT_PARAMS.size,
     };
 }
 

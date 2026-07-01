@@ -55,7 +55,8 @@ describe("canvas image api", () => {
         );
         const [, init] = fetchMock.mock.calls[0];
         const body = JSON.parse(String((init as RequestInit).body));
-        expect(body.quality).toBe("high");
+        expect(body.quality).toBe("auto");
+        expect(body.size).toBe("2880x2880");
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZmluYWw=" }]);
     });
 

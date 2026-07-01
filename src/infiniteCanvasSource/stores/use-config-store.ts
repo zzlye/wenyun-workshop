@@ -67,7 +67,7 @@ export const defaultConfig: AiConfig = {
     vquality: "720",
     systemPrompt: "",
     models: [],
-    quality: "high",
+    quality: "auto",
     size: "1:1",
     count: "1",
 };
@@ -168,7 +168,7 @@ export const useConfigStore = create<ConfigStore>()(
                         videoApiKey: config.videoApiKey || legacyTextVideoApiKey,
                         videoApiProxy: typeof config.videoApiProxy === "boolean" ? config.videoApiProxy : legacyTextVideoApiProxy,
                         videoTimeout: Number(config.videoTimeout) || legacyTextVideoTimeout,
-                        quality: config.quality === "auto" ? "high" : config.quality || defaultConfig.quality,
+                        quality: config.quality || defaultConfig.quality,
                     },
                 };
             },
