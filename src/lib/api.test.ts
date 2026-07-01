@@ -534,6 +534,56 @@ describe('callImageApi', () => {
   })
 
   it.each([
+    ['1:1', '1:1', '1K'],
+    ['3:2', '3:2', '1K'],
+    ['2:3', '2:3', '1K'],
+    ['4:3', '4:3', '1K'],
+    ['3:4', '3:4', '1K'],
+    ['16:9', '16:9', '1K'],
+    ['9:16', '9:16', '1K'],
+    ['2048x2048', '1:1', '2K'],
+    ['2560x1440', '16:9', '2K'],
+    ['1440x2560', '9:16', '2K'],
+    ['2880x2880', '1:1', '4K'],
+    ['3840x2160', '16:9', '4K'],
+    ['2160x3840', '9:16', '4K'],
+  ])('maps Banana size %s to native aspect and tier', async (
+    size,
+    expectedAspectRatio,
+    expectedImageSize,
+  ) => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'ZmluYWw=' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      apiKey: 'test-key',
+      model: 'Nano-Banana-Pro',
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
+        ...profile,
+        apiKey: 'test-key',
+        model: 'Nano-Banana-Pro',
+      })),
+    }
+
+    await callImageApi({
+      settings,
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS, size },
+      inputImageDataUrls: [],
+    } as any)
+
+    const [, init] = fetchMock.mock.calls[0]
+    const body = JSON.parse(String((init as RequestInit).body))
+    expect(body.aspectRatio).toBe(expectedAspectRatio)
+    expect(body.imageSize).toBe(expectedImageSize)
+  })
+
+  it.each([
     ['文运站 Banana 2', 'Nano-Banana-2', 'nano-banana-2'],
     ['文运站 Banana Pro', 'Nano-Banana-Pro', 'nano-banana-pro'],
   ])('routes %s image edits through Wenyun JSON generation compatibility', async (

@@ -2,7 +2,7 @@ import { DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type CustomProviderDefi
 import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './canvasImage'
 import { getFixedImageRequestModel, isBananaImageModel, LOCKED_WENYUN_BASE_URL } from './apiProfiles'
 import { buildApiUrl, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from './devProxy'
-import { formatImageRatio, normalizeImageSize } from './size'
+import { formatImageRatio, normalizeImageSize, parseRatio } from './size'
 import {
   assertImageInputPayloadSize,
   assertMaskEditFileSize,
@@ -32,16 +32,21 @@ function getStreamPartialImages(profile: ApiProfile): number {
 function getBananaImageSize(size: string): '1K' | '2K' | '4K' {
   const match = normalizeImageSize(size).match(/^(\d+)x(\d+)$/)
   if (!match) return '1K'
-  const maxEdge = Math.max(Number(match[1]), Number(match[2]))
-  if (maxEdge >= 3200) return '4K'
-  if (maxEdge >= 1800) return '2K'
+  const width = Number(match[1])
+  const height = Number(match[2])
+  const maxEdge = Math.max(width, height)
+  // 香蕉只接受 1K/2K/4K 档位。用总像素识别 4K，避免 2880x2880 这类 4K 方图被误判成 2K。
+  if (width * height > 2048 * 2048) return '4K'
+  if (maxEdge >= 2048) return '2K'
   return '1K'
 }
 
 function getBananaAspectRatio(size: string): string {
   const match = normalizeImageSize(size).match(/^(\d+)x(\d+)$/)
-  if (!match) return '1:1'
-  return formatImageRatio(Number(match[1]), Number(match[2])).replace(/^≈/, '') || '1:1'
+  if (match) return formatImageRatio(Number(match[1]), Number(match[2])).replace(/^≈/, '') || '1:1'
+  const ratio = parseRatio(size)
+  if (ratio) return formatImageRatio(ratio.width, ratio.height).replace(/^≈/, '') || '1:1'
+  return '1:1'
 }
 
 function appendBananaGenerationFields(target: Record<string, unknown>, profile: ApiProfile, params: TaskParams) {
