@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { DEFAULT_SETTINGS } from './apiProfiles'
-import { loginNewApiAccount, normalizeNewApiAccountErrorMessage, readAccessToken } from './newApiAccount'
+import { loginNewApiAccount, normalizeNewApiAccountErrorMessage, readAccessToken, registerNewApiAccount } from './newApiAccount'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -117,5 +117,62 @@ describe('readAccessToken', () => {
   it('turns NewAPI validation messages into clear register errors', () => {
     expect(normalizeNewApiAccountErrorMessage("Key: 'User.Password' Error:Field validation for 'Password' failed on the 'min' tag")).toBe('密码至少 8 位')
     expect(normalizeNewApiAccountErrorMessage("Key: 'User.Username' Error:Field validation for 'Username' failed on the 'max' tag")).toBe('账号太长，请换短一点的账号')
+  })
+
+  it('rejects registration when NewAPI accepts an invalid invite code without binding an inviter', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/api/user/register')) {
+        return new Response(JSON.stringify({ success: true, data: true }), { status: 200 })
+      }
+      if (url.includes('/api/user/login')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            id: 12,
+            username: 'bad-invite-user',
+          },
+        }), { status: 200 })
+      }
+      if (url.includes('/api/user/token')) {
+        return new Response(JSON.stringify({ success: true, data: 'user-access-token' }), { status: 200 })
+      }
+      if (url.includes('/api/user/self') && init?.method === 'DELETE') {
+        return new Response(JSON.stringify({ success: true, data: true }), { status: 200 })
+      }
+      if (url.includes('/api/user/self')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            quota: 0,
+            used_quota: 0,
+            aff_code: 'SELF',
+            inviter_id: 0,
+          },
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ success: false, message: 'unexpected request' }), { status: 500 })
+    })
+
+    await expect(registerNewApiAccount(DEFAULT_SETTINGS.profiles[0], {
+      username: 'bad-invite-user',
+      password: 'password123',
+      inviteCode: 'RANDOM',
+    })).rejects.toThrow('邀请码无效')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/user/self'),
+      expect.objectContaining({
+        method: 'DELETE',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer user-access-token',
+          'New-Api-User': '12',
+        }),
+      }),
+    )
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/api/token/'),
+      expect.objectContaining({ method: 'POST' }),
+    )
   })
 })
