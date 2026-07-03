@@ -150,6 +150,15 @@ export function readAccessToken(payload: unknown): string {
   return ''
 }
 
+function hasConfirmedInviter(session: Pick<NewApiAccountSession, 'inviter' | 'inviterId'>): boolean {
+  if (typeof session.inviterId === 'number') return session.inviterId > 0
+  if (typeof session.inviterId === 'string') {
+    const value = session.inviterId.trim()
+    return Boolean(value) && value !== '0'
+  }
+  return Boolean(session.inviter?.trim())
+}
+
 function readUserId(payload: unknown): number | string | undefined {
   const record = getRecord(payload)
   if (!record) return undefined
@@ -320,6 +329,7 @@ export async function registerNewApiAccount(profile: ApiProfile, payload: NewApi
   })
   const session = await loginNewApiAccountSession(profile, payload)
   const verifiedSession = await fetchNewApiAccountBalance(profile, session)
+  if (!hasConfirmedInviter(verifiedSession)) throw new Error('邀请码无效')
   return ensureNewApiBoundKey(profile, verifiedSession)
 }
 

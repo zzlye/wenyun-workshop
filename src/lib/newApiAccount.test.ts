@@ -141,4 +141,49 @@ describe('readAccessToken', () => {
       expect.objectContaining({ method: 'POST' }),
     )
   })
+
+  it('rejects registration when NewAPI accepts an invite code but returns no inviter', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/register')) {
+        return new Response(JSON.stringify({ success: true, data: true }), { status: 200 })
+      }
+      if (url.includes('/api/user/login')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            id: 12,
+            username: 'bad-invite-user',
+          },
+        }), { status: 200 })
+      }
+      if (url.includes('/api/user/token')) {
+        return new Response(JSON.stringify({ success: true, data: 'user-access-token' }), { status: 200 })
+      }
+      if (url.includes('/api/user/self')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            quota: 0,
+            used_quota: 0,
+            aff_code: 'SELF',
+            inviter_id: 0,
+          },
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ success: false, message: 'unexpected request' }), { status: 500 })
+    })
+
+    await expect(registerNewApiAccount(DEFAULT_SETTINGS.profiles[0], {
+      username: 'bad-invite-user',
+      password: 'password123',
+      inviteCode: 'RANDOM',
+    })).rejects.toThrow('邀请码无效')
+
+    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/api/user/self'), expect.objectContaining({ method: 'DELETE' }))
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/api/token/'),
+      expect.objectContaining({ method: 'POST' }),
+    )
+  })
 })
