@@ -119,18 +119,21 @@ describe('readAccessToken', () => {
     expect(normalizeNewApiAccountErrorMessage("Key: 'User.Username' Error:Field validation for 'Username' failed on the 'max' tag")).toBe('账号太长，请换短一点的账号')
   })
 
-  it('rejects registration when NewAPI accepts an invalid invite code without binding an inviter', async () => {
+  it('rejects registration with invalid invite code without reserving the requested username', async () => {
+    const registerBodies: Array<Record<string, unknown>> = []
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes('/api/user/register')) {
+        registerBodies.push(JSON.parse(String(init?.body ?? '{}')))
         return new Response(JSON.stringify({ success: true, data: true }), { status: 200 })
       }
       if (url.includes('/api/user/login')) {
+        const body = JSON.parse(String(init?.body ?? '{}'))
         return new Response(JSON.stringify({
           success: true,
           data: {
             id: 12,
-            username: 'bad-invite-user',
+            username: body.username,
           },
         }), { status: 200 })
       }
@@ -160,6 +163,12 @@ describe('readAccessToken', () => {
       inviteCode: 'RANDOM',
     })).rejects.toThrow('邀请码无效')
 
+    expect(registerBodies[0]).toMatchObject({
+      password: 'password123',
+      aff_code: 'RANDOM',
+    })
+    expect(registerBodies[0]?.username).not.toBe('bad-invite-user')
+    expect(String(registerBodies[0]?.username)).toMatch(/^wy/)
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/user/self'),
       expect.objectContaining({
@@ -173,6 +182,82 @@ describe('readAccessToken', () => {
     expect(fetchMock).not.toHaveBeenCalledWith(
       expect.stringContaining('/api/token/'),
       expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
+  it('renames the invite probe account to requested username after invite is confirmed', async () => {
+    const registerBodies: Array<Record<string, unknown>> = []
+    const updateBodies: Array<Record<string, unknown>> = []
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/api/user/register')) {
+        registerBodies.push(JSON.parse(String(init?.body ?? '{}')))
+        return new Response(JSON.stringify({ success: true, data: true }), { status: 200 })
+      }
+      if (url.includes('/api/user/login')) {
+        const body = JSON.parse(String(init?.body ?? '{}'))
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            id: 16,
+            username: body.username,
+          },
+        }), { status: 200 })
+      }
+      if (url.includes('/api/user/token')) {
+        return new Response(JSON.stringify({ success: true, data: 'user-access-token' }), { status: 200 })
+      }
+      if (url.includes('/api/user/self') && init?.method === 'PUT') {
+        updateBodies.push(JSON.parse(String(init.body ?? '{}')))
+        return new Response(JSON.stringify({ success: true, data: true }), { status: 200 })
+      }
+      if (url.includes('/api/user/self')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            quota: 1_000_000,
+            used_quota: 0,
+            aff_code: 'SELF',
+            inviter_id: 9,
+            inviter_name: '邀请人',
+          },
+        }), { status: 200 })
+      }
+      if (url.includes('/api/token/?')) {
+        return new Response(JSON.stringify({ success: true, data: { items: [] } }), { status: 200 })
+      }
+      if (url.includes('/api/token/')) {
+        return new Response(JSON.stringify({ success: true, data: { key: 'created-key', id: 18 } }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ success: false, message: 'unexpected request' }), { status: 500 })
+    })
+
+    await expect(registerNewApiAccount(DEFAULT_SETTINGS.profiles[0], {
+      username: 'real-user',
+      password: 'password123',
+      inviteCode: 'GOOD',
+    })).resolves.toMatchObject({
+      username: 'real-user',
+      displayName: 'real-user',
+      inviter: '邀请人',
+      inviterId: 9,
+      boundApiKey: 'created-key',
+    })
+
+    expect(registerBodies[0]).toMatchObject({
+      password: 'password123',
+      aff_code: 'GOOD',
+    })
+    expect(registerBodies[0]?.username).not.toBe('real-user')
+    expect(updateBodies[0]).toMatchObject({
+      username: 'real-user',
+      display_name: 'real-user',
+      password: 'password123',
+      original_password: 'password123',
+    })
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/api/user/self'),
+      expect.objectContaining({ method: 'DELETE' }),
     )
   })
 })
