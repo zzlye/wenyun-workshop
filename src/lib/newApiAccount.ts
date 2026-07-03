@@ -26,7 +26,7 @@ const ACCOUNT_DEFAULT_STATUS: NewApiStatusInfo = {
   raw: null,
 }
 
-type RequestMethod = 'GET' | 'POST' | 'PUT' | 'DELETE'
+type RequestMethod = 'GET' | 'POST' | 'DELETE'
 
 function trimTrailingSlash(value: string): string {
   return value.trim().replace(/\/+$/, '')
@@ -65,8 +65,6 @@ function getPayloadData(payload: unknown): unknown {
 export function normalizeNewApiAccountErrorMessage(message: string): string {
   const value = message.trim()
   if (!value) return ''
-  if (/原密码错误|original password/i.test(value)) return '注册失败，请稍后重试'
-  if (/username|user|用户|账号|UNIQUE|duplicate|Duplicate entry/i.test(value) && /exist|exists|已存在|重复|UNIQUE|duplicate|Duplicate entry/i.test(value)) return '用户名已存在'
   if (/Password.+failed on the 'min' tag/i.test(value)) return '密码至少 8 位'
   if (/Password.+failed on the 'max' tag/i.test(value)) return '密码太长，请换短一点的密码'
   if (/Username.+failed on the 'min' tag/i.test(value)) return '账号太短，请换一个更长的账号'
@@ -273,10 +271,6 @@ function makeBoundTokenName(username: string) {
   return `${ACCOUNT_BOUND_TOKEN_PREFIX}-${username}-${Date.now()}`
 }
 
-function makeInviteProbeUsername() {
-  return `wy${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`.slice(0, 20)
-}
-
 export async function fetchNewApiUserAccessToken(
   profile: Pick<ApiProfile, 'baseUrl'>,
   userId: number | string | undefined,
@@ -332,59 +326,26 @@ async function deleteNewApiSelf(profile: ApiProfile, session: NewApiAccountSessi
   })
 }
 
-async function registerNewApiAccountWithUsername(profile: ApiProfile, username: string, payload: NewApiRegisterPayload): Promise<void> {
+export async function registerNewApiAccount(profile: ApiProfile, payload: NewApiRegisterPayload): Promise<NewApiAccountSession> {
   await newApiRequest(profile, '/api/user/register', {
     method: 'POST',
     body: {
-      username,
+      username: payload.username.trim(),
       password: payload.password,
       aff_code: payload.inviteCode.trim(),
     },
   })
-}
-
-async function updateNewApiSelfUsername(profile: ApiProfile, session: NewApiAccountSession, username: string, password: string): Promise<void> {
-  await newApiRequest(profile, '/api/user/self', {
-    method: 'PUT',
-    accessToken: session.accessToken,
-    userId: session.userId,
-    body: {
-      username,
-      display_name: username,
-      password,
-      original_password: password,
-    },
-  })
-}
-
-export async function registerNewApiAccount(profile: ApiProfile, payload: NewApiRegisterPayload): Promise<NewApiAccountSession> {
-  const username = payload.username.trim()
-  const probeUsername = makeInviteProbeUsername()
-  await registerNewApiAccountWithUsername(profile, probeUsername, payload)
-  let session: NewApiAccountSession | null = null
-  let renamed = false
-  try {
-    session = await loginNewApiAccountSession(profile, { username: probeUsername, password: payload.password })
-    const verifiedSession = await fetchNewApiAccountBalance(profile, session)
-    if (!hasConfirmedInviter(verifiedSession)) throw new Error('邀请码无效')
-
-    await updateNewApiSelfUsername(profile, verifiedSession, username, payload.password)
-    renamed = true
-    return ensureNewApiBoundKey(profile, {
-      ...verifiedSession,
-      username,
-      displayName: username,
-    })
-  } catch (error) {
-    if (session && !renamed) {
-      try {
-        await deleteNewApiSelf(profile, session)
-      } catch {
-        // 临时账号只用于邀请码探测，清理失败不能掩盖真实注册错误。
-      }
+  const session = await loginNewApiAccountSession(profile, payload)
+  const verifiedSession = await fetchNewApiAccountBalance(profile, session)
+  if (!hasConfirmedInviter(verifiedSession)) {
+    try {
+      await deleteNewApiSelf(profile, verifiedSession)
+    } catch {
+      // 邀请码无效时优先阻止继续使用；清理失败不影响前端拒绝注册。
     }
-    throw error
+    throw new Error('邀请码无效')
   }
+  return ensureNewApiBoundKey(profile, verifiedSession)
 }
 
 export async function fetchNewApiAccountBalance(profile: ApiProfile, session: NewApiAccountSession): Promise<NewApiAccountSession> {
