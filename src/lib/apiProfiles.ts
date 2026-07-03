@@ -74,6 +74,7 @@ export const DEFAULT_FAL_BASE_URL = 'https://fal.run'
 export const DEFAULT_FAL_MODEL = 'openai/gpt-image-2'
 export const DEFAULT_OPENAI_PROFILE_ID = LOCKED_WENYUN_PROFILE_ID
 export const DEFAULT_API_TIMEOUT = 600
+const IMAGE_STREAMING_ENABLED = false
 
 export function normalizeImageModelForProfile(model: string, profileId: string): string {
   void profileId
@@ -325,7 +326,7 @@ function createLockedOpenAIProfile(definition: typeof LOCKED_OPENAI_PROFILE_DEFI
     codexCli: false,
     apiProxy: typeof overrides.apiProxy === 'boolean' ? overrides.apiProxy : false,
     responseFormatB64Json: overrides.responseFormatB64Json === true ? true : undefined,
-    streamImages: typeof overrides.streamImages === 'boolean' ? overrides.streamImages : true,
+    streamImages: IMAGE_STREAMING_ENABLED,
     streamPartialImages: normalizeStreamPartialImages(overrides.streamPartialImages, DEFAULT_STREAM_PARTIAL_IMAGES),
     providerDrafts: undefined,
   }
@@ -761,7 +762,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
     codexCli: false,
     apiProxy: savedDraft?.apiProxy ?? DEFAULT_OPENAI_API_PROXY,
     responseFormatB64Json: savedDraft?.responseFormatB64Json,
-    streamImages: savedDraft?.streamImages ?? (profile.provider === 'openai' ? profile.streamImages : true),
+    streamImages: IMAGE_STREAMING_ENABLED,
     streamPartialImages: savedDraft?.streamPartialImages ?? (profile.provider === 'openai' ? profile.streamPartialImages : DEFAULT_STREAM_PARTIAL_IMAGES),
     providerDrafts,
   }
@@ -785,7 +786,7 @@ function normalizeProviderDraft(input: unknown, provider: ApiProvider, customPro
     codexCli: false,
     apiProxy: typeof input.apiProxy === 'boolean' ? input.apiProxy : fallback.apiProxy,
     responseFormatB64Json: input.responseFormatB64Json === true ? true : undefined,
-    streamImages: typeof input.streamImages === 'boolean' ? input.streamImages : fallback.streamImages,
+    streamImages: IMAGE_STREAMING_ENABLED,
     streamPartialImages: normalizeStreamPartialImages(input.streamPartialImages, fallback.streamPartialImages),
   }
 }
@@ -811,7 +812,7 @@ export function normalizeApiProfile(input: unknown, fallback?: Partial<ApiProfil
     timeout: normalizeApiTimeout(record.timeout, fallback?.timeout ?? DEFAULT_API_TIMEOUT),
     apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : fallback?.apiProxy,
     responseFormatB64Json: record.responseFormatB64Json === true ? true : fallback?.responseFormatB64Json,
-    streamImages: typeof record.streamImages === 'boolean' ? record.streamImages : fallback?.streamImages,
+    streamImages: IMAGE_STREAMING_ENABLED,
     streamPartialImages: normalizeStreamPartialImages(record.streamPartialImages, fallback?.streamPartialImages),
   })
 }
@@ -841,7 +842,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     codexCli: false,
     apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : DEFAULT_OPENAI_API_PROXY,
     responseFormatB64Json: undefined,
-    streamImages: true,
+    streamImages: IMAGE_STREAMING_ENABLED,
     streamPartialImages: DEFAULT_STREAM_PARTIAL_IMAGES,
   })
   const profiles = createLockedOpenAIProfiles(record.profiles, legacyProfile)
@@ -877,7 +878,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     apiMode: 'images',
     codexCli: false,
     apiProxy: active.apiProxy,
-    streamImages: true,
+    streamImages: IMAGE_STREAMING_ENABLED,
     streamPartialImages: active.streamPartialImages ?? DEFAULT_STREAM_PARTIAL_IMAGES,
     customProviders,
     providerOrder: Array.isArray(record.providerOrder) ? record.providerOrder.map(String) : undefined,
@@ -1040,7 +1041,7 @@ function isDefaultOpenAIProfile(profile: ApiProfile): boolean {
     profile.apiMode === 'images' &&
     profile.codexCli === false &&
     profile.apiProxy === false &&
-    profile.streamImages === true &&
+    profile.streamImages === IMAGE_STREAMING_ENABLED &&
     profile.streamPartialImages === DEFAULT_STREAM_PARTIAL_IMAGES
 }
 
@@ -1196,7 +1197,7 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   apiMode: 'images',
   codexCli: false,
   apiProxy: false,
-  streamImages: true,
+  streamImages: IMAGE_STREAMING_ENABLED,
   streamPartialImages: DEFAULT_STREAM_PARTIAL_IMAGES,
   customProviders: [],
   clearInputAfterSubmit: false,

@@ -100,7 +100,7 @@ describe('callImageApi', () => {
     }])
   })
 
-  it('streams Images API partial images and resolves the final completed image', async () => {
+  it('parses Images API event stream responses without requesting image streaming', async () => {
     const streamBody = [
       'data: {"type":"image_generation.partial_image","partial_image_index":0,"b64_json":"cGFydGlhbA=="}',
       '',
@@ -137,9 +137,10 @@ describe('callImageApi', () => {
     const [, init] = fetchMock.mock.calls[0]
     const body = JSON.parse(String((init as RequestInit).body))
     expect(body).toMatchObject({
-      stream: true,
-      partial_images: 3,
+      model: DEFAULT_SETTINGS.model,
     })
+    expect(body.stream).toBeUndefined()
+    expect(body.partial_images).toBeUndefined()
     expect(partialImages).toEqual(['data:image/png;base64,cGFydGlhbA=='])
     expect(result).toMatchObject({
       images: ['data:image/png;base64,ZmluYWw='],
@@ -241,21 +242,16 @@ describe('callImageApi', () => {
     })
   })
 
-  it('splits Images API streaming into concurrent single-image requests when n is greater than 1', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
-      const streamBody = [
-        'data: {"type":"image_generation.partial_image","partial_image_index":0,"b64_json":"cGFydGlhbA=="}',
-        '',
-        'data: {"type":"image_generation.completed","b64_json":"ZmluYWw=","size":"1024x1024","quality":"high","output_format":"png"}',
-        '',
-        'data: [DONE]',
-        '',
-      ].join('\n')
-      return new Response(streamBody, {
-        status: 200,
-        headers: { 'Content-Type': 'text/event-stream' },
-      })
-    })
+  it('keeps Images API multi-image requests batched when saved streaming flags are migrated off', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [
+        { b64_json: 'Zmlyc3Q=' },
+        { b64_json: 'c2Vjb25k=' },
+      ],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
     const partials: Array<{ image: string; requestIndex?: number }> = []
 
     const result = await callImageApi({
@@ -277,26 +273,21 @@ describe('callImageApi', () => {
       onPartialImage: (partial: { image: string; requestIndex?: number }) => partials.push(partial),
     } as any)
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    for (const [, init] of fetchMock.mock.calls) {
-      const body = JSON.parse(String((init as RequestInit).body))
-      expect(body.n).toBeUndefined()
-      expect(body.stream).toBe(true)
-      expect(body.partial_images).toBe(1)
-    }
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [, init] = fetchMock.mock.calls[0]
+    const body = JSON.parse(String((init as RequestInit).body))
+    expect(body.n).toBe(2)
+    expect(body.stream).toBeUndefined()
+    expect(body.partial_images).toBeUndefined()
     expect(result.images).toHaveLength(2)
     expect(result.images).toEqual([
-      'data:image/png;base64,ZmluYWw=',
-      'data:image/png;base64,ZmluYWw=',
+      'data:image/png;base64,Zmlyc3Q=',
+      'data:image/png;base64,c2Vjb25k=',
     ])
-    expect(partials.map((partial) => partial.requestIndex).sort()).toEqual([0, 1])
-    expect(partials.map((partial) => partial.image)).toEqual([
-      'data:image/png;base64,cGFydGlhbA==',
-      'data:image/png;base64,cGFydGlhbA==',
-    ])
+    expect(partials).toEqual([])
   })
 
-  it('streams Responses API partial images and resolves the completed response image', async () => {
+  it('parses Responses API event stream responses without requesting image streaming', async () => {
     const streamBody = [
       'data: {"type":"response.image_generation_call.partial_image","partial_image_index":0,"partial_image_b64":"cGFydGlhbA=="}',
       '',
@@ -334,8 +325,8 @@ describe('callImageApi', () => {
 
     const [, init] = fetchMock.mock.calls[0]
     const body = JSON.parse(String((init as RequestInit).body))
-    expect(body.stream).toBe(true)
-    expect(body.tools[0].partial_images).toBe(1)
+    expect(body.stream).toBeUndefined()
+    expect(body.tools[0].partial_images).toBeUndefined()
     expect(partialImages).toEqual(['data:image/png;base64,cGFydGlhbA=='])
     expect(result).toMatchObject({
       images: ['data:image/png;base64,ZmluYWw='],
