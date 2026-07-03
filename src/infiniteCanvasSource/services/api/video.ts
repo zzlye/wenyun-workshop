@@ -329,10 +329,6 @@ function appendJsonVideoReferenceFields(payload: Record<string, unknown>, images
         payload.input_reference = images.length === 1 ? images[0] : images;
         return;
     }
-    if (isGeminiOmniVideoModel(model)) {
-        payload.image = images[0];
-        return;
-    }
     if (isPixelleJsonVideoModel(model)) {
         // Pixelle/Sora V3 风格接口使用 image_url 作为主参考图，reference_image_urls 作为额外参考图。
         payload.image_url = images[0];
@@ -372,7 +368,7 @@ async function prepareJsonVideoAudioUrls(model: string, audioReferences: Referen
 }
 
 function getJsonVideoReferenceLimit(model: string) {
-    if (isGeekNowSoraModel(model) || isSora2VideoModel(model) || isVeo31FastVideoModel(model) || isGeminiOmniVideoModel(model) || /^kling-video-3\.0$/i.test(model.trim())) return 1;
+    if (isGeekNowSoraModel(model) || isSora2VideoModel(model) || isVeo31FastVideoModel(model) || /^kling-video-3\.0$/i.test(model.trim())) return 1;
     if (isPixelleJsonVideoModel(model)) return 9;
     if (/^kling-video-o3-omni$/i.test(model.trim())) return 7;
     return 7;
@@ -752,10 +748,6 @@ function isVeo31FastVideoModel(model: string) {
     return /^veo31-fast$/i.test(model.trim());
 }
 
-function isGeminiOmniVideoModel(model: string) {
-    return /^gemini-omni-flash-preview$/i.test(model.trim());
-}
-
 function isKlingVideoModel(model: string) {
     return /^kling-video(?:-|$)/i.test(model.trim());
 }
@@ -769,7 +761,6 @@ function isStandardJsonVideoModel(model: string) {
         "sora-v3-pro",
         "sora-v3-fast",
         "veo31-fast",
-        "gemini-omni-flash-preview",
     ].includes(normalized);
 }
 
