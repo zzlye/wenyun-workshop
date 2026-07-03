@@ -150,15 +150,6 @@ export function readAccessToken(payload: unknown): string {
   return ''
 }
 
-function hasConfirmedInviter(session: Pick<NewApiAccountSession, 'inviter' | 'inviterId'>): boolean {
-  if (typeof session.inviterId === 'number') return session.inviterId > 0
-  if (typeof session.inviterId === 'string') {
-    const value = session.inviterId.trim()
-    return Boolean(value) && value !== '0'
-  }
-  return Boolean(session.inviter?.trim())
-}
-
 function readUserId(payload: unknown): number | string | undefined {
   const record = getRecord(payload)
   if (!record) return undefined
@@ -318,14 +309,6 @@ export async function loginNewApiAccount(profile: ApiProfile, payload: NewApiLog
   }
 }
 
-async function deleteNewApiSelf(profile: ApiProfile, session: NewApiAccountSession): Promise<void> {
-  await newApiRequest(profile, '/api/user/self', {
-    method: 'DELETE',
-    accessToken: session.accessToken,
-    userId: session.userId,
-  })
-}
-
 export async function registerNewApiAccount(profile: ApiProfile, payload: NewApiRegisterPayload): Promise<NewApiAccountSession> {
   await newApiRequest(profile, '/api/user/register', {
     method: 'POST',
@@ -337,14 +320,6 @@ export async function registerNewApiAccount(profile: ApiProfile, payload: NewApi
   })
   const session = await loginNewApiAccountSession(profile, payload)
   const verifiedSession = await fetchNewApiAccountBalance(profile, session)
-  if (!hasConfirmedInviter(verifiedSession)) {
-    try {
-      await deleteNewApiSelf(profile, verifiedSession)
-    } catch {
-      // 邀请码无效时优先阻止继续使用；清理失败不影响前端拒绝注册。
-    }
-    throw new Error('邀请码无效')
-  }
   return ensureNewApiBoundKey(profile, verifiedSession)
 }
 
