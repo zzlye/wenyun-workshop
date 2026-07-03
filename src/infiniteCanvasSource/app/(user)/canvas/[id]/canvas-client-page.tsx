@@ -568,6 +568,12 @@ function InfiniteCanvasPage() {
     }, [dialogNodeId]);
 
     useEffect(() => {
+        if (!dialogNodeId) return;
+        const dialogNode = nodes.find((node) => node.id === dialogNodeId);
+        if (dialogNode?.type === CanvasNodeType.Audio) setDialogNodeId(null);
+    }, [dialogNodeId, nodes]);
+
+    useEffect(() => {
         if (!projectLoaded) return;
         if (viewportSaveTimerRef.current) clearTimeout(viewportSaveTimerRef.current);
         viewportSaveTimerRef.current = setTimeout(() => {
@@ -1528,11 +1534,7 @@ function InfiniteCanvasPage() {
         }
         if (wasClick && clickedNodeId) {
             const clickedNode = nodesRef.current.find((node) => node.id === clickedNodeId);
-            if (clickedNode?.type === CanvasNodeType.Text) {
-                setDialogNodeId(clickedNodeId);
-            } else {
-                setDialogNodeId(clickedNodeId);
-            }
+            setDialogNodeId(clickedNode?.type === CanvasNodeType.Audio ? null : clickedNodeId);
         }
     }, []);
 
@@ -3031,7 +3033,7 @@ function InfiniteCanvasPage() {
                             isConnecting={Boolean(connectingParams)}
                             handlePointerY={nodeHandlePointer?.nodeId === node.id ? nodeHandlePointer.y : null}
                             editRequestNonce={editingNodeId === node.id ? editRequestNonce : 0}
-                            showPanel={dialogNodeId === node.id && !selectionBox}
+                            showPanel={node.type !== CanvasNodeType.Audio && dialogNodeId === node.id && !selectionBox}
                             batchCount={batchChildCountById.get(node.id) || 0}
                             batchExpanded={Boolean(node.metadata?.imageBatchExpanded)}
                             batchClosing={Boolean(node.metadata?.batchRootId && collapsingBatchIds.has(node.metadata.batchRootId))}
@@ -3229,7 +3231,7 @@ function InfiniteCanvasPage() {
                     onEditText={openTextEditor}
                     onDecreaseFont={(node) => handleFontSizeChange(node.id, Math.max(10, (node.metadata?.fontSize || 14) - 2))}
                     onIncreaseFont={(node) => handleFontSizeChange(node.id, Math.min(32, (node.metadata?.fontSize || 14) + 2))}
-                    onToggleDialog={(node) => setDialogNodeId((current) => (current === node.id ? null : node.id))}
+                    onToggleDialog={(node) => setDialogNodeId((current) => (node.type === CanvasNodeType.Audio ? null : current === node.id ? null : node.id))}
                     onGenerateImage={generateImageFromTextNode}
                     onUpload={(node) => handleUploadRequest(node.id)}
                     onDownload={downloadNodeImage}
