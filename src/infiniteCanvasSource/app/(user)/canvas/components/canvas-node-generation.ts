@@ -1,32 +1,38 @@
 import type { ChatCompletionMessage } from "@/services/api/image";
-import type { ReferenceImage } from "@/types/image";
+import type { ReferenceAudio, ReferenceImage } from "@/types/image";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "../types";
 
 export type NodeGenerationContext = {
     prompt: string;
     referenceImages: ReferenceImage[];
+    referenceAudios: ReferenceAudio[];
     textCount: number;
     imageCount: number;
+    audioCount: number;
 };
 
 export type NodeGenerationInput = {
     nodeId: string;
-    type: "text" | "image" | "video";
+    type: "text" | "image" | "video" | "audio";
     title: string;
     text?: string;
     image?: ReferenceImage;
+    audio?: ReferenceAudio;
 };
 
 export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[], prompt: string): NodeGenerationContext {
     const inputs = buildNodeGenerationInputs(nodeId, nodes, connections);
     const upstreamText = buildConnectedPromptText(inputs);
     const referenceImages = getNodeGenerationInputReferenceImages(inputs);
+    const referenceAudios = getNodeGenerationInputReferenceAudios(inputs);
 
     return {
         prompt: combineNodeGenerationPrompt(prompt, upstreamText),
         referenceImages,
+        referenceAudios,
         textCount: inputs.filter((input) => input.type === "text").length,
         imageCount: referenceImages.length,
+        audioCount: referenceAudios.length,
     };
 }
 
@@ -75,6 +81,10 @@ export function getNodeGenerationInputReferenceImages(inputs: NodeGenerationInpu
     return inputs.map((input) => input.image).filter((image): image is ReferenceImage => Boolean(image));
 }
 
+export function getNodeGenerationInputReferenceAudios(inputs: NodeGenerationInput[]) {
+    return inputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
+}
+
 export function mergeNodeReferenceImages(...groups: ReferenceImage[][]) {
     const seen = new Set<string>();
     const result: ReferenceImage[] = [];
@@ -89,8 +99,26 @@ export function mergeNodeReferenceImages(...groups: ReferenceImage[][]) {
     return result;
 }
 
+export function mergeNodeReferenceAudios(...groups: ReferenceAudio[][]) {
+    const seen = new Set<string>();
+    const result: ReferenceAudio[] = [];
+    for (const group of groups) {
+        for (const audio of group) {
+            const key = referenceAudioIdentity(audio);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            result.push(audio);
+        }
+    }
+    return result;
+}
+
 export function referenceImageIdentity(image: Pick<ReferenceImage, "id" | "dataUrl" | "url" | "storageKey">) {
     return image.storageKey || image.url || image.dataUrl || image.id;
+}
+
+export function referenceAudioIdentity(audio: Pick<ReferenceAudio, "id" | "url" | "storageKey">) {
+    return audio.storageKey || audio.url || audio.id;
 }
 
 export function buildNodeChatMessages(context: NodeGenerationContext): ChatCompletionMessage[] {
@@ -108,7 +136,12 @@ export function buildNodeChatMessages(context: NodeGenerationContext): ChatCompl
 
 export async function hydrateNodeGenerationContext(context: NodeGenerationContext) {
     const { imageToDataUrl } = await import("@/services/image-storage");
-    return { ...context, referenceImages: await Promise.all(context.referenceImages.map(async (image) => ({ ...image, dataUrl: await imageToDataUrl(image) }))) };
+    const { mediaToDataUrl } = await import("@/services/file-storage");
+    return {
+        ...context,
+        referenceImages: await Promise.all(context.referenceImages.map(async (image) => ({ ...image, dataUrl: await imageToDataUrl(image) }))),
+        referenceAudios: await Promise.all(context.referenceAudios.map(async (audio) => ({ ...audio, url: await mediaToDataUrl(audio) }))),
+    };
 }
 
 function readNodeTextInput(node: CanvasNodeData) {
@@ -124,6 +157,9 @@ function buildNodeGenerationInputsFromNode(node: CanvasNodeData, nodes: CanvasNo
     const image = readReferenceImage(node);
     if (image) return [...upstreamInputs, { nodeId: node.id, type: "image" as const, title: node.title, image }];
 
+    const audio = readReferenceAudio(node);
+    if (audio) return [...upstreamInputs, { nodeId: node.id, type: "audio" as const, title: node.title, audio }];
+
     const text = readNodeTextInput(node);
     if (text) return [...upstreamInputs, { nodeId: node.id, type: "text" as const, title: node.title, text }];
     return upstreamInputs;
@@ -136,6 +172,17 @@ function readReferenceImage(node: CanvasNodeData): ReferenceImage | null {
         name: `${node.title || node.id}.png`,
         type: node.metadata.mimeType || "image/png",
         dataUrl: node.metadata.content,
+        storageKey: node.metadata.storageKey,
+    };
+}
+
+function readReferenceAudio(node: CanvasNodeData): ReferenceAudio | null {
+    if (node.type !== CanvasNodeType.Audio || !node.metadata?.content) return null;
+    return {
+        id: node.id,
+        name: node.title || `${node.id}.mp3`,
+        type: node.metadata.mimeType || "audio/mpeg",
+        url: node.metadata.content,
         storageKey: node.metadata.storageKey,
     };
 }

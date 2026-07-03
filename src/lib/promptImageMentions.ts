@@ -3,7 +3,8 @@ import type { InputImage } from '../types'
 const MENTION_START = '\u2063'
 const MENTION_END = '\u2064'
 const SELECTED_IMAGE_MENTION_RE = /\u2063@图(\d+)\u2064/g
-const SELECTED_MENTION_RE = /\u2063(@图(\d+)|@(?:第)?\d+轮图\d+)\u2064/g
+const SELECTED_AUDIO_MENTION_RE = /\u2063@音频(\d+)\u2064/g
+const SELECTED_MENTION_RE = /\u2063(@图(\d+)|@音频(\d+)|@(?:第)?\d+轮图\d+)\u2064/g
 
 export interface AtImageQuery {
   start: number
@@ -12,6 +13,10 @@ export interface AtImageQuery {
 
 export function getImageMentionLabel(index: number) {
   return `@图${index + 1}`
+}
+
+export function getAudioMentionLabel(index: number) {
+  return `@音频${index + 1}`
 }
 
 export function getSelectedImageMentionLabel(index: number) {
@@ -59,11 +64,19 @@ export function getAtImageQuery(prompt: string, cursor: number, imageSource: Pic
 }
 
 export function imageMentionMatches(query: string, index: number) {
+  return mediaMentionMatches(query, index, '图')
+}
+
+export function audioMentionMatches(query: string, index: number) {
+  return mediaMentionMatches(query, index, '音频')
+}
+
+function mediaMentionMatches(query: string, index: number, labelPrefix: string) {
   const normalized = query.trim().toLowerCase()
   if (!normalized) return true
 
   const oneBasedIndex = String(index + 1)
-  const label = `图${oneBasedIndex}`
+  const label = `${labelPrefix}${oneBasedIndex}`
   return oneBasedIndex.includes(normalized) || label.toLowerCase().includes(normalized)
 }
 
@@ -79,6 +92,10 @@ export function insertImageMention(prompt: string, start: number, cursor: number
 
 export function insertImageMentionAtVisibleRange(prompt: string, start: number, cursor: number, imageIndex: number) {
   return insertTextMentionAtVisibleRange(prompt, start, cursor, getImageMentionLabel(imageIndex))
+}
+
+export function insertAudioMentionAtVisibleRange(prompt: string, start: number, cursor: number, audioIndex: number) {
+  return insertTextMentionAtVisibleRange(prompt, start, cursor, getAudioMentionLabel(audioIndex))
 }
 
 export function insertTextMentionAtVisibleRange(prompt: string, start: number, cursor: number, text: string) {
@@ -104,6 +121,14 @@ export function remapImageMentionsForOrder(
     const nextImageId = equivalentImageIds[previousImage.id] ?? previousImage.id
     const nextIndex = nextImages.findIndex((img) => img.id === nextImageId)
     return nextIndex >= 0 ? getSelectedImageMentionLabel(nextIndex) : '@已移除图片'
+  })
+}
+
+export function replaceAudioMentionsForApi(prompt: string, audioCount?: number, formatAudio?: (index: number) => string): string {
+  return prompt.replace(SELECTED_AUDIO_MENTION_RE, (text, n) => {
+    const index = Number(n) - 1
+    if (audioCount != null && (index < 0 || index >= audioCount)) return stripImageMentionMarkers(text)
+    return formatAudio ? formatAudio(index) : `[audio ${n}]`
   })
 }
 

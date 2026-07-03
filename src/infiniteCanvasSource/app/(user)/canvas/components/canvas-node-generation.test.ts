@@ -107,6 +107,26 @@ describe("canvas node generation prompt handling", () => {
         expect(context.imageCount).toBe(3);
     });
 
+    it("视频节点会递归继承上游音频节点作为参考音频", () => {
+        const audioNode = baseNode({
+            id: "audio-source",
+            type: CanvasNodeType.Audio,
+            title: "配乐",
+            metadata: { content: "blob:audio-url", storageKey: "audio:source", mimeType: "audio/mpeg" },
+        });
+        const videoNode = baseNode({
+            id: "video-target",
+            type: CanvasNodeType.Video,
+            metadata: { prompt: "参考 @音频1 的节奏生成视频" },
+        });
+        const connections: CanvasConnection[] = [{ id: "conn-audio", fromNodeId: audioNode.id, toNodeId: videoNode.id }];
+
+        const context = buildNodeGenerationContext(videoNode.id, [audioNode, videoNode], connections, "参考 [reference audio 1] 的节奏生成视频");
+
+        expect(context.audioCount).toBe(1);
+        expect(context.referenceAudios[0]).toMatchObject({ id: audioNode.id, url: audioNode.metadata?.content, storageKey: "audio:source" });
+    });
+
     it("合并参考图时保留手动参考图在连接图之前并按图片去重", () => {
         const manual = { id: "manual-1", name: "手动图", type: "image/png", dataUrl: "data:image/png;base64,manual" };
         const connected = { id: "connected-1", name: "连接图", type: "image/png", dataUrl: "data:image/png;base64,connected" };

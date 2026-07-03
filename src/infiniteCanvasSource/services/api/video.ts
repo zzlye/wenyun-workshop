@@ -2,10 +2,11 @@
 import axios from "axios";
 
 import { dataUrlToFile, getDataUrlByteSize } from "@/lib/image-utils";
+import { mediaToDataUrl } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import type { AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
-import type { ReferenceImage } from "@/types/image";
+import type { ReferenceAudio, ReferenceImage } from "@/types/image";
 import { buildApiUrl as buildDevApiUrl, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from "../../../lib/devProxy";
 import { sanitizeApiErrorMessage } from "../../../lib/imageApiShared";
 
@@ -86,7 +87,7 @@ function requestTimeout(source: VideoApiSource) {
     return Math.max(1, source.timeout || 120) * 1000;
 }
 
-export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = []) {
+export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], audioReferences: ReferenceAudio[] = []) {
     const model = config.videoModel || config.model;
     const sources = resolveVideoApiSources(config);
     if (!sources.length) throw new Error("请先在设置里填写支持视频生成的 API URL 和 Key");
@@ -110,7 +111,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
         }
 
         if (isJsonVideosFirstModel(model)) {
-            const result = await tryGeneration(`${labelPrefix}OpenAI JSON /videos`, () => requestOpenAiVideosJsonGeneration(config, source, prompt, references, model), shouldFallbackToNextVideoSource);
+            const result = await tryGeneration(`${labelPrefix}OpenAI JSON /videos`, () => requestOpenAiVideosJsonGeneration(config, source, prompt, references, audioReferences, model), shouldFallbackToNextVideoSource);
             if (result) return result;
         }
 
@@ -135,7 +136,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     throw buildVideoGenerationError(failures);
 }
 
-async function requestOpenAiVideosJsonGeneration(config: AiConfig, source: VideoApiSource, prompt: string, references: ReferenceImage[], model: string) {
+async function requestOpenAiVideosJsonGeneration(config: AiConfig, source: VideoApiSource, prompt: string, references: ReferenceImage[], audioReferences: ReferenceAudio[], model: string) {
     const seconds = normalizeVideoSecondsForModel(config.videoSeconds, model);
     const payload: Record<string, unknown> = isGeekNowSoraModel(model)
         ? { model, prompt, size: normalizeSoraVideoSize(config.size, model), seconds }
@@ -151,6 +152,8 @@ async function requestOpenAiVideosJsonGeneration(config: AiConfig, source: Video
           };
     const images = (await Promise.all(references.slice(0, getJsonVideoReferenceLimit(model)).map((image) => imageToDataUrl(image)))).filter(Boolean);
     appendJsonVideoReferenceFields(payload, images, model);
+    const audios = (await Promise.all(audioReferences.slice(0, getJsonVideoAudioLimit(model)).map((audio) => audioToDataUrl(audio)))).filter(Boolean);
+    appendJsonVideoAudioFields(payload, audios);
     const created = unwrapVideoTask((await axios.post<ApiVideoResponse>(aiApiUrl(config, source, "/videos"), payload, { headers: { ...aiHeaders(config, source), "Content-Type": "application/json" }, timeout: requestTimeout(source) })).data);
     return waitOpenAiVideoResult(config, source, created, model);
 }
@@ -325,11 +328,11 @@ function appendJsonVideoReferenceFields(payload: Record<string, unknown>, images
         payload.input_reference = images.length === 1 ? images[0] : images;
         return;
     }
-    if (isSoraV3VideoModel(model)) {
-        // 兼容 NewAPI 的 image_urls，以及 Sora V3 上游的 image_url/reference_image_urls。
+    if (isPixelleJsonVideoModel(model)) {
+        // Pixelle/Sora V3 风格接口使用 image_url 作为主参考图，reference_image_urls 作为额外参考图。
+        payload.image_url = images[0];
+        if (images.length > 1) payload.reference_image_urls = images.slice(1);
         payload.image_urls = images;
-        if (images.length === 1) payload.image_url = images[0];
-        else payload.reference_image_urls = images;
         return;
     }
     if (isStandardJsonVideoModel(model)) {
@@ -341,11 +344,21 @@ function appendJsonVideoReferenceFields(payload: Record<string, unknown>, images
     payload.input_reference = images.length === 1 ? images[0] : images;
 }
 
+function appendJsonVideoAudioFields(payload: Record<string, unknown>, audios: string[]) {
+    if (!audios.length) return;
+    payload.audio_url = audios[0];
+    if (audios.length > 1) payload.audio_urls = audios;
+}
+
 function getJsonVideoReferenceLimit(model: string) {
     if (isGeekNowSoraModel(model) || isSora2VideoModel(model) || isVeo31FastVideoModel(model) || /^kling-video-3\.0$/i.test(model.trim())) return 1;
-    if (isSoraV3VideoModel(model)) return 4;
+    if (isPixelleJsonVideoModel(model)) return 9;
     if (/^kling-video-o3-omni$/i.test(model.trim())) return 7;
     return 7;
+}
+
+function getJsonVideoAudioLimit(model: string) {
+    return isPixelleJsonVideoModel(model) ? 3 : 0;
 }
 
 function normalizeVideoSize(value: string) {
@@ -385,6 +398,10 @@ async function imageToVideoReferenceFile(image: ReferenceImage) {
     const dataUrl = await imageToDataUrl(image);
     const optimizedDataUrl = await optimizeVideoReferenceDataUrl(dataUrl);
     return dataUrlToFile({ ...image, name: videoReferenceFileName(image.name), type: "image/jpeg", dataUrl: optimizedDataUrl });
+}
+
+async function audioToDataUrl(audio: ReferenceAudio) {
+    return mediaToDataUrl(audio);
 }
 
 async function optimizeVideoReferenceDataUrl(dataUrl: string) {
@@ -623,6 +640,14 @@ function isSoraV3VideoModel(model: string) {
     return /^sora-v3(?:-|$)/i.test(model.trim());
 }
 
+function isSeedanceVideoModel(model: string) {
+    return /^seedance-?2(?:-|$)/i.test(model.trim());
+}
+
+function isPixelleJsonVideoModel(model: string) {
+    return isSoraV3VideoModel(model) || isSeedanceVideoModel(model);
+}
+
 function isSoraVideoModel(model: string) {
     return isSora2VideoModel(model) || isSoraV3VideoModel(model) || /^sora(?:-|$)/i.test(model.trim());
 }
@@ -652,7 +677,7 @@ function isStandardJsonVideoModel(model: string) {
 }
 
 function isJsonVideosFirstModel(model: string) {
-    return isStandardJsonVideoModel(model) || isSoraVideoModel(model) || isVeoVideoModel(model) || isKlingVideoModel(model);
+    return isStandardJsonVideoModel(model) || isSoraVideoModel(model) || isSeedanceVideoModel(model) || isVeoVideoModel(model) || isKlingVideoModel(model);
 }
 
 function videoDownloadHeaders(config: AiConfig, source: VideoApiSource, url: string) {

@@ -2,7 +2,7 @@
 
 import { Children, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent, KeyboardEvent, ReactNode } from "react";
-import { ArrowUp, Link2, LoaderCircle, Paintbrush, Plus, Search, Trash2, Upload, X } from "lucide-react";
+import { ArrowUp, AudioLines, Link2, LoaderCircle, Paintbrush, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { Button, Empty, Input, Modal, Tabs, Tag } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -15,15 +15,16 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { assetTagOptions, assetTagValues, getAssetTag, normalizeAssetTag, type AssetTag } from "@/lib/asset-tags";
 import type { InputImage } from "../../../../../types";
 import { getActiveApiProfile, getApiModelUnitCostText, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
-import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, isCursorInSelectedImageMention, remapImageMentionsForOrder, stripImageMentionMarkers } from "../../../../../lib/promptImageMentions";
+import { audioMentionMatches, getAtImageQuery, getAudioMentionLabel, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertAudioMentionAtVisibleRange, insertImageMentionAtVisibleRange, isCursorInSelectedImageMention, remapImageMentionsForOrder, stripImageMentionMarkers } from "../../../../../lib/promptImageMentions";
 import { storeImage } from "../../../../../lib/db";
 import { useCanvasModelOptions } from "./canvas-model-options";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { CanvasPromptLibrary } from "./canvas-prompt-library";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData, type CanvasReferenceImage } from "../types";
-import { buildConnectedPromptText, getNodeGenerationInputReferenceImages, hasUsableNodeGenerationPrompt, mergeNodeReferenceImages, referenceImageIdentity, stripConnectedPromptSuffix, type NodeGenerationInput } from "./canvas-node-generation";
+import { buildConnectedPromptText, getNodeGenerationInputReferenceAudios, getNodeGenerationInputReferenceImages, hasUsableNodeGenerationPrompt, mergeNodeReferenceImages, referenceAudioIdentity, referenceImageIdentity, stripConnectedPromptSuffix, type NodeGenerationInput } from "./canvas-node-generation";
 import { createInputImageFromFile, primeImageCache, useStore } from "../../../../../store";
+import type { ReferenceAudio } from "@/types/image";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
 
@@ -39,6 +40,7 @@ type CanvasNodePromptPanelProps = {
 };
 
 type ReferencePickerCategory = AssetTag;
+type AtMediaOption = { key: string; kind: "image"; label: string; image: InputImage; imageIndex: number; source: string } | { key: string; kind: "audio"; label: string; audio: ReferenceAudio; audioIndex: number; source: string };
 
 const MAX_REFERENCE_IMAGES = 16;
 const referenceCategoryOptions = assetTagOptions;
@@ -80,6 +82,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
     const [referencePickerOpen, setReferencePickerOpen] = useState(false);
     const referenceImages = node.metadata?.referenceImages || [];
     const connectedReferenceImages = useMemo(() => getNodeGenerationInputReferenceImages(inputs), [inputs]);
+    const connectedReferenceAudios = useMemo(() => (mode === "video" ? getNodeGenerationInputReferenceAudios(inputs) : []), [inputs, mode]);
     const connectedReferenceKeys = useMemo(() => new Set(connectedReferenceImages.map(referenceImageIdentity)), [connectedReferenceImages]);
     const mentionableReferences = useMemo(() => mergeNodeReferenceImages(referenceImages, connectedReferenceImages), [connectedReferenceImages, referenceImages]);
     const mentionableInputImages = useMemo<InputImage[]>(() => mentionableReferences.map(referenceToInputImage), [mentionableReferences]);
@@ -90,6 +93,10 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
                 .filter((item) => item.mentionIndex >= 0),
         [connectedReferenceImages, mentionableReferences],
     );
+    const connectedAudioItems = useMemo(
+        () => connectedReferenceAudios.map((audio, index) => ({ audio, mentionIndex: index })),
+        [connectedReferenceAudios],
+    );
     const referenceImagesRef = useRef(referenceImages);
     const mentionableReferencesRef = useRef(mentionableReferences);
     const promptRef = useRef(prompt);
@@ -97,13 +104,19 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
     const imageCostText = mode === "image" ? (getApiModelUnitCostText(settings, activeProfile.id, config.model) ?? "HUHN --") : null;
     const atReferenceLimit = referenceImages.length >= MAX_REFERENCE_IMAGES;
     const visiblePrompt = stripImageMentionMarkers(prompt);
-    const atImageQuery = isCursorInSelectedImageMention(prompt, cursorPos) ? null : getAtImageQuery(visiblePrompt, cursorPos, { length: mentionableInputImages.length });
-    const atImageOptions = atImageQuery
-        ? mentionableReferences
-              .map((reference, index) => ({ key: referenceImageIdentity(reference), label: getImageMentionLabel(index), image: referenceToInputImage(reference), imageIndex: index, source: connectedReferenceKeys.has(referenceImageIdentity(reference)) ? "连接图" : "参考图" }))
-              .filter((option) => imageMentionMatches(atImageQuery.query, option.imageIndex))
-        : [];
-    const showAtImageMenu = !atImageMenuDismissed && atImageOptions.length > 0;
+    const mentionableMediaCount = mentionableInputImages.length + connectedReferenceAudios.length;
+    const atImageQuery = isCursorInSelectedImageMention(prompt, cursorPos) ? null : getAtImageQuery(visiblePrompt, cursorPos, { length: mentionableMediaCount });
+    const atMediaOptions: AtMediaOption[] = useMemo(() => {
+        if (!atImageQuery) return [];
+        const imageOptions: AtMediaOption[] = mentionableReferences
+            .map((reference, index) => ({ key: referenceImageIdentity(reference), kind: "image" as const, label: getImageMentionLabel(index), image: referenceToInputImage(reference), imageIndex: index, source: connectedReferenceKeys.has(referenceImageIdentity(reference)) ? "连接图" : "参考图" }))
+            .filter((option) => imageMentionMatches(atImageQuery.query, option.imageIndex));
+        const audioOptions: AtMediaOption[] = connectedReferenceAudios
+            .map((audio, index) => ({ key: referenceAudioIdentity(audio), kind: "audio" as const, label: getAudioMentionLabel(index), audio, audioIndex: index, source: "连接音频" }))
+            .filter((option) => audioMentionMatches(atImageQuery.query, option.audioIndex));
+        return [...imageOptions, ...audioOptions];
+    }, [atImageQuery, connectedReferenceAudios, connectedReferenceKeys, mentionableReferences]);
+    const showAtImageMenu = !atImageMenuDismissed && atMediaOptions.length > 0;
 
     useEffect(() => {
         referenceImagesRef.current = referenceImages;
@@ -375,27 +388,28 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
         [node.id, replaceReference, showToast],
     );
 
-    const selectAtImageOption = useCallback(
-        (imageIndex: number) => {
+    const selectAtMediaOption = useCallback(
+        (option: AtMediaOption) => {
             const el = inputRef.current;
             const cursor = el ? getContentEditableCursor(el) : prompt.length;
-            const query = getAtImageQuery(stripImageMentionMarkers(prompt), cursor, { length: mentionableInputImages.length });
+            const query = getAtImageQuery(stripImageMentionMarkers(prompt), cursor, { length: mentionableMediaCount });
             setAtImageMenuDismissed(true);
             setAtImageMenuIndex(0);
             if (!query) return;
 
-            const nextCursor = query.start + getImageMentionLabel(imageIndex).length;
+            const label = option.kind === "image" ? getImageMentionLabel(option.imageIndex) : getAudioMentionLabel(option.audioIndex);
+            const nextCursor = query.start + label.length;
             if (el) {
                 el.focus();
                 setContentEditableSelection(el, query.start, cursor);
-                if (document.execCommand("insertHTML", false, getMentionTagHtml(getImageMentionLabel(imageIndex)))) {
+                if (document.execCommand("insertHTML", false, getMentionTagHtml(label))) {
                     setContentEditableCursor(el, nextCursor);
                     syncPromptFromInput();
                     return;
                 }
             }
 
-            const next = insertImageMentionAtVisibleRange(prompt, query.start, cursor, imageIndex);
+            const next = option.kind === "image" ? insertImageMentionAtVisibleRange(prompt, query.start, cursor, option.imageIndex) : insertAudioMentionAtVisibleRange(prompt, query.start, cursor, option.audioIndex);
             isUserInputRef.current = false;
             updatePrompt(next.prompt);
             window.setTimeout(() => {
@@ -404,7 +418,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
                 setContentEditableCursor(inputRef.current, next.cursor);
             }, 0);
         },
-        [mentionableInputImages.length, prompt, syncPromptFromInput, updatePrompt],
+        [mentionableMediaCount, prompt, syncPromptFromInput, updatePrompt],
     );
 
     const insertImageMentionAtCursor = useCallback(
@@ -422,6 +436,33 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
                 }
             }
             const next = insertImageMentionAtVisibleRange(prompt, cursor, cursor, imageIndex);
+            isUserInputRef.current = false;
+            updatePrompt(next.prompt);
+            window.setTimeout(() => {
+                if (!inputRef.current) return;
+                inputRef.current.focus();
+                setContentEditableCursor(inputRef.current, next.cursor);
+            }, 0);
+        },
+        [cursorPos, prompt, syncPromptFromInput, updatePrompt],
+    );
+
+    const insertAudioMentionAtCursor = useCallback(
+        (audioIndex: number) => {
+            const el = inputRef.current;
+            const cursor = el ? getContentEditableCursor(el) : cursorPos;
+            const label = getAudioMentionLabel(audioIndex);
+            const nextCursor = cursor + label.length;
+            if (el) {
+                el.focus();
+                setContentEditableCursor(el, cursor);
+                if (document.execCommand("insertHTML", false, getMentionTagHtml(label))) {
+                    setContentEditableCursor(el, nextCursor);
+                    syncPromptFromInput();
+                    return;
+                }
+            }
+            const next = insertAudioMentionAtVisibleRange(prompt, cursor, cursor, audioIndex);
             isUserInputRef.current = false;
             updatePrompt(next.prompt);
             window.setTimeout(() => {
@@ -569,12 +610,12 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
         if (showAtImageMenu) {
             if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                 event.preventDefault();
-                setAtImageMenuIndex((index) => (event.key === "ArrowDown" ? (index + 1) % atImageOptions.length : (index - 1 + atImageOptions.length) % atImageOptions.length));
+                setAtImageMenuIndex((index) => (event.key === "ArrowDown" ? (index + 1) % atMediaOptions.length : (index - 1 + atMediaOptions.length) % atMediaOptions.length));
                 return;
             }
             if (event.key === "Enter" || event.key === "Tab") {
                 event.preventDefault();
-                selectAtImageOption(atImageOptions[Math.max(0, Math.min(atImageMenuIndex, atImageOptions.length - 1))].imageIndex);
+                selectAtMediaOption(atMediaOptions[Math.max(0, Math.min(atImageMenuIndex, atMediaOptions.length - 1))]);
                 return;
             }
             if (event.key === "Escape") {
@@ -599,11 +640,11 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
             onWheel={(event) => event.stopPropagation()}
         >
             <div className="rounded-xl border p-2 shadow-sm" style={{ background: theme.node.fill, borderColor: theme.node.stroke }}>
-                {connectedReferenceItems.length > 0 ? (
+                {connectedReferenceItems.length > 0 || connectedAudioItems.length > 0 ? (
                     <div className="mb-2 rounded-xl border border-blue-200/70 bg-blue-50/70 p-2 dark:border-blue-400/20 dark:bg-blue-500/10">
                         <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-blue-600 dark:text-blue-300">
                             <Link2 className="size-3.5" />
-                            已连接图片
+                            已连接素材
                         </div>
                         <div className="grid grid-cols-[repeat(auto-fill,52px)] gap-x-2 gap-y-3">
                             {connectedReferenceItems.map(({ image, mentionIndex }) => (
@@ -619,6 +660,22 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
                                     title="预览连接图片，右键插入 @图"
                                 >
                                     <img src={image.dataUrl} alt={image.name} className="h-full w-full object-cover transition-opacity group-hover/ref:opacity-90" />
+                                    <span className="pointer-events-none absolute bottom-1 left-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600/85 px-1 text-[9px] font-semibold leading-none text-white backdrop-blur-sm">{mentionIndex + 1}</span>
+                                </button>
+                            ))}
+                            {connectedAudioItems.map(({ audio, mentionIndex }) => (
+                                <button
+                                    key={referenceAudioIdentity(audio)}
+                                    type="button"
+                                    className="group/ref relative flex h-[52px] w-[52px] flex-col items-center justify-center overflow-hidden rounded-xl border border-blue-200 bg-white text-blue-600 shadow-sm transition hover:border-blue-400 dark:border-blue-400/30 dark:bg-white/[0.04] dark:text-blue-300"
+                                    onContextMenu={(event) => {
+                                        event.preventDefault();
+                                        insertAudioMentionAtCursor(mentionIndex);
+                                    }}
+                                    title="右键插入 @音频"
+                                >
+                                    <AudioLines className="size-5" />
+                                    <span className="mt-1 max-w-10 truncate text-[9px]">{audio.name}</span>
                                     <span className="pointer-events-none absolute bottom-1 left-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600/85 px-1 text-[9px] font-semibold leading-none text-white backdrop-blur-sm">{mentionIndex + 1}</span>
                                 </button>
                             ))}
@@ -705,22 +762,22 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
                 <div className="relative grid">
                     {showAtImageMenu ? (
                         <div style={{ left: `${menuLeft}px` }} className="absolute bottom-full z-50 mb-2 w-64 overflow-hidden rounded-2xl border border-gray-200/70 bg-white/95 p-1.5 shadow-xl ring-1 ring-black/5 backdrop-blur-xl dark:border-white/[0.08] dark:bg-gray-900/95 dark:ring-white/10">
-                            <div className="px-2 pb-1 pt-0.5 text-[11px] text-gray-400 dark:text-gray-500">选择图片引用</div>
+                            <div className="px-2 pb-1 pt-0.5 text-[11px] text-gray-400 dark:text-gray-500">选择引用素材</div>
                             <div className="max-h-56 overflow-y-auto">
-                                {atImageOptions.map((option, optionIndex) => (
+                                {atMediaOptions.map((option, optionIndex) => (
                                     <button
                                         key={option.key}
                                         type="button"
                                         onMouseDown={(event) => {
                                             event.preventDefault();
-                                            selectAtImageOption(option.imageIndex);
+                                            selectAtMediaOption(option);
                                         }}
                                         onMouseEnter={() => setAtImageMenuIndex(optionIndex)}
                                         className={`flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-xs transition-colors ${
                                             optionIndex === atImageMenuIndex ? "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300" : "text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/[0.06]"
                                         }`}
                                     >
-                                        <img src={option.image.dataUrl} alt={option.label} className="size-8 shrink-0 rounded-lg object-cover" />
+                                        {option.kind === "image" ? <img src={option.image.dataUrl} alt={option.label} className="size-8 shrink-0 rounded-lg object-cover" /> : <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-500 dark:bg-blue-500/10 dark:text-blue-300"><AudioLines className="size-4" /></span>}
                                         <span className="min-w-0 flex-1 truncate font-medium">{option.label}</span>
                                         <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-white/[0.08] dark:text-gray-400">{option.source}</span>
                                     </button>

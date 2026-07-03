@@ -33,6 +33,17 @@ export async function getMediaBlob(storageKey: string) {
     return store.getItem<Blob>(storageKey);
 }
 
+export async function mediaToDataUrl(media: { url?: string; storageKey?: string }) {
+    if (media.storageKey) {
+        const storedBlob = await store.getItem<Blob>(media.storageKey);
+        if (storedBlob) return blobToDataUrl(storedBlob);
+    }
+
+    const directUrl = media.url || "";
+    if (!directUrl || directUrl.startsWith("data:")) return directUrl;
+    return blobToDataUrl(await (await fetch(directUrl)).blob());
+}
+
 export async function setMediaBlob(storageKey: string, blob: Blob) {
     await store.setItem(storageKey, blob);
     const url = URL.createObjectURL(blob);
@@ -74,5 +85,14 @@ function readVideoMeta(url: string) {
         video.onloadedmetadata = done;
         video.onerror = done;
         video.src = url;
+    });
+}
+
+function blobToDataUrl(blob: Blob) {
+    return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("读取媒体失败"));
+        reader.readAsDataURL(blob);
     });
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { InputImage } from '../types'
-import { getAtImageQuery, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, insertImageMention, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, remapImageMentionsForOrder, replaceImageMentionsForApi } from './promptImageMentions'
+import { getAtImageQuery, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, insertImageMention, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, remapImageMentionsForOrder, replaceAudioMentionsForApi, replaceImageMentionsForApi } from './promptImageMentions'
 
 const images: InputImage[] = [
   { id: 'image-a', dataUrl: 'data:image/png;base64,a' },
@@ -67,6 +67,16 @@ describe('prompt image mentions', () => {
       { type: 'mention', text: '@第2轮图4', mentionText: getSelectedTextMentionLabel('@第2轮图4') },
       { type: 'text', text: '生成' },
     ])
+  })
+
+  it('splits and replaces selected audio mentions', () => {
+    const audioMention = getSelectedTextMentionLabel('@音频1')
+    expect(getPromptMentionParts(`参考${audioMention}节奏`, images)).toEqual([
+      { type: 'text', text: '参考' },
+      { type: 'mention', text: '@音频1', mentionText: audioMention },
+      { type: 'text', text: '节奏' },
+    ])
+    expect(replaceAudioMentionsForApi(`参考${audioMention}节奏`, 1)).toBe('参考[audio 1]节奏')
   })
 
   it('detects cursor inside selected image mentions', () => {

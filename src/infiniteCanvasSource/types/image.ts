@@ -8,3 +8,11 @@ export type ReferenceImage = {
     maskDataUrl?: string;
     isMaskTarget?: boolean;
 };
+
+export type ReferenceAudio = {
+    id: string;
+    name: string;
+    type: string;
+    url?: string;
+    storageKey?: string;
+};

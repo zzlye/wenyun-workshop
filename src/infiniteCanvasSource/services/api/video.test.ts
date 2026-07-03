@@ -541,6 +541,47 @@ describe("canvas video api", () => {
         expect(fetch).toHaveBeenCalledWith("https://cdn.example.com/sora-ref.mp4", expect.any(Object));
     });
 
+    it("uses Pixelle JSON fields for Seedance 2 image and audio references", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-seedance", status: "queued" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: { id: "task-seedance", status: "completed", video_url: "https://cdn.example.com/seedance.mp4" } });
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(new Blob(["video"], { type: "video/mp4" })));
+
+        await requestVideoGeneration(
+            {
+                ...defaultConfig,
+                videoBaseUrl: "https://api.example.com/v1",
+                videoApiKey: "video-key",
+                videoModel: "Seedance-2-mini",
+                videoSeconds: "10",
+                vquality: "720",
+                size: "21:9",
+            },
+            "prompt",
+            [
+                { id: "ref-1", name: "ref1.png", type: "image/png", dataUrl: "data:image/png;base64,cmVmMQ==" },
+                { id: "ref-2", name: "ref2.png", type: "image/png", dataUrl: "data:image/png;base64,cmVmMg==" },
+            ],
+            [{ id: "audio-1", name: "audio.mp3", type: "audio/mpeg", url: "data:audio/mpeg;base64,YXVkaW8=" }],
+        );
+
+        const [url, body] = (axios.post as Mock).mock.calls[0];
+        expect(url).toBe("https://api.example.com/v1/videos");
+        expect(body).toEqual(expect.objectContaining({
+            model: "Seedance-2-mini",
+            prompt: "prompt",
+            aspect_ratio: "21:9",
+            duration: 10,
+            seconds: "10",
+            resolution: "720p",
+            image_url: "data:image/png;base64,cmVmMQ==",
+            reference_image_urls: ["data:image/png;base64,cmVmMg=="],
+            image_urls: ["data:image/png;base64,cmVmMQ==", "data:image/png;base64,cmVmMg=="],
+            audio_url: "data:audio/mpeg;base64,YXVkaW8=",
+        }));
+        expect(body).not.toHaveProperty("image");
+        expect(body).not.toHaveProperty("input_reference");
+    });
+
     it("reads nested NewAPI video result url", async () => {
         (axios.post as Mock).mockResolvedValueOnce({ data: { data: { task_id: "task-2", status: "queued" } } });
         (axios.get as Mock)
