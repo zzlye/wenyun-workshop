@@ -163,6 +163,7 @@ export function normalizeVideoSizeValue(value: string, model = "") {
     const size = /^\d+x\d+$/.test(value || "") ? value : ratioToVideoSize(value);
     const aspectRatio = readAspectRatio(size);
     if (isSora2VideoModel(model) || isVeo31FastVideoModel(model)) return aspectRatio === "9:16" ? "720x1280" : "1280x720";
+    if (isGeminiOmniVideoModel(model)) return aspectRatio === "9:16" ? "720x1280" : "1280x720";
     if (isKlingVideoModel(model)) {
         if (aspectRatio === "1:1") return "1024x1024";
         return aspectRatio === "9:16" ? "720x1280" : "1280x720";
@@ -192,6 +193,7 @@ export function normalizeVideoResolutionValue(value: string, model = "") {
     const resolution = value.replace(/p$/i, "") || "720";
     if (isSora2VideoModel(model)) return "720";
     if (isSoraV3VideoModel(model)) return resolution === "480" ? "480" : "720";
+    if (isGeminiOmniVideoModel(model)) return resolution === "480" ? "480" : "720";
     if (isKlingVideoModel(model) || isVeo31FastVideoModel(model)) return resolution === "1080" ? "1080" : "720";
     return resolution;
 }
@@ -237,7 +239,7 @@ function getVideoResolutionOptions(model = "") {
 }
 
 function getVideoSizeOptions(model = "") {
-    if (isSora2VideoModel(model) || isVeo31FastVideoModel(model)) return standardLandscapeSizeOptions;
+    if (isSora2VideoModel(model) || isVeo31FastVideoModel(model) || isGeminiOmniVideoModel(model)) return standardLandscapeSizeOptions;
     if (isKlingVideoModel(model)) return klingSizeOptions;
     if (isSoraV3VideoModel(model)) return soraV3SizeOptions;
     return defaultSizeOptions;
@@ -267,6 +269,10 @@ function isSoraV3VideoModel(model = "") {
 
 function isVeo31FastVideoModel(model = "") {
     return /^veo31-fast$/i.test(model.trim());
+}
+
+function isGeminiOmniVideoModel(model = "") {
+    return /^gemini-omni-flash-preview$/i.test(model.trim());
 }
 
 function isKlingVideoModel(model = "") {

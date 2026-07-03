@@ -300,6 +300,47 @@ describe("canvas video api", () => {
         );
     });
 
+    it("uses single image field for Gemini Omni Flash preview references", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-gemini", status: "queued" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: { id: "task-gemini", status: "completed", video_url: "https://cdn.example.com/gemini.mp4" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: new Blob(["video"], { type: "video/mp4" }) });
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(new Blob(["video"], { type: "video/mp4" })));
+
+        await requestVideoGeneration(
+            {
+                ...defaultConfig,
+                videoBaseUrl: "https://api.example.com/v1",
+                videoApiKey: "video-key",
+                videoModel: "gemini-omni-flash-preview",
+                videoSeconds: "6",
+                vquality: "720",
+                size: "16:9",
+            },
+            "prompt",
+            [
+                { id: "ref-1", name: "ref1.png", type: "image/png", dataUrl: "data:image/png;base64,cmVmMQ==" },
+                { id: "ref-2", name: "ref2.png", type: "image/png", dataUrl: "data:image/png;base64,cmVmMg==" },
+            ],
+        );
+
+        const [url, body] = (axios.post as Mock).mock.calls[0];
+        expect(url).toBe("https://api.example.com/v1/videos");
+        expect(body).toEqual(expect.objectContaining({
+            model: "gemini-omni-flash-preview",
+            prompt: "prompt",
+            aspect_ratio: "16:9",
+            duration: 6,
+            seconds: "6",
+            size: "1280x720",
+            resolution: "720p",
+            generate_audio: true,
+            image: "data:image/png;base64,cmVmMQ==",
+        }));
+        expect(body).not.toHaveProperty("image_urls");
+        expect(body).not.toHaveProperty("reference_image_urls");
+        expect(body).not.toHaveProperty("input_reference");
+    });
+
     it("uses NewAPI video generations endpoint before legacy videos endpoint", async () => {
         (axios.post as Mock).mockResolvedValueOnce({ data: { data: { task_id: "task-1", status: "queued" } } });
         (axios.get as Mock)
