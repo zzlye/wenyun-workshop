@@ -152,7 +152,8 @@ async function requestOpenAiVideosJsonGeneration(config: AiConfig, source: Video
           };
     const images = (await Promise.all(references.slice(0, getJsonVideoReferenceLimit(model)).map((image) => imageToDataUrl(image)))).filter(Boolean);
     appendJsonVideoReferenceFields(payload, images, model);
-    const audios = (await Promise.all(audioReferences.slice(0, getJsonVideoAudioLimit(model)).map((audio) => audioToDataUrl(audio)))).filter(Boolean);
+    assertJsonVideoAudioReferences(model, images, audioReferences);
+    const audios = await prepareJsonVideoAudioUrls(model, audioReferences);
     appendJsonVideoAudioFields(payload, audios);
     const created = unwrapVideoTask((await axios.post<ApiVideoResponse>(aiApiUrl(config, source, "/videos"), payload, { headers: { ...aiHeaders(config, source), "Content-Type": "application/json" }, timeout: requestTimeout(source) })).data);
     return waitOpenAiVideoResult(config, source, created, model);
@@ -350,6 +351,22 @@ function appendJsonVideoAudioFields(payload: Record<string, unknown>, audios: st
     if (audios.length > 1) payload.audio_urls = audios;
 }
 
+function assertJsonVideoAudioReferences(model: string, images: string[], audioReferences: ReferenceAudio[]) {
+    if (!audioReferences.length || !isPixelleJsonVideoModel(model)) return;
+    if (!images.length) throw new Error("视频参考音频必须同时连接至少一张参考图");
+    const invalidDuration = audioReferences.find((audio) => typeof audio.duration === "number" && (audio.duration <= 2 || audio.duration >= 15));
+    if (invalidDuration) throw new Error("视频参考音频时长需要大于 2 秒且小于 15 秒");
+}
+
+async function prepareJsonVideoAudioUrls(model: string, audioReferences: ReferenceAudio[]) {
+    const limit = getJsonVideoAudioLimit(model);
+    if (!limit) return [];
+    const audios = audioReferences.slice(0, limit);
+    if (!isPixelleJsonVideoModel(model)) return (await Promise.all(audios.map((audio) => audioToDataUrl(audio)))).filter(Boolean);
+
+    return (await Promise.all(audios.map(audioToVideoReferenceUrl))).filter(Boolean);
+}
+
 function getJsonVideoReferenceLimit(model: string) {
     if (isGeekNowSoraModel(model) || isSora2VideoModel(model) || isVeo31FastVideoModel(model) || /^kling-video-3\.0$/i.test(model.trim())) return 1;
     if (isPixelleJsonVideoModel(model)) return 9;
@@ -402,6 +419,77 @@ async function imageToVideoReferenceFile(image: ReferenceImage) {
 
 async function audioToDataUrl(audio: ReferenceAudio) {
     return mediaToDataUrl(audio);
+}
+
+async function audioToVideoReferenceUrl(audio: ReferenceAudio) {
+    const directUrl = (audio.url || "").trim();
+    if (/^https?:\/\//i.test(directUrl)) return directUrl;
+
+    const dataUrl = await audioToDataUrl(audio);
+    if (!dataUrl) return "";
+    if (!dataUrl.startsWith("data:audio/")) throw new Error("参考音频格式不正确，请上传 MP3 或 WAV 音频");
+    return normalizeVideoReferenceAudioDataUrl(dataUrl, audio.duration);
+}
+
+async function normalizeVideoReferenceAudioDataUrl(dataUrl: string, knownDuration?: number) {
+    const audioContextType = typeof AudioContext !== "undefined" ? AudioContext : typeof webkitAudioContext !== "undefined" ? webkitAudioContext : null;
+    if (!audioContextType) {
+        assertVideoReferenceAudioDuration(knownDuration);
+        return dataUrl;
+    }
+
+    const blob = await (await fetch(dataUrl)).blob();
+    const context = new audioContextType();
+    try {
+        const buffer = await context.decodeAudioData(await blob.arrayBuffer());
+        assertVideoReferenceAudioDuration(buffer.duration);
+        // 视频上游对音频格式较挑剔，本地上传统一转成 WAV，减少 m4a/webm/ogg 被拒的概率。
+        return audioBufferToWavDataUrl(buffer);
+    } finally {
+        void context.close?.();
+    }
+}
+
+function assertVideoReferenceAudioDuration(duration?: number) {
+    if (typeof duration !== "number" || !Number.isFinite(duration)) return;
+    if (duration <= 2 || duration >= 15) throw new Error("视频参考音频时长需要大于 2 秒且小于 15 秒");
+}
+
+function audioBufferToWavDataUrl(buffer: AudioBuffer) {
+    const channelCount = Math.min(2, buffer.numberOfChannels || 1);
+    const sampleRate = buffer.sampleRate;
+    const frameCount = buffer.length;
+    const dataSize = frameCount * channelCount * 2;
+    const wav = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(wav);
+    writeAscii(view, 0, "RIFF");
+    view.setUint32(4, 36 + dataSize, true);
+    writeAscii(view, 8, "WAVE");
+    writeAscii(view, 12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, channelCount, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * channelCount * 2, true);
+    view.setUint16(32, channelCount * 2, true);
+    view.setUint16(34, 16, true);
+    writeAscii(view, 36, "data");
+    view.setUint32(40, dataSize, true);
+
+    const channels = Array.from({ length: channelCount }, (_, index) => buffer.getChannelData(index));
+    let offset = 44;
+    for (let frame = 0; frame < frameCount; frame++) {
+        for (let channel = 0; channel < channelCount; channel++) {
+            const sample = Math.max(-1, Math.min(1, channels[channel][frame] || 0));
+            view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+            offset += 2;
+        }
+    }
+    return blobToDataUrl(new Blob([wav], { type: "audio/wav" }));
+}
+
+function writeAscii(view: DataView, offset: number, value: string) {
+    for (let index = 0; index < value.length; index++) view.setUint8(offset + index, value.charCodeAt(index));
 }
 
 async function optimizeVideoReferenceDataUrl(dataUrl: string) {

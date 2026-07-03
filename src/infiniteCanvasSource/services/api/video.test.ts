@@ -582,6 +582,65 @@ describe("canvas video api", () => {
         expect(body).not.toHaveProperty("input_reference");
     });
 
+    it("passes HTTP audio references for Seedance models without rewriting the URL", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-seedance-audio", status: "queued" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: { id: "task-seedance-audio", status: "completed", video_url: "https://cdn.example.com/seedance-audio.mp4" } });
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(new Blob(["video"], { type: "video/mp4" })));
+
+        await requestVideoGeneration(
+            {
+                ...defaultConfig,
+                videoBaseUrl: "https://api.example.com/v1",
+                videoApiKey: "video-key",
+                videoModel: "Seedance-2-fast",
+                videoSeconds: "10",
+                vquality: "720",
+                size: "16:9",
+            },
+            "prompt",
+            [{ id: "ref-1", name: "ref1.png", type: "image/png", dataUrl: "data:image/png;base64,cmVmMQ==" }],
+            [{ id: "audio-1", name: "audio.mp3", type: "audio/mpeg", url: "https://cdn.example.com/audio.mp3", duration: 8 }],
+        );
+
+        expect((axios.post as Mock).mock.calls[0][1]).toEqual(expect.objectContaining({
+            model: "Seedance-2-fast",
+            image_url: "data:image/png;base64,cmVmMQ==",
+            audio_url: "https://cdn.example.com/audio.mp3",
+        }));
+    });
+
+    it("requires an image reference when sending audio references to Seedance models", async () => {
+        await expect(requestVideoGeneration(
+            {
+                ...defaultConfig,
+                videoBaseUrl: "https://api.example.com/v1",
+                videoApiKey: "video-key",
+                videoModel: "Seedance-2-fast",
+            },
+            "prompt",
+            [],
+            [{ id: "audio-1", name: "audio.mp3", type: "audio/mpeg", url: "https://cdn.example.com/audio.mp3", duration: 8 }],
+        )).rejects.toThrow("视频参考音频必须同时连接至少一张参考图");
+
+        expect(axios.post).not.toHaveBeenCalled();
+    });
+
+    it("rejects audio references outside the documented duration range", async () => {
+        await expect(requestVideoGeneration(
+            {
+                ...defaultConfig,
+                videoBaseUrl: "https://api.example.com/v1",
+                videoApiKey: "video-key",
+                videoModel: "Seedance-2-fast",
+            },
+            "prompt",
+            [{ id: "ref-1", name: "ref1.png", type: "image/png", dataUrl: "data:image/png;base64,cmVmMQ==" }],
+            [{ id: "audio-1", name: "audio.mp3", type: "audio/mpeg", url: "https://cdn.example.com/audio.mp3", duration: 16 }],
+        )).rejects.toThrow("视频参考音频时长需要大于 2 秒且小于 15 秒");
+
+        expect(axios.post).not.toHaveBeenCalled();
+    });
+
     it("reads nested NewAPI video result url", async () => {
         (axios.post as Mock).mockResolvedValueOnce({ data: { data: { task_id: "task-2", status: "queued" } } });
         (axios.get as Mock)

@@ -70,6 +70,7 @@ export type CanvasNodeMetadata = {
     storageKey?: string;
     mimeType?: string;
     bytes?: number;
+    duration?: number;
     assetCategory?: string;
 };
 

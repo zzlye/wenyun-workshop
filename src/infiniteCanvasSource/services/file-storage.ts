@@ -3,7 +3,7 @@
 import localforage from "localforage";
 import { nanoid } from "nanoid";
 
-export type UploadedFile = { url: string; storageKey: string; bytes: number; mimeType: string; width?: number; height?: number };
+export type UploadedFile = { url: string; storageKey: string; bytes: number; mimeType: string; width?: number; height?: number; duration?: number };
 
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "media_files" });
 const objectUrls = new Map<string, string>();
@@ -14,7 +14,7 @@ export async function uploadMediaFile(input: string | Blob, prefix = "file"): Pr
     await store.setItem(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
-    const meta = blob.type.startsWith("video/") ? await readVideoMeta(url) : {};
+    const meta = blob.type.startsWith("video/") ? await readVideoMeta(url) : blob.type.startsWith("audio/") ? await readAudioMeta(url) : {};
     return { url, storageKey, bytes: blob.size, mimeType: blob.type || "application/octet-stream", ...meta };
 }
 
@@ -85,6 +85,16 @@ function readVideoMeta(url: string) {
         video.onloadedmetadata = done;
         video.onerror = done;
         video.src = url;
+    });
+}
+
+function readAudioMeta(url: string) {
+    return new Promise<{ duration?: number }>((resolve) => {
+        const audio = document.createElement("audio");
+        const done = () => resolve({ duration: Number.isFinite(audio.duration) ? audio.duration : undefined });
+        audio.onloadedmetadata = done;
+        audio.onerror = done;
+        audio.src = url;
     });
 }
 

@@ -2055,7 +2055,7 @@ function InfiniteCanvasPage() {
                 coverUrl: "",
                 tags: [category],
                 source: "Canvas",
-                data: { url: node.metadata.content, storageKey: node.metadata.storageKey, bytes: node.metadata.bytes || 0, mimeType: node.metadata.mimeType || "audio/mpeg" },
+                data: { url: node.metadata.content, storageKey: node.metadata.storageKey, bytes: node.metadata.bytes || 0, mimeType: node.metadata.mimeType || "audio/mpeg", duration: node.metadata.duration },
                 metadata: { source: "canvas", nodeId: node.id, category },
             });
             setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, assetCategory: category } } : item)));
@@ -2874,7 +2874,7 @@ function InfiniteCanvasPage() {
                         position: { x: center.x - AUDIO_NODE_DEFAULT_WIDTH / 2, y: center.y - AUDIO_NODE_DEFAULT_HEIGHT / 2 },
                         width: AUDIO_NODE_DEFAULT_WIDTH,
                         height: AUDIO_NODE_DEFAULT_HEIGHT,
-                        metadata: { content: payload.url, storageKey: payload.storageKey, status: NODE_STATUS_SUCCESS, bytes: payload.bytes || 0, mimeType: payload.mimeType || "audio/mpeg" },
+                        metadata: { content: payload.url, storageKey: payload.storageKey, status: NODE_STATUS_SUCCESS, bytes: payload.bytes || 0, mimeType: payload.mimeType || "audio/mpeg", duration: payload.duration },
                     },
                 ]);
                 setSelectedNodeIds(new Set([id]));
@@ -3649,7 +3649,7 @@ function videoMetadata(video: UploadedFile): CanvasNodeMetadata {
 }
 
 function audioMetadata(audio: UploadedFile): CanvasNodeMetadata {
-    return { content: audio.url, storageKey: audio.storageKey, status: "success", bytes: audio.bytes, mimeType: audio.mimeType || "audio/mpeg" };
+    return { content: audio.url, storageKey: audio.storageKey, status: "success", bytes: audio.bytes, mimeType: audio.mimeType || "audio/mpeg", duration: audio.duration };
 }
 
 function getMediaFileExtension(blob: Blob, mimeType: string | undefined, type: CanvasNodeType) {

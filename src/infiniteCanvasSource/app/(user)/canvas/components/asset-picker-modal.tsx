@@ -13,7 +13,7 @@ import { CanvasNodeType, type CanvasNodeData } from "../types";
 export type AssetPickerTab = "canvas" | "my-assets";
 export type AssetCategory = AssetTag;
 
-export type InsertAssetPayload = { kind: "text"; content: string; title: string } | { kind: "image"; dataUrl: string; title: string; storageKey?: string } | { kind: "video"; url: string; title: string; storageKey?: string; width?: number; height?: number } | { kind: "audio"; url: string; title: string; storageKey?: string; bytes?: number; mimeType?: string };
+export type InsertAssetPayload = { kind: "text"; content: string; title: string } | { kind: "image"; dataUrl: string; title: string; storageKey?: string } | { kind: "video"; url: string; title: string; storageKey?: string; width?: number; height?: number } | { kind: "audio"; url: string; title: string; storageKey?: string; bytes?: number; mimeType?: string; duration?: number };
 
 type Props = {
     open: boolean;
@@ -95,7 +95,7 @@ function CanvasAssetsTab({ nodes, onRename, onChangeCategory, onDelete, onInsert
             return;
         }
         if (node.type === CanvasNodeType.Audio) {
-            onInsert({ kind: "audio", url: node.metadata?.content || "", storageKey: node.metadata?.storageKey, title: node.title, bytes: node.metadata?.bytes, mimeType: node.metadata?.mimeType });
+            onInsert({ kind: "audio", url: node.metadata?.content || "", storageKey: node.metadata?.storageKey, title: node.title, bytes: node.metadata?.bytes, mimeType: node.metadata?.mimeType, duration: node.metadata?.duration });
             return;
         }
         onInsert({ kind: "image", dataUrl: node.metadata?.content || "", storageKey: node.metadata?.storageKey, title: node.title });
@@ -165,7 +165,7 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
             return;
         }
         if (asset.kind === "audio") {
-            onInsert({ kind: "audio", url: asset.data.url, storageKey: asset.data.storageKey, title: asset.title, bytes: asset.data.bytes, mimeType: asset.data.mimeType });
+            onInsert({ kind: "audio", url: asset.data.url, storageKey: asset.data.storageKey, title: asset.title, bytes: asset.data.bytes, mimeType: asset.data.mimeType, duration: asset.data.duration });
             return;
         }
         onInsert({ kind: "image", dataUrl: asset.data.dataUrl, storageKey: asset.data.storageKey, title: asset.title });

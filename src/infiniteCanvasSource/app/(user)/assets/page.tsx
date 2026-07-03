@@ -166,7 +166,7 @@ export default function AssetsPage() {
     const readAudioFile = async (file?: File) => {
         if (!file || !file.type.startsWith("audio/")) return;
         const audio = await uploadMediaFile(file, "audio");
-        const draft = { url: audio.url, storageKey: audio.storageKey, bytes: audio.bytes, mimeType: audio.mimeType || "audio/mpeg" };
+        const draft = { url: audio.url, storageKey: audio.storageKey, bytes: audio.bytes, mimeType: audio.mimeType || "audio/mpeg", duration: audio.duration };
         setAudioDraft(draft);
         if (!form.getFieldValue("title")) form.setFieldValue("title", file.name);
     };
