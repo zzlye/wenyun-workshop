@@ -4,14 +4,14 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Home, ImageIcon, Images, Keyboard, List, Menu, Paintbrush, Plus, Redo2, Scissors, Settings, Settings2, Trash2, Undo2, Upload, Video } from "lucide-react";
+import { AudioLines, Home, ImageIcon, Images, Keyboard, List, Menu, Paintbrush, Plus, Redo2, Scissors, Settings, Settings2, Trash2, Undo2, Upload, Video } from "lucide-react";
 import { saveAs } from "file-saver";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestVideoGeneration } from "@/services/api/video";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { getImageBlob as getStoredCanvasImageBlob, imageToDataUrl, resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
-import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
+import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
 import { cn } from "@/lib/utils";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
@@ -96,7 +96,7 @@ type PendingAssetSave = {
     category: AssetCategory;
 };
 
-type CreatableCanvasNodeType = CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video;
+type CreatableCanvasNodeType = CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio;
 
 type CanvasHistoryEntry = Pick<CanvasClipboard, "nodes" | "connections"> & {
     groups: CanvasGroupData[];
@@ -108,6 +108,8 @@ type CanvasHistoryEntry = Pick<CanvasClipboard, "nodes" | "connections"> & {
 
 const VIDEO_NODE_MAX_WIDTH = 420;
 const VIDEO_NODE_MAX_HEIGHT = 420;
+const AUDIO_NODE_DEFAULT_WIDTH = 360;
+const AUDIO_NODE_DEFAULT_HEIGHT = 160;
 const NODE_STATUS_LOADING = "loading" as const;
 const NODE_STATUS_SUCCESS = "success" as const;
 const NODE_STATUS_ERROR = "error" as const;
@@ -200,6 +202,7 @@ function ConnectionCreateMenu({ pending, onCreate, onClose }: { pending: Pending
                 <ConnectionCreateOption icon={<List className="size-5" />} title="文本生成" description="脚本、广告词、品牌文案" onClick={() => onCreate(CanvasNodeType.Text)} />
                 <ConnectionCreateOption icon={<ImageIcon className="size-5" />} title="图片生成" onClick={() => onCreate(CanvasNodeType.Image)} />
                 <ConnectionCreateOption icon={<Video className="size-5" />} title="视频生成" onClick={() => onCreate(CanvasNodeType.Video)} />
+                <ConnectionCreateOption icon={<AudioLines className="size-5" />} title="音频" description="音频参考、配音素材" onClick={() => onCreate(CanvasNodeType.Audio)} />
                 <ConnectionCreateOption icon={<Settings2 className="size-5" />} title="配置节点" description="模型、尺寸、数量和输入顺序" onClick={() => onCreate(CanvasNodeType.Config)} />
             </div>
         </div>
@@ -239,8 +242,9 @@ function QuickNodeCreateMenu({
                 <ConnectionCreateOption icon={<List className="size-5" />} title="文本生成" description="脚本、广告词、品牌文案" onClick={() => onCreate(CanvasNodeType.Text)} />
                 <ConnectionCreateOption icon={<ImageIcon className="size-5" />} title="图片生成" onClick={() => onCreate(CanvasNodeType.Image)} />
                 <ConnectionCreateOption icon={<Video className="size-5" />} title="视频生成" onClick={() => onCreate(CanvasNodeType.Video)} />
+                <ConnectionCreateOption icon={<AudioLines className="size-5" />} title="音频" description="音频参考、配音素材" onClick={() => onCreate(CanvasNodeType.Audio)} />
                 <ConnectionCreateOption icon={<Settings2 className="size-5" />} title="配置节点" description="模型、尺寸、数量和输入顺序" onClick={() => onCreate(CanvasNodeType.Config)} />
-                <ConnectionCreateOption icon={<Upload className="size-5" />} title="上传" description="图片、视频文件" onClick={onUpload} />
+                <ConnectionCreateOption icon={<Upload className="size-5" />} title="上传" description="图片、视频、音频文件" onClick={onUpload} />
                 <ConnectionCreateOption icon={<Images className="size-5" />} title="画布" description="从当前画布选择插入" onClick={onOpenAssetLibrary} />
             </div>
         </div>
@@ -722,7 +726,7 @@ function InfiniteCanvasPage() {
     );
 
     const createConnectedNode = useCallback(
-        (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video, pending: PendingConnectionCreate) => {
+        (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio, pending: PendingConnectionCreate) => {
             const metadata = type === CanvasNodeType.Config ? { model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, count: 1 } : undefined;
             const newNode = createCanvasNode(type, pending.position, metadata);
             const connection = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
@@ -735,7 +739,7 @@ function InfiniteCanvasPage() {
             setSelectedNodeIds(new Set([newNode.id]));
             setSelectedGroupId(null);
             setSelectedConnectionId(null);
-            if (type !== CanvasNodeType.Text) setDialogNodeId(newNode.id);
+            if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio) setDialogNodeId(newNode.id);
             setPendingConnectionCreate(null);
             setConnecting(null);
         },
@@ -928,7 +932,7 @@ function InfiniteCanvasPage() {
             setSelectedNodeIds(new Set([newNode.id]));
             setSelectedGroupId(null);
             setSelectedConnectionId(null);
-            if (type !== CanvasNodeType.Text) setDialogNodeId(newNode.id);
+            if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio) setDialogNodeId(newNode.id);
         },
         [effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, getCanvasCenter],
     );
@@ -1688,6 +1692,27 @@ function InfiniteCanvasPage() {
         setDialogNodeId(id);
     }, []);
 
+    const createAudioFileNode = useCallback(async (file: File, position: Position) => {
+        const audio = await uploadMediaFile(file, "audio");
+        const id = `audio-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        setNodes((prev) => [
+            ...prev,
+            {
+                id,
+                type: CanvasNodeType.Audio,
+                title: file.name,
+                position: { x: position.x - AUDIO_NODE_DEFAULT_WIDTH / 2, y: position.y - AUDIO_NODE_DEFAULT_HEIGHT / 2 },
+                width: AUDIO_NODE_DEFAULT_WIDTH,
+                height: AUDIO_NODE_DEFAULT_HEIGHT,
+                metadata: audioMetadata(audio),
+            },
+        ]);
+        setSelectedNodeIds(new Set([id]));
+        setSelectedGroupId(null);
+        setSelectedConnectionId(null);
+        setDialogNodeId(null);
+    }, []);
+
     const createTextNodeFromClipboard = useCallback(
         (text: string, position?: Position) => {
             const trimmed = text.trim();
@@ -1921,9 +1946,11 @@ function InfiniteCanvasPage() {
     }, []);
 
     const downloadNodeImage = useCallback(async (node: CanvasNodeData) => {
-        if ((node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video) || !node.metadata?.content) return;
-        if (node.type === CanvasNodeType.Video) {
-            saveAs(node.metadata.content, `canvas-${node.type}-${node.id}.mp4`);
+        if ((node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video && node.type !== CanvasNodeType.Audio) || !node.metadata?.content) return;
+        if (node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) {
+            const storedBlob = node.metadata.storageKey ? await getMediaBlob(node.metadata.storageKey) : null;
+            const blob = storedBlob || (await fetch(node.metadata.content).then((response) => response.blob()));
+            saveAs(blob, `canvas-${node.type}-${node.id}.${getMediaFileExtension(blob, node.metadata.mimeType, node.type)}`);
             return;
         }
 
@@ -1978,6 +2005,7 @@ function InfiniteCanvasPage() {
         (node: CanvasNodeData) => {
             if (node.type === CanvasNodeType.Text && !node.metadata?.content?.trim()) return message.error("没有可保存的文本");
             if (node.type === CanvasNodeType.Video && !node.metadata?.content) return message.error("没有可保存的视频");
+            if (node.type === CanvasNodeType.Audio) return message.error("音频素材库稍后支持，当前可在画布里使用和下载");
             if (node.type === CanvasNodeType.Image && !node.metadata?.content) return message.error("没有可保存的图片");
             if (node.type !== CanvasNodeType.Text && node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video) return message.error("当前节点不能保存为素材");
 
@@ -2190,9 +2218,20 @@ function InfiniteCanvasPage() {
         async (event: ReactChangeEvent<HTMLInputElement>) => {
             const file = event.target.files?.[0];
             const target = uploadTargetRef.current;
-            if (!file || (!file.type.startsWith("image/") && !file.type.startsWith("video/"))) return;
+            if (!file || (!file.type.startsWith("image/") && !file.type.startsWith("video/") && !file.type.startsWith("audio/"))) return;
 
             if (target?.nodeId) {
+                if (file.type.startsWith("audio/")) {
+                    const audio = await uploadMediaFile(file, "audio");
+                    setNodes((prev) => prev.map((node) => (node.id === target.nodeId ? { ...node, type: CanvasNodeType.Audio, title: file.name, position: { x: node.position.x + node.width / 2 - AUDIO_NODE_DEFAULT_WIDTH / 2, y: node.position.y + node.height / 2 - AUDIO_NODE_DEFAULT_HEIGHT / 2 }, width: AUDIO_NODE_DEFAULT_WIDTH, height: AUDIO_NODE_DEFAULT_HEIGHT, metadata: { ...node.metadata, ...audioMetadata(audio), errorDetails: undefined } } : node)));
+                    setSelectedNodeIds(new Set([target.nodeId]));
+                    setSelectedGroupId(null);
+                    setSelectedConnectionId(null);
+                    setDialogNodeId(null);
+                    uploadTargetRef.current = null;
+                    event.target.value = "";
+                    return;
+                }
                 if (file.type.startsWith("video/")) {
                     const video = await uploadMediaFile(file, "video");
                     const nextSize = fitNodeSize(video.width || 1280, video.height || 720, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
@@ -2244,25 +2283,25 @@ function InfiniteCanvasPage() {
                 setDialogNodeId(target.nodeId);
             } else {
                 const position = target?.position || screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
-                void (file.type.startsWith("video/") ? createVideoFileNode(file, position) : createImageFileNode(file, position));
+                void (file.type.startsWith("audio/") ? createAudioFileNode(file, position) : file.type.startsWith("video/") ? createVideoFileNode(file, position) : createImageFileNode(file, position));
             }
 
             uploadTargetRef.current = null;
             event.target.value = "";
         },
-        [createImageFileNode, createVideoFileNode, screenToCanvas, size.height, size.width],
+        [createAudioFileNode, createImageFileNode, createVideoFileNode, screenToCanvas, size.height, size.width],
     );
 
     const handleDrop = useCallback(
         (event: ReactDragEvent<HTMLDivElement>) => {
             event.preventDefault();
-            const file = Array.from(event.dataTransfer.files).find((item) => item.type.startsWith("image/") || item.type.startsWith("video/"));
+            const file = Array.from(event.dataTransfer.files).find((item) => item.type.startsWith("image/") || item.type.startsWith("video/") || item.type.startsWith("audio/"));
             if (!file) return;
 
             const pos = screenToCanvas(event.clientX, event.clientY);
-            void (file.type.startsWith("video/") ? createVideoFileNode(file, pos) : createImageFileNode(file, pos));
+            void (file.type.startsWith("audio/") ? createAudioFileNode(file, pos) : file.type.startsWith("video/") ? createVideoFileNode(file, pos) : createImageFileNode(file, pos));
         },
-        [createImageFileNode, createVideoFileNode, screenToCanvas],
+        [createAudioFileNode, createImageFileNode, createVideoFileNode, screenToCanvas],
     );
 
     const pasteAssistantImage = useCallback(
@@ -3180,6 +3219,7 @@ function InfiniteCanvasPage() {
                     onInteractionModeChange={setInteractionMode}
                     onAddImage={() => createNode(CanvasNodeType.Image)}
                     onAddVideo={() => createNode(CanvasNodeType.Video)}
+                    onAddAudio={() => createNode(CanvasNodeType.Audio)}
                     onAddText={() => createNode(CanvasNodeType.Text)}
                     onAddConfig={() => createNode(CanvasNodeType.Config)}
                     onUndo={undoCanvas}
@@ -3206,7 +3246,7 @@ function InfiniteCanvasPage() {
 
                 <CanvasZoomControls scale={viewport.k} onScaleChange={setZoomScale} onReset={resetViewport} isMiniMapOpen={isMiniMapOpen} onToggleMiniMap={() => setIsMiniMapOpen((value) => !value)} />
 
-                <input ref={imageInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleImageInputChange} />
+                <input ref={imageInputRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={handleImageInputChange} />
 
                 <CanvasNodeInfoModal node={infoNode} inputs={infoNode ? buildNodeGenerationInputs(infoNode.id, nodes, connections) : []} open={Boolean(infoNode)} onClose={() => setInfoNodeId(null)} />
 
@@ -3567,6 +3607,20 @@ function imageMetadata(image: UploadedImage): CanvasNodeMetadata {
 
 function videoMetadata(video: UploadedFile): CanvasNodeMetadata {
     return { content: video.url, storageKey: video.storageKey, status: "success", naturalWidth: video.width, naturalHeight: video.height, bytes: video.bytes, mimeType: video.mimeType || "video/mp4" };
+}
+
+function audioMetadata(audio: UploadedFile): CanvasNodeMetadata {
+    return { content: audio.url, storageKey: audio.storageKey, status: "success", bytes: audio.bytes, mimeType: audio.mimeType || "audio/mpeg" };
+}
+
+function getMediaFileExtension(blob: Blob, mimeType: string | undefined, type: CanvasNodeType) {
+    const mime = (mimeType || blob.type || "").toLowerCase();
+    if (mime.includes("webm")) return "webm";
+    if (mime.includes("ogg")) return "ogg";
+    if (mime.includes("wav")) return "wav";
+    if (mime.includes("mpeg") || mime.includes("mp3")) return "mp3";
+    if (mime.includes("mp4")) return type === CanvasNodeType.Audio ? "m4a" : "mp4";
+    return type === CanvasNodeType.Audio ? "mp3" : "mp4";
 }
 
 function buildGenerationTiming(startedAt: number): Pick<CanvasNodeMetadata, "generationStartedAt" | "generationElapsedMs"> {

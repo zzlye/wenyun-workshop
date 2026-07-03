@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { ChevronRight, Clock, Image as ImageIcon, Plus, RefreshCw, Star, Upload, Video } from "lucide-react";
+import { AudioLines, ChevronRight, Clock, Image as ImageIcon, Plus, RefreshCw, Star, Upload, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { resolveImageUrl } from "@/services/image-storage";
@@ -108,6 +108,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const [titleDraft, setTitleDraft] = useState(data.title);
     const hasImageContent = data.type === CanvasNodeType.Image && Boolean(data.metadata?.content);
     const hasVideoContent = data.type === CanvasNodeType.Video && Boolean(data.metadata?.content);
+    const hasAudioContent = data.type === CanvasNodeType.Audio && Boolean(data.metadata?.content);
     const isBatchRoot = data.type === CanvasNodeType.Image && Boolean(data.metadata?.isBatchRoot) && batchCount > 1;
     const isBatchChild = data.type === CanvasNodeType.Image && Boolean(data.metadata?.batchRootId);
     const isActive = isConnectionTarget || isSelected || isFocusRelated;
@@ -325,7 +326,7 @@ export const CanvasNode = React.memo(function CanvasNode({
             <div
                 className="relative h-full w-full overflow-visible rounded-3xl border-2"
                 style={{
-                    background: hasImageContent || hasVideoContent ? "transparent" : theme.node.fill,
+                    background: hasImageContent || hasVideoContent || hasAudioContent ? "transparent" : theme.node.fill,
                     borderColor: hasImageContent ? imageBorderColor : isActive ? selectionBlue : isRelated ? theme.node.muted : theme.node.stroke,
                     boxShadow: isActive ? `0 0 0 1px ${selectionBlue}55` : isRelated && !isBatchChild ? `0 0 0 1px ${theme.node.muted}55, 0 18px 48px rgba(0,0,0,.14)` : undefined,
                 }}
@@ -345,7 +346,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                     className={`relative flex h-full w-full items-center justify-center rounded-[inherit] ${isBatchRoot ? "overflow-visible" : "overflow-hidden"}`}
                     style={
                         {
-                            background: hasImageContent || hasVideoContent ? "transparent" : theme.node.fill,
+                            background: hasImageContent || hasVideoContent || hasAudioContent ? "transparent" : theme.node.fill,
                             "--batch-from-x": `${batchMotion?.x || 0}px`,
                             "--batch-from-y": `${batchMotion?.y || 0}px`,
                             "--batch-from-rotate": `${6 + (batchMotion?.index || 0) * 4}deg`,
@@ -401,7 +402,7 @@ export const CanvasNode = React.memo(function CanvasNode({
 
                 {showImageInfo && data.type === CanvasNodeType.Image ? <ImageInfoBar node={data} /> : null}
 
-                {!hasImageContent && !hasVideoContent ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ background: `linear-gradient(to top, ${theme.canvas.background}66, transparent)` }} /> : null}
+                {!hasImageContent && !hasVideoContent && !hasAudioContent ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ background: `linear-gradient(to top, ${theme.canvas.background}66, transparent)` }} /> : null}
 
                 <ResizeHandle corner="top-left" onMouseDown={handleResizeMouseDown} />
                 <ResizeHandle corner="top-right" onMouseDown={handleResizeMouseDown} />
@@ -432,6 +433,7 @@ const nodeContentRenderers = {
     [CanvasNodeType.Image]: ImageNodeContent,
     [CanvasNodeType.Config]: EmptyImageContent,
     [CanvasNodeType.Video]: VideoNodeContent,
+    [CanvasNodeType.Audio]: AudioNodeContent,
 } satisfies Record<CanvasNodeType, (props: NodeContentRendererProps) => ReactNode>;
 
 function LoadingContent({ theme }: Pick<NodeContentRendererProps, "theme">) {
@@ -570,12 +572,20 @@ function EmptyImageContent({ theme, isBatchRoot, batchCount, batchExpanded, batc
 }
 
 function VideoNodeContent({ node, theme }: NodeContentRendererProps) {
+    const videoRef = useRef<HTMLVideoElement>(null);
     const videoUrl = node.metadata?.content || "";
     if (!videoUrl) return <EmptyVideoContent theme={theme} />;
 
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video) return;
+        video.autoplay = false;
+        video.pause();
+    }, [node.id, videoUrl]);
+
     return (
         <div className="h-full w-full overflow-hidden rounded-3xl bg-black">
-            <video src={videoUrl} controls loop playsInline preload="metadata" className="h-full w-full bg-black object-contain" data-canvas-no-zoom />
+            <video ref={videoRef} src={videoUrl} controls playsInline preload="metadata" autoPlay={false} className="h-full w-full bg-black object-contain" data-canvas-no-zoom />
         </div>
     );
 }
@@ -587,6 +597,45 @@ function EmptyVideoContent({ theme }: Pick<NodeContentRendererProps, "theme">) {
                 <Video className="size-6 opacity-30" />
             </div>
             <span className="text-[10px] tracking-[0.18em] opacity-50">空视频节点</span>
+        </div>
+    );
+}
+
+function AudioNodeContent({ node, theme }: NodeContentRendererProps) {
+    const audioRef = useRef<HTMLAudioElement>(null);
+    const audioUrl = node.metadata?.content || "";
+    if (!audioUrl) return <EmptyAudioContent theme={theme} />;
+
+    useEffect(() => {
+        const audio = audioRef.current;
+        if (!audio) return;
+        audio.autoplay = false;
+        audio.pause();
+    }, [node.id, audioUrl]);
+
+    return (
+        <div className="flex h-full w-full flex-col justify-center gap-4 rounded-3xl border px-5" style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}>
+            <div className="flex items-center gap-3">
+                <div className="grid size-12 shrink-0 place-items-center rounded-2xl" style={{ background: theme.toolbar.activeBg, color: theme.node.activeStroke }}>
+                    <AudioLines className="size-6" />
+                </div>
+                <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold">{node.title || "音频"}</div>
+                    <div className="mt-1 text-xs opacity-55">{node.metadata?.mimeType || "audio"}</div>
+                </div>
+            </div>
+            <audio ref={audioRef} src={audioUrl} controls preload="metadata" className="w-full" data-canvas-no-zoom />
+        </div>
+    );
+}
+
+function EmptyAudioContent({ theme }: Pick<NodeContentRendererProps, "theme">) {
+    return (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.placeholder }}>
+            <div className="flex size-14 items-center justify-center rounded-2xl" style={{ background: theme.toolbar.activeBg }}>
+                <AudioLines className="size-6 opacity-30" />
+            </div>
+            <span className="text-[10px] tracking-[0.18em] opacity-50">空音频节点</span>
         </div>
     );
 }
