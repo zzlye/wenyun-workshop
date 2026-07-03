@@ -1,15 +1,16 @@
 "use client";
 
-import { Copy, Download, PencilLine, Search, Trash2, Upload } from "lucide-react";
+import { AudioLines, Copy, Download, PencilLine, Search, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { App, Button, Card, Drawer, Dropdown, Empty, Form, Image, Input, Modal, Pagination, Select, Space, Tag, Typography } from "antd";
 import { saveAs } from "file-saver";
 
 import { useCopyText } from "@/hooks/use-copy-text";
 import { formatBytes, readFileAsDataUrl } from "@/lib/image-utils";
+import { uploadMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 import { cn } from "@/lib/utils";
-import { useAssetStore, type Asset, type AssetKind, type ImageAsset } from "@/stores/use-asset-store";
+import { useAssetStore, type Asset, type AssetKind, type AudioAsset, type ImageAsset } from "@/stores/use-asset-store";
 import { assetTagOptions, assetTagValues, buildAssetTagList, buildAssetTagPatch, getAssetTag, type AssetTag, type AssetTagFilter } from "@/lib/asset-tags";
 import { exportAssets, readAssetPackage } from "./asset-transfer";
 
@@ -25,12 +26,14 @@ type AssetFormValues = {
 };
 
 type ImageDraft = ImageAsset["data"] | null;
+type AudioDraft = AudioAsset["data"] | null;
 
 const kindOptions = [
     { label: "全部", value: "all" },
     { label: "文本", value: "text" },
     { label: "图片", value: "image" },
     { label: "视频", value: "video" },
+    { label: "音频", value: "audio" },
 ];
 
 export default function AssetsPage() {
@@ -39,6 +42,7 @@ export default function AssetsPage() {
     const [form] = Form.useForm<AssetFormValues>();
     const coverInputRef = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
+    const audioInputRef = useRef<HTMLInputElement>(null);
     const assetInputRef = useRef<HTMLInputElement>(null);
     const assets = useAssetStore((state) => state.assets);
     const addAsset = useAssetStore((state) => state.addAsset);
@@ -55,11 +59,12 @@ export default function AssetsPage() {
     const [deletingAsset, setDeletingAsset] = useState<Asset | null>(null);
     const [formKind, setFormKind] = useState<AssetKind>("text");
     const [imageDraft, setImageDraft] = useState<ImageDraft>(null);
+    const [audioDraft, setAudioDraft] = useState<AudioDraft>(null);
     const coverUrl = Form.useWatch("coverUrl", form) || "";
     const title = Form.useWatch("title", form) || "";
     const assetTag = Form.useWatch("assetTag", form) || "其他";
     const content = Form.useWatch("content", form) || "";
-    const validAssets = useMemo(() => assets.filter((asset) => asset.kind === "text" || asset.kind === "image" || asset.kind === "video"), [assets]);
+    const validAssets = useMemo(() => assets.filter((asset) => asset.kind === "text" || asset.kind === "image" || asset.kind === "video" || asset.kind === "audio"), [assets]);
 
     const filteredAssets = useMemo(() => {
         const query = keyword.trim().toLowerCase();
@@ -84,6 +89,7 @@ export default function AssetsPage() {
     const openCreate = () => {
         setEditingAsset(null);
         setImageDraft(null);
+        setAudioDraft(null);
         setFormKind("text");
         form.setFieldsValue({ kind: "text", title: "", coverUrl: "", assetTag: "其他", tags: ["其他"], source: "手动添加", note: "", content: "" });
         setIsAssetOpen(true);
@@ -93,6 +99,7 @@ export default function AssetsPage() {
         setEditingAsset(asset);
         setFormKind(asset.kind);
         setImageDraft(asset.kind === "image" ? asset.data : null);
+        setAudioDraft(asset.kind === "audio" ? asset.data : null);
         form.setFieldsValue({
             kind: asset.kind,
             title: asset.title,
@@ -121,12 +128,19 @@ export default function AssetsPage() {
         if (values.kind === "text") {
             const asset = { ...base, kind: "text" as const, data: { content: (values.content || "").trim() } };
             editingAsset ? updateAsset(editingAsset.id, asset) : addAsset(asset);
-        } else {
+        } else if (values.kind === "image") {
             if (!imageDraft) {
                 message.error("请选择图片文件");
                 return;
             }
             const asset = { ...base, kind: "image" as const, data: imageDraft };
+            editingAsset ? updateAsset(editingAsset.id, asset) : addAsset(asset);
+        } else if (values.kind === "audio") {
+            if (!audioDraft) {
+                message.error("请选择音频文件");
+                return;
+            }
+            const asset = { ...base, kind: "audio" as const, data: audioDraft };
             editingAsset ? updateAsset(editingAsset.id, asset) : addAsset(asset);
         }
 
@@ -149,14 +163,23 @@ export default function AssetsPage() {
         if (!form.getFieldValue("title")) form.setFieldValue("title", file.name);
     };
 
+    const readAudioFile = async (file?: File) => {
+        if (!file || !file.type.startsWith("audio/")) return;
+        const audio = await uploadMediaFile(file, "audio");
+        const draft = { url: audio.url, storageKey: audio.storageKey, bytes: audio.bytes, mimeType: audio.mimeType || "audio/mpeg" };
+        setAudioDraft(draft);
+        if (!form.getFieldValue("title")) form.setFieldValue("title", file.name);
+    };
+
     const copyAssetText = async (asset: Asset) => {
         if (asset.kind !== "text") return;
         copyText(asset.data.content, "文本已复制");
     };
 
     const downloadImage = (asset: Asset) => {
-        if (asset.kind !== "image" && asset.kind !== "video") return;
-        saveAs(asset.kind === "video" ? asset.data.url : asset.data.dataUrl, `${asset.title || "asset"}.${asset.data.mimeType.split("/")[1] || "png"}`);
+        if (asset.kind !== "image" && asset.kind !== "video" && asset.kind !== "audio") return;
+        const url = asset.kind === "image" ? asset.data.dataUrl : asset.data.url;
+        saveAs(url, `${asset.title || "asset"}.${asset.data.mimeType.split("/")[1] || "bin"}`);
     };
 
     const exportAllAssets = async () => {
@@ -321,8 +344,13 @@ export default function AssetsPage() {
                                 options={[
                                     { label: "文本", value: "text" },
                                     { label: "图片", value: "image" },
+                                    { label: "音频", value: "audio" },
                                 ]}
-                                onChange={(value) => setFormKind(value)}
+                                onChange={(value) => {
+                                    setFormKind(value);
+                                    if (value !== "image") setImageDraft(null);
+                                    if (value !== "audio") setAudioDraft(null);
+                                }}
                             />
                         </Form.Item>
                         <Form.Item name="title" label="标题" rules={[{ required: true, message: "请输入标题" }]}>
@@ -354,6 +382,23 @@ export default function AssetsPage() {
                             <Form.Item name="content" label="文本内容" rules={[{ required: true, message: "请输入文本内容" }]}>
                                 <Input.TextArea rows={8} placeholder="保存提示词、说明文案、参考描述等文本素材" />
                             </Form.Item>
+                        ) : formKind === "audio" ? (
+                            <Form.Item label="音频内容" required>
+                                <div className="rounded-lg border border-dashed border-stone-300 p-4 dark:border-stone-700">
+                                    <Button icon={<Upload className="size-4" />} onClick={() => audioInputRef.current?.click()}>
+                                        选择音频文件
+                                    </Button>
+                                    {audioDraft ? (
+                                        <Typography.Text type="secondary" className="ml-3 text-xs">
+                                            {formatBytes(audioDraft.bytes)} · {audioDraft.mimeType}
+                                        </Typography.Text>
+                                    ) : (
+                                        <Typography.Text type="secondary" className="ml-3 text-xs">
+                                            未选择音频
+                                        </Typography.Text>
+                                    )}
+                                </div>
+                            </Form.Item>
                         ) : (
                             <Form.Item label="图片内容" required>
                                 <div className="rounded-lg border border-dashed border-stone-300 p-4 dark:border-stone-700">
@@ -376,7 +421,14 @@ export default function AssetsPage() {
                     <div className="canvas-glass-panel rounded-xl p-4">
                         <Typography.Text strong>预览</Typography.Text>
                         <div className="mt-3 overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
-                            {coverUrl || imageDraft?.dataUrl ? (
+                            {formKind === "audio" ? (
+                                <div className="flex aspect-[4/3] flex-col items-center justify-center gap-3 bg-stone-100 p-5 text-stone-500 dark:bg-stone-900 dark:text-stone-300">
+                                    <span className="grid size-14 place-items-center rounded-full bg-white shadow-sm dark:bg-stone-800">
+                                        <AudioLines className="size-7" />
+                                    </span>
+                                    {audioDraft ? <audio src={audioDraft.url} controls className="w-full" /> : <span className="text-sm">暂无音频</span>}
+                                </div>
+                            ) : coverUrl || imageDraft?.dataUrl ? (
                                 <img src={coverUrl || imageDraft?.dataUrl} alt="" className="aspect-[4/3] w-full object-cover" />
                             ) : (
                                 <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-5 text-center text-sm text-stone-500 dark:bg-stone-900">{content || "暂无封面"}</div>
@@ -412,6 +464,16 @@ export default function AssetsPage() {
                         event.target.value = "";
                     }}
                 />
+                <input
+                    ref={audioInputRef}
+                    type="file"
+                    accept="audio/*"
+                    className="hidden"
+                    onChange={(event) => {
+                        void readAudioFile(event.target.files?.[0]);
+                        event.target.value = "";
+                    }}
+                />
             </Modal>
 
             <AssetDrawer asset={previewAsset} onClose={() => setPreviewAsset(null)} onCopy={copyAssetText} onDownload={downloadImage} />
@@ -437,7 +499,7 @@ export default function AssetsPage() {
 }
 
 function AssetCard({ asset, onOpen, onEdit, onChangeTag, onCopy, onDownload, onDelete }: { asset: Asset; onOpen: () => void; onEdit: () => void; onChangeTag: (tag: AssetTag) => void; onCopy: (asset: Asset) => void; onDownload: (asset: Asset) => void; onDelete: () => void }) {
-    const cover = asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "");
+    const cover = asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : asset.kind === "video" ? asset.data.url : "");
     const summary = assetSummary(asset);
     const primaryTag = getAssetTag(asset);
     return (
@@ -447,7 +509,9 @@ function AssetCard({ asset, onOpen, onEdit, onChangeTag, onCopy, onDownload, onD
             styles={{ body: { padding: 0 } }}
             cover={
                 <button type="button" className="block w-full text-left" onClick={onOpen}>
-                    {cover ? (
+                    {asset.kind === "audio" ? (
+                        <AssetAudioPreview title={asset.title} />
+                    ) : cover ? (
                         <img src={cover} alt={asset.title} className="aspect-[4/3] w-full object-cover" />
                     ) : (
                         <AssetTextPreview text={asset.kind === "text" ? asset.data.content : "暂无封面"} />
@@ -464,7 +528,7 @@ function AssetCard({ asset, onOpen, onEdit, onChangeTag, onCopy, onDownload, onD
                                 {asset.source || "未标注来源"}
                             </Typography.Text>
                         </div>
-                        <Tag className="m-0 shrink-0 text-[11px]">{asset.kind === "image" ? "图片" : asset.kind === "video" ? "视频" : "文本"}</Tag>
+                        <Tag className="m-0 shrink-0 text-[11px]">{assetKindLabel(asset.kind)}</Tag>
                     </div>
                     <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} className="!mb-0 !mt-2 !text-xs !leading-5">
                         {summary}
@@ -494,7 +558,7 @@ function AssetCard({ asset, onOpen, onEdit, onChangeTag, onCopy, onDownload, onD
                 <Button size="small" onClick={onOpen}>
                     查看
                 </Button>
-                {asset.kind !== "video" ? (
+                {asset.kind !== "video" && asset.kind !== "audio" ? (
                     <Button size="small" icon={<PencilLine className="size-3.5" />} onClick={onEdit}>
                         编辑
                     </Button>
@@ -504,7 +568,7 @@ function AssetCard({ asset, onOpen, onEdit, onChangeTag, onCopy, onDownload, onD
                         复制
                     </Button>
                 ) : null}
-                {asset.kind === "image" || asset.kind === "video" ? (
+                {asset.kind === "image" || asset.kind === "video" || asset.kind === "audio" ? (
                     <Button size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(asset)}>
                         下载
                     </Button>
@@ -518,12 +582,14 @@ function AssetCard({ asset, onOpen, onEdit, onChangeTag, onCopy, onDownload, onD
 }
 
 function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | null; onClose: () => void; onCopy: (asset: Asset) => void; onDownload: (asset: Asset) => void }) {
-    const cover = asset ? asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "") : "";
+    const cover = asset ? asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : asset.kind === "video" ? asset.data.url : "") : "";
     return (
         <Drawer title="素材详情" open={Boolean(asset)} size="large" onClose={onClose}>
             {asset ? (
                 <div className="space-y-5">
-                    {cover ? (
+                    {asset.kind === "audio" ? (
+                        <AssetAudioPreview title={asset.title} />
+                    ) : cover ? (
                         <Image src={cover} alt={asset.title} className="rounded-lg" />
                     ) : (
                         <div className="rounded-lg border border-stone-200 bg-stone-50 p-5 text-sm leading-6 text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300">{asset.kind === "text" ? asset.data.content : "暂无封面"}</div>
@@ -533,7 +599,7 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                             {asset.title}
                         </Typography.Title>
                         <Space size={[4, 4]} wrap>
-                            <Tag>{asset.kind === "image" ? "图片" : asset.kind === "video" ? "视频" : "文本"}</Tag>
+                            <Tag>{assetKindLabel(asset.kind)}</Tag>
                             <Tag>{getAssetTag(asset)}</Tag>
                         </Space>
                     </div>
@@ -545,6 +611,8 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                             <Typography.Paragraph className="mt-2 whitespace-pre-wrap">{asset.data.content}</Typography.Paragraph>
                         ) : asset.kind === "video" ? (
                             <video src={asset.data.url} controls className="mt-2 aspect-video w-full rounded-lg bg-black" />
+                        ) : asset.kind === "audio" ? (
+                            <audio src={asset.data.url} controls className="mt-2 w-full" />
                         ) : (
                             <Typography.Text className="mt-2 block">
                                 {asset.data.width}x{asset.data.height} · {formatBytes(asset.data.bytes)} · {asset.data.mimeType}
@@ -563,9 +631,9 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                                 复制文本
                             </Button>
                         ) : null}
-                        {asset.kind === "image" || asset.kind === "video" ? (
+                        {asset.kind === "image" || asset.kind === "video" || asset.kind === "audio" ? (
                             <Button type="primary" icon={<Download className="size-4" />} onClick={() => onDownload(asset)}>
-                                {asset.kind === "video" ? "下载视频" : "下载图片"}
+                                {asset.kind === "video" ? "下载视频" : asset.kind === "audio" ? "下载音频" : "下载图片"}
                             </Button>
                         ) : null}
                     </Space>
@@ -583,11 +651,30 @@ function AssetTextPreview({ text }: { text: string }) {
     );
 }
 
+function AssetAudioPreview({ title }: { title: string }) {
+    return (
+        <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-3 bg-stone-100 p-5 text-stone-500 dark:bg-stone-900 dark:text-stone-300">
+            <span className="grid size-14 place-items-center rounded-full bg-white shadow-sm dark:bg-stone-800">
+                <AudioLines className="size-7" />
+            </span>
+            <span className="line-clamp-2 text-center text-sm">{title}</span>
+        </div>
+    );
+}
+
 function assetSummary(asset: Asset) {
     if (asset.kind === "text") return asset.data.content;
+    if (asset.kind === "audio") return `${formatBytes(asset.data.bytes)} · ${asset.data.mimeType}`;
     return `${asset.data.width}x${asset.data.height} · ${formatBytes(asset.data.bytes)} · ${asset.data.mimeType}`;
 }
 
 function assetSearchText(asset: Asset) {
     return [asset.title, asset.source || "", asset.note || "", (asset.tags || []).join(" "), asset.kind === "text" ? asset.data.content : asset.data.mimeType].join(" ").toLowerCase();
+}
+
+function assetKindLabel(kind: Asset["kind"]) {
+    if (kind === "image") return "图片";
+    if (kind === "video") return "视频";
+    if (kind === "audio") return "音频";
+    return "文本";
 }

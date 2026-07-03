@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import { Dropdown, Empty, Input, Modal, Pagination, Tabs, Tag } from "antd";
-import { Search, Trash2 } from "lucide-react";
+import { AudioLines, Search, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useAssetStore, type Asset } from "@/stores/use-asset-store";
@@ -13,7 +13,7 @@ import { CanvasNodeType, type CanvasNodeData } from "../types";
 export type AssetPickerTab = "canvas" | "my-assets";
 export type AssetCategory = AssetTag;
 
-export type InsertAssetPayload = { kind: "text"; content: string; title: string } | { kind: "image"; dataUrl: string; title: string; storageKey?: string } | { kind: "video"; url: string; title: string; storageKey?: string; width?: number; height?: number };
+export type InsertAssetPayload = { kind: "text"; content: string; title: string } | { kind: "image"; dataUrl: string; title: string; storageKey?: string } | { kind: "video"; url: string; title: string; storageKey?: string; width?: number; height?: number } | { kind: "audio"; url: string; title: string; storageKey?: string; bytes?: number; mimeType?: string };
 
 type Props = {
     open: boolean;
@@ -32,6 +32,7 @@ const kindOptions = [
     { label: "文本", value: "text" },
     { label: "图片", value: "image" },
     { label: "视频", value: "video" },
+    { label: "音频", value: "audio" },
 ];
 
 export function AssetPickerModal({ open, defaultTab = "my-assets", canvasNodes, onRenameCanvasNode, onChangeCanvasNodeCategory, onDeleteCanvasNode, onInsert, onClose }: Props) {
@@ -64,7 +65,7 @@ function CanvasAssetsTab({ nodes, onRename, onChangeCategory, onDelete, onInsert
     const assets = useMemo(
         () =>
             nodes
-                .filter((node) => node.type === CanvasNodeType.Text || node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video)
+                .filter((node) => node.type === CanvasNodeType.Text || node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio)
                 .filter((node) => node.type === CanvasNodeType.Text || Boolean(node.metadata?.content)),
         [nodes],
     );
@@ -91,6 +92,10 @@ function CanvasAssetsTab({ nodes, onRename, onChangeCategory, onDelete, onInsert
         }
         if (node.type === CanvasNodeType.Video) {
             onInsert({ kind: "video", url: node.metadata?.content || "", storageKey: node.metadata?.storageKey, title: node.title, width: node.metadata?.naturalWidth || node.width, height: node.metadata?.naturalHeight || node.height });
+            return;
+        }
+        if (node.type === CanvasNodeType.Audio) {
+            onInsert({ kind: "audio", url: node.metadata?.content || "", storageKey: node.metadata?.storageKey, title: node.title, bytes: node.metadata?.bytes, mimeType: node.metadata?.mimeType });
             return;
         }
         onInsert({ kind: "image", dataUrl: node.metadata?.content || "", storageKey: node.metadata?.storageKey, title: node.title });
@@ -137,7 +142,7 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
     const filtered = useMemo(() => {
         const query = keyword.trim().toLowerCase();
         return assets
-            .filter((asset) => asset.kind === "text" || asset.kind === "image" || asset.kind === "video")
+            .filter((asset) => asset.kind === "text" || asset.kind === "image" || asset.kind === "video" || asset.kind === "audio")
             .filter((asset) => kindFilter === "all" || asset.kind === kindFilter)
             .filter((asset) => categoryFilter === "all" || getStoredAssetCategory(asset) === categoryFilter)
             .filter((asset) => !query || [asset.title, ...(asset.tags || [])].join(" ").toLowerCase().includes(query));
@@ -155,7 +160,15 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
             onInsert({ kind: "text", content: asset.data.content, title: asset.title });
             return;
         }
-        onInsert(asset.kind === "video" ? { kind: "video", url: asset.data.url, storageKey: asset.data.storageKey, title: asset.title, width: asset.data.width, height: asset.data.height } : { kind: "image", dataUrl: asset.data.dataUrl, storageKey: asset.data.storageKey, title: asset.title });
+        if (asset.kind === "video") {
+            onInsert({ kind: "video", url: asset.data.url, storageKey: asset.data.storageKey, title: asset.title, width: asset.data.width, height: asset.data.height });
+            return;
+        }
+        if (asset.kind === "audio") {
+            onInsert({ kind: "audio", url: asset.data.url, storageKey: asset.data.storageKey, title: asset.title, bytes: asset.data.bytes, mimeType: asset.data.mimeType });
+            return;
+        }
+        onInsert({ kind: "image", dataUrl: asset.data.dataUrl, storageKey: asset.data.storageKey, title: asset.title });
     };
 
     return (
@@ -262,7 +275,9 @@ function PickerCard({ title, kind, category, cover, text, onInsert, onRename, on
         <>
             <div className="group relative overflow-hidden rounded-lg border border-stone-200 bg-white text-left transition hover:border-stone-400 hover:shadow-md dark:border-stone-700 dark:bg-stone-900 dark:hover:border-stone-500">
                 <button type="button" className="block w-full cursor-pointer text-left" onClick={onInsert}>
-                    {kind === "video" && cover ? (
+                    {kind === "audio" ? (
+                        <AudioPreview title={title} />
+                    ) : kind === "video" && cover ? (
                         <video src={cover} className="aspect-[4/3] w-full bg-black object-cover" muted playsInline />
                     ) : cover ? (
                         <img src={cover} alt={title} className="aspect-[4/3] w-full object-cover" />
@@ -296,7 +311,7 @@ function PickerCard({ title, kind, category, cover, text, onInsert, onRename, on
                                 {title}
                             </button>
                         )}
-                        <Tag className="m-0 shrink-0 text-[10px]">{kind === "image" ? "图片" : kind === "video" ? "视频" : "文本"}</Tag>
+                        <Tag className="m-0 shrink-0 text-[10px]">{assetKindLabel(kind)}</Tag>
                     </div>
                     <div className="flex items-center gap-1 text-[11px] text-stone-500 dark:text-stone-400">
                         <Dropdown
@@ -361,6 +376,24 @@ function TextPreview({ text }: { text: string }) {
             <p className="line-clamp-6 min-w-0 break-words text-left">{text}</p>
         </div>
     );
+}
+
+function AudioPreview({ title }: { title: string }) {
+    return (
+        <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 bg-stone-100 p-4 text-stone-500 dark:bg-stone-800 dark:text-stone-300">
+            <span className="grid size-12 place-items-center rounded-full bg-white shadow-sm dark:bg-stone-900">
+                <AudioLines className="size-6" />
+            </span>
+            <span className="line-clamp-2 text-center text-xs">{title}</span>
+        </div>
+    );
+}
+
+function assetKindLabel(kind: string) {
+    if (kind === "image") return "图片";
+    if (kind === "video") return "视频";
+    if (kind === "audio") return "音频";
+    return "文本";
 }
 
 function getCanvasNodeAssetCategory(node: CanvasNodeData): AssetCategory {

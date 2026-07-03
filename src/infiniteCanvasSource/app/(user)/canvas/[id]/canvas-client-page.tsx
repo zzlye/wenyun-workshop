@@ -1998,6 +1998,7 @@ function InfiniteCanvasPage() {
         if (trimmed) return trimmed.slice(0, 32);
         if (node.type === CanvasNodeType.Text) return "画布文本";
         if (node.type === CanvasNodeType.Video) return "画布视频";
+        if (node.type === CanvasNodeType.Audio) return "画布音频";
         return "画布图片";
     }, []);
 
@@ -2005,9 +2006,9 @@ function InfiniteCanvasPage() {
         (node: CanvasNodeData) => {
             if (node.type === CanvasNodeType.Text && !node.metadata?.content?.trim()) return message.error("没有可保存的文本");
             if (node.type === CanvasNodeType.Video && !node.metadata?.content) return message.error("没有可保存的视频");
-            if (node.type === CanvasNodeType.Audio) return message.error("音频素材库稍后支持，当前可在画布里使用和下载");
+            if (node.type === CanvasNodeType.Audio && !node.metadata?.content) return message.error("没有可保存的音频");
             if (node.type === CanvasNodeType.Image && !node.metadata?.content) return message.error("没有可保存的图片");
-            if (node.type !== CanvasNodeType.Text && node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video) return message.error("当前节点不能保存为素材");
+            if (node.type !== CanvasNodeType.Text && node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video && node.type !== CanvasNodeType.Audio) return message.error("当前节点不能保存为素材");
 
             const category = ASSET_CATEGORIES.includes(node.metadata?.assetCategory as AssetCategory) ? (node.metadata?.assetCategory as AssetCategory) : "其他";
             setPendingAssetSave({ node, title: getDefaultAssetTitle(node), category });
@@ -2040,6 +2041,22 @@ function InfiniteCanvasPage() {
                 source: "Canvas",
                 data: { url: node.metadata.content, storageKey: node.metadata.storageKey, width: node.width, height: node.height, bytes: node.metadata.bytes || 0, mimeType: node.metadata.mimeType || "video/mp4" },
                 metadata: { source: "canvas", nodeId: node.id, prompt: node.metadata?.prompt, category },
+            });
+            setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, assetCategory: category } } : item)));
+            setPendingAssetSave(null);
+            message.success("已加入我的素材");
+            return;
+        }
+        if (node.type === CanvasNodeType.Audio) {
+            if (!node.metadata?.content) return message.error("没有可保存的音频");
+            addAsset({
+                kind: "audio",
+                title,
+                coverUrl: "",
+                tags: [category],
+                source: "Canvas",
+                data: { url: node.metadata.content, storageKey: node.metadata.storageKey, bytes: node.metadata.bytes || 0, mimeType: node.metadata.mimeType || "audio/mpeg" },
+                metadata: { source: "canvas", nodeId: node.id, category },
             });
             setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, assetCategory: category } } : item)));
             setPendingAssetSave(null);
@@ -2845,6 +2862,23 @@ function InfiniteCanvasPage() {
                 setNodes((prev) => [...prev, { id, type: CanvasNodeType.Video, title: payload.title, position: { x: center.x - nextSize.width / 2, y: center.y - nextSize.height / 2 }, width: nextSize.width, height: nextSize.height, metadata: { content: payload.url, storageKey: payload.storageKey, status: NODE_STATUS_SUCCESS, naturalWidth: payload.width, naturalHeight: payload.height } }]);
                 setSelectedNodeIds(new Set([id]));
                 setSelectedGroupId(null);
+            } else if (payload.kind === "audio") {
+                const center = insertPosition || screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
+                const id = `audio-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+                setNodes((prev) => [
+                    ...prev,
+                    {
+                        id,
+                        type: CanvasNodeType.Audio,
+                        title: payload.title,
+                        position: { x: center.x - AUDIO_NODE_DEFAULT_WIDTH / 2, y: center.y - AUDIO_NODE_DEFAULT_HEIGHT / 2 },
+                        width: AUDIO_NODE_DEFAULT_WIDTH,
+                        height: AUDIO_NODE_DEFAULT_HEIGHT,
+                        metadata: { content: payload.url, storageKey: payload.storageKey, status: NODE_STATUS_SUCCESS, bytes: payload.bytes || 0, mimeType: payload.mimeType || "audio/mpeg" },
+                    },
+                ]);
+                setSelectedNodeIds(new Set([id]));
+                setSelectedGroupId(null);
             } else {
                 insertAssistantImage({ id: `asset-${Date.now()}`, prompt: payload.title, dataUrl: payload.dataUrl, storageKey: payload.storageKey }, insertPosition);
             }
@@ -3350,13 +3384,13 @@ function InfiniteCanvasPage() {
 function AssetSavePreview({ node }: { node: CanvasNodeData | null }) {
     if (!node) return null;
     const content = node.metadata?.content || "";
-    const label = node.type === CanvasNodeType.Image ? "图片预览" : node.type === CanvasNodeType.Video ? "视频预览" : "文本预览";
+    const label = node.type === CanvasNodeType.Image ? "图片预览" : node.type === CanvasNodeType.Video ? "视频预览" : node.type === CanvasNodeType.Audio ? "音频预览" : "文本预览";
 
     return (
         <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-50 dark:border-stone-700 dark:bg-stone-900">
             <div className="flex items-center justify-between border-b border-stone-200 px-3 py-2 text-xs text-stone-500 dark:border-stone-700 dark:text-stone-400">
                 <span>{label}</span>
-                <span>{node.type === CanvasNodeType.Image ? "图片" : node.type === CanvasNodeType.Video ? "视频" : "文本"}</span>
+                <span>{node.type === CanvasNodeType.Image ? "图片" : node.type === CanvasNodeType.Video ? "视频" : node.type === CanvasNodeType.Audio ? "音频" : "文本"}</span>
             </div>
             {node.type === CanvasNodeType.Image && content ? (
                 <div className="flex max-h-64 items-center justify-center bg-black/5 p-2 dark:bg-black/25">
@@ -3365,6 +3399,10 @@ function AssetSavePreview({ node }: { node: CanvasNodeData | null }) {
             ) : node.type === CanvasNodeType.Video && content ? (
                 <div className="flex max-h-64 items-center justify-center bg-black p-2">
                     <video src={content} className="max-h-60 max-w-full rounded-lg object-contain" controls muted playsInline />
+                </div>
+            ) : node.type === CanvasNodeType.Audio && content ? (
+                <div className="flex max-h-64 items-center justify-center bg-stone-100 p-4 dark:bg-stone-900">
+                    <audio src={content} className="w-full" controls preload="metadata" />
                 </div>
             ) : (
                 <div className="max-h-40 overflow-auto p-3 text-sm leading-6 text-stone-700 dark:text-stone-200">{content || node.title || "暂无内容"}</div>
@@ -3710,7 +3748,7 @@ async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
     return Promise.all(
         nodes.map(async (node) => {
             const content = node.metadata?.content;
-            if (node.type === CanvasNodeType.Video && node.metadata?.storageKey) return { ...node, metadata: { ...node.metadata, content: await resolveMediaUrl(node.metadata.storageKey, content) } };
+            if ((node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) && node.metadata?.storageKey) return { ...node, metadata: { ...node.metadata, content: await resolveMediaUrl(node.metadata.storageKey, content) } };
             if (node.type !== CanvasNodeType.Image || !content) return node;
             if (node.metadata?.storageKey) return { ...node, metadata: { ...node.metadata, content: await resolveImageUrl(node.metadata.storageKey, content) } };
             if (!content.startsWith("data:image/")) return node;

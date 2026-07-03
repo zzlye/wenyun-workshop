@@ -4468,7 +4468,7 @@ async function addImportedAsset(asset: Asset) {
     payload.data = { ...asset.data, dataUrl }
   }
 
-  if (asset.kind === 'video' && asset.data.storageKey) {
+  if ((asset.kind === 'video' || asset.kind === 'audio') && asset.data.storageKey) {
     const url = await resolveMediaUrl(asset.data.storageKey, asset.data.url)
     payload.coverUrl = asset.coverUrl.startsWith('blob:') || asset.coverUrl === asset.data.url ? url : asset.coverUrl
     payload.data = { ...asset.data, url }

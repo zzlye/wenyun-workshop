@@ -27,7 +27,7 @@ export async function exportAssets(assets: Asset[]) {
 
     await Promise.all(
         assets.map(async (asset) => {
-            const storageKey = asset.kind === "image" || asset.kind === "video" ? asset.data.storageKey : undefined;
+            const storageKey = asset.kind === "image" || asset.kind === "video" || asset.kind === "audio" ? asset.data.storageKey : undefined;
             if (!storageKey) return;
             const blob = asset.kind === "image" ? await getImageBlob(storageKey) : await getMediaBlob(storageKey);
             if (!blob) return;
@@ -69,5 +69,8 @@ function fileExtension(mimeType: string, kind: Asset["kind"]) {
     if (mimeType.includes("gif")) return "gif";
     if (mimeType.includes("mp4")) return "mp4";
     if (mimeType.includes("webm")) return "webm";
+    if (mimeType.includes("mpeg") || mimeType.includes("mp3")) return "mp3";
+    if (mimeType.includes("wav")) return "wav";
+    if (mimeType.includes("ogg")) return "ogg";
     return kind === "image" ? "png" : "bin";
 }
