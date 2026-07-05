@@ -106,8 +106,9 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     for (const source of sources) {
         const labelPrefix = `${formatVideoSourceLabel(source, model)} `;
         if (isBafangGrokImagineVideo15Model(model)) {
-            const result = await tryGeneration(`${labelPrefix}Grok 直连 /videos/generations`, () => requestBafangGrokImagineVideoGeneration(config, source, prompt, references, model), shouldFallbackToNextVideoSource);
+            const result = await tryGeneration(`${labelPrefix}八方 Grok /videos/generations`, () => requestBafangGrokImagineVideoGeneration(config, source, prompt, references, model), () => false);
             if (result) return result;
+            continue;
         }
 
         if (isChatCompletionsFirstModel(model)) {
