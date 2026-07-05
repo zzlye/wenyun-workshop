@@ -105,7 +105,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
 
     for (const source of sources) {
         const labelPrefix = `${formatVideoSourceLabel(source, model)} `;
-        if (isBafangGrokImagineVideo15Model(model) && isBafangVideoSource(source)) {
+        if (isBafangGrokImagineVideo15Model(model)) {
             const result = await tryGeneration(`${labelPrefix}Grok 直连 /videos/generations`, () => requestBafangGrokImagineVideoGeneration(config, source, prompt, references, model), shouldFallbackToNextVideoSource);
             if (result) return result;
         }
@@ -252,7 +252,7 @@ async function requestNewApiVideoGeneration(config: AiConfig, source: VideoApiSo
         generate_audio: true,
     };
     const images = (await Promise.all(references.slice(0, 7).map((image) => imageToDataUrl(image)))).filter(Boolean);
-    if (images.length) payload.image = images.length === 1 ? images[0] : images;
+    if (images.length) payload.image = isBafangGrokImagineVideo15Model(model) ? { url: images[0] } : images.length === 1 ? images[0] : images;
 
     const created = unwrapNewApiVideoResponse((await axios.post<NewApiVideoResponse>(aiApiUrl(config, source, "/video/generations"), payload, { headers: { ...aiHeaders(config, source), "Content-Type": "application/json" }, timeout: requestTimeout(source) })).data);
     if (!created.id) throw new Error("视频接口没有返回任务 ID");
@@ -748,14 +748,6 @@ function isGrokVideosMultipartModel(model: string) {
 
 function isBafangGrokImagineVideo15Model(model: string) {
     return /^grok-imagine-video-1\.5(?:-|$)/i.test(model.trim());
-}
-
-function isBafangVideoSource(source: VideoApiSource) {
-    try {
-        return /(^|\.)bafang\.me$/i.test(new URL(source.baseUrl).hostname);
-    } catch {
-        return false;
-    }
 }
 
 function isChatCompletionsFirstModel(model: string) {
