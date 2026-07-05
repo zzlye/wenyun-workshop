@@ -57,6 +57,7 @@ const VIDEO_MODEL_PRIORITY = [
   'kling-video-3.0',
   'kling-video-o3-omni',
   'grok-imagine-video-1.5-720p',
+  'grok-imagine-video-1.5-1080p',
   'grok-video-3',
   'grok-video-3-max',
   'grok-video-3-pro',

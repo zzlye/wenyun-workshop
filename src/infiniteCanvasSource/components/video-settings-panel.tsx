@@ -16,6 +16,14 @@ const hdResolutionOptions = [
     { value: "1080", label: "1080p" },
 ];
 
+const grok720ResolutionOptions = [
+    { value: "720", label: "720p" },
+];
+
+const grok1080ResolutionOptions = [
+    { value: "1080", label: "1080p" },
+];
+
 const defaultSizeOptions = [
     { value: "1280x720", label: "横屏", width: 1280, height: 720 },
     { value: "720x1280", label: "竖屏", width: 720, height: 1280 },
@@ -46,11 +54,22 @@ const soraV3SizeOptions = [
     { value: "768x1024", label: "3:4", width: 768, height: 1024 },
 ];
 
+const grokImagineSizeOptions = [
+    { value: "1280x720", label: "16:9", width: 1280, height: 720 },
+    { value: "720x1280", label: "9:16", width: 720, height: 1280 },
+    { value: "1024x1024", label: "1:1", width: 1024, height: 1024 },
+    { value: "1024x768", label: "4:3", width: 1024, height: 768 },
+    { value: "768x1024", label: "3:4", width: 768, height: 1024 },
+    { value: "1536x1024", label: "3:2", width: 1536, height: 1024 },
+    { value: "1024x1536", label: "2:3", width: 1024, height: 1536 },
+];
+
 const defaultSecondOptions = [6, 10, 12, 16, 20];
 const sora2SecondOptions = [4, 8, 12];
 const soraV3SecondOptions = [4, 6, 8, 10, 12, 15];
 const veo31FastSecondOptions = [4, 6, 8];
 const klingSecondOptions = [3, 5, 10, 15];
+const grokImagineSecondOptions = [3, 6, 10, 15];
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
@@ -159,7 +178,7 @@ export function videoSecondsLabel(value: string, model = "") {
 }
 
 export function normalizeVideoSizeValue(value: string, model = "") {
-    if (value === "auto") return isSora2VideoModel(model) || isVeo31FastVideoModel(model) || isKlingVideoModel(model) || isSoraV3VideoModel(model) ? "1280x720" : "auto";
+    if (value === "auto") return isSora2VideoModel(model) || isVeo31FastVideoModel(model) || isKlingVideoModel(model) || isSoraV3VideoModel(model) || isBafangGrokImagineVideo15Model(model) ? "1280x720" : "auto";
     const size = /^\d+x\d+$/.test(value || "") ? value : ratioToVideoSize(value);
     const aspectRatio = readAspectRatio(size);
     if (isSora2VideoModel(model) || isVeo31FastVideoModel(model)) return aspectRatio === "9:16" ? "720x1280" : "1280x720";
@@ -167,6 +186,7 @@ export function normalizeVideoSizeValue(value: string, model = "") {
         if (aspectRatio === "1:1") return "1024x1024";
         return aspectRatio === "9:16" ? "720x1280" : "1280x720";
     }
+    if (isBafangGrokImagineVideo15Model(model)) return aspectRatioToGrokImagineSize(aspectRatio);
     if (isSoraV3VideoModel(model)) {
         if (aspectRatio === "1:1") return "1024x1024";
         if (aspectRatio === "21:9") return "1680x720";
@@ -182,11 +202,24 @@ function ratioToVideoSize(value: string) {
     if (value === "21:9") return "1680x720";
     if (value === "4:3") return "1024x768";
     if (value === "3:4") return "768x1024";
+    if (value === "3:2") return "1536x1024";
+    if (value === "2:3") return "1024x1536";
     if (["9:16", "2:3"].includes(value)) return "720x1280";
     return "1280x720";
 }
 
+function aspectRatioToGrokImagineSize(aspectRatio: string) {
+    if (aspectRatio === "1:1") return "1024x1024";
+    if (aspectRatio === "9:16") return "720x1280";
+    if (aspectRatio === "4:3") return "1024x768";
+    if (aspectRatio === "3:4") return "768x1024";
+    if (aspectRatio === "3:2") return "1536x1024";
+    if (aspectRatio === "2:3") return "1024x1536";
+    return "1280x720";
+}
+
 export function normalizeVideoResolutionValue(value: string, model = "") {
+    if (isBafangGrokImagineVideo15Model(model)) return /1080p$/i.test(model.trim()) ? "1080" : "720";
     if (value === "480p" || value === "low") return "480";
     if (value === "720p" || value === "auto" || value === "high" || value === "medium") return "720";
     const resolution = value.replace(/p$/i, "") || "720";
@@ -209,6 +242,7 @@ export function normalizeVideoSecondsForModel(value: string, model = "") {
         if (seconds >= 8) return "8";
         return "6";
     }
+    if (isBafangGrokImagineVideo15Model(model)) return String(Math.max(1, Math.min(15, seconds)));
     if (isKlingVideoModel(model)) return String(Math.max(3, Math.min(15, seconds)));
     return String(Math.max(1, Math.min(20, seconds)));
 }
@@ -217,12 +251,14 @@ function getVideoSecondOptions(model = "") {
     if (isSora2VideoModel(model)) return sora2SecondOptions;
     if (isSoraV3VideoModel(model)) return soraV3SecondOptions;
     if (isVeo31FastVideoModel(model)) return veo31FastSecondOptions;
+    if (isBafangGrokImagineVideo15Model(model)) return grokImagineSecondOptions;
     if (isKlingVideoModel(model)) return klingSecondOptions;
     return defaultSecondOptions;
 }
 
 function getVideoSecondsRange(model = "") {
     if (isSoraV3VideoModel(model)) return { min: 4, max: 15 };
+    if (isBafangGrokImagineVideo15Model(model)) return { min: 1, max: 15 };
     if (isKlingVideoModel(model)) return { min: 3, max: 15 };
     return { min: 1, max: 20 };
 }
@@ -232,6 +268,7 @@ function allowsCustomVideoSeconds(model = "") {
 }
 
 function getVideoResolutionOptions(model = "") {
+    if (isBafangGrokImagineVideo15Model(model)) return /1080p$/i.test(model.trim()) ? grok1080ResolutionOptions : grok720ResolutionOptions;
     if (isKlingVideoModel(model) || isVeo31FastVideoModel(model)) return hdResolutionOptions;
     return defaultResolutionOptions;
 }
@@ -239,6 +276,7 @@ function getVideoResolutionOptions(model = "") {
 function getVideoSizeOptions(model = "") {
     if (isSora2VideoModel(model) || isVeo31FastVideoModel(model)) return standardLandscapeSizeOptions;
     if (isKlingVideoModel(model)) return klingSizeOptions;
+    if (isBafangGrokImagineVideo15Model(model)) return grokImagineSizeOptions;
     if (isSoraV3VideoModel(model)) return soraV3SizeOptions;
     return defaultSizeOptions;
 }
@@ -249,12 +287,23 @@ function readAspectRatio(value: string) {
     if (!width || !height) return "16:9";
     if (Math.abs(width - height) / Math.max(width, height) < 0.02) return "1:1";
     const ratio = width / height;
+    if (Math.abs(ratio - 21 / 9) < 0.03) return "21:9";
+    if (Math.abs(ratio - 16 / 9) < 0.03) return "16:9";
+    if (Math.abs(ratio - 9 / 16) < 0.03) return "9:16";
+    if (Math.abs(ratio - 4 / 3) < 0.03) return "4:3";
+    if (Math.abs(ratio - 3 / 4) < 0.03) return "3:4";
+    if (Math.abs(ratio - 3 / 2) < 0.03) return "3:2";
+    if (Math.abs(ratio - 2 / 3) < 0.03) return "2:3";
     if (ratio >= 2) return "21:9";
     if (ratio >= 1.5) return "16:9";
     if (ratio >= 1.15) return "4:3";
     if (ratio <= 0.5) return "9:16";
     if (ratio <= 0.85) return "3:4";
     return "16:9";
+}
+
+function isBafangGrokImagineVideo15Model(model = "") {
+    return /^grok-imagine-video-1\.5-(?:720p|1080p)$/i.test(model.trim());
 }
 
 function isSora2VideoModel(model = "") {
