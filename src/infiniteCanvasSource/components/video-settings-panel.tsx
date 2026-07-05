@@ -303,7 +303,7 @@ function readAspectRatio(value: string) {
 }
 
 function isBafangGrokImagineVideo15Model(model = "") {
-    return /^grok-imagine-video-1\.5-(?:720p|1080p)$/i.test(model.trim());
+    return /^grok-imagine-video-1\.5(?:-|$)/i.test(model.trim());
 }
 
 function isSora2VideoModel(model = "") {

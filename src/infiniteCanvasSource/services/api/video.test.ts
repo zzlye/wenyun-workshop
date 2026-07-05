@@ -120,6 +120,38 @@ describe("canvas video api", () => {
         expect(blob.type).toBe("video/mp4");
     });
 
+    it("uses object image payload for Grok 1.5 alias models", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { request_id: "req-grok-alias" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: { status: "done", video: { url: "https://cdn.example.com/grok-alias.mp4" } } });
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(new Blob(["video"], { type: "video/mp4" })));
+
+        const reference = {
+            id: "ref-1",
+            name: "reference.png",
+            type: "image/png",
+            dataUrl: "data:image/png;base64,cmVm",
+        };
+
+        await requestVideoGeneration({
+            ...defaultConfig,
+            videoBaseUrl: "https://ai.bafang.me/v1",
+            videoApiKey: "video-key",
+            videoModel: "grok-imagine-video-1.5",
+            videoSeconds: "6",
+            size: "720x1280",
+        }, "prompt", [reference]);
+
+        expect(axios.post).toHaveBeenCalledWith(
+            "https://ai.bafang.me/v1/videos/generations",
+            expect.objectContaining({
+                model: "grok-imagine-video-1.5",
+                image: { url: "data:image/png;base64,cmVm" },
+                aspect_ratio: "9:16",
+            }),
+            expect.any(Object),
+        );
+    });
+
     it("uses JSON videos endpoint first for Sora models without references", async () => {
         (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-sora", status: "queued" } });
         (axios.get as Mock).mockResolvedValueOnce({ data: { id: "task-sora", status: "completed", output: "https://cdn.example.com/sora.mp4" } });
