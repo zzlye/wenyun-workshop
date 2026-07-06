@@ -152,9 +152,53 @@ describe("canvas video api", () => {
         );
     });
 
-    it("keeps configured base URL while using Bafang Grok 1.5 request shape", async () => {
-        (axios.post as Mock).mockResolvedValueOnce({ data: { request_id: "req-grok-custom-base" } });
-        (axios.get as Mock).mockResolvedValueOnce({ data: { status: "done", video: { url: "https://cdn.example.com/grok-custom-base.mp4" } } });
+    it("uses Grok generations endpoint for Grok 1.5 models through NewAPI base URLs", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { request_id: "task-grok-newapi" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: { status: "done", video: { url: "https://cdn.example.com/grok-newapi.mp4" } } });
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(new Blob(["video"], { type: "video/mp4" })));
+
+        const reference = {
+            id: "ref-1",
+            name: "reference.png",
+            type: "image/png",
+            dataUrl: "data:image/png;base64,cmVm",
+        };
+
+        const blob = await requestVideoGeneration({
+            ...defaultConfig,
+            videoBaseUrl: "https://zzlye.xyz:60/v1",
+            videoApiKey: "video-key",
+            videoModel: "grok-imagine-video-1.5-720p",
+            videoSeconds: "6",
+            size: "16:9",
+        }, "prompt", [reference]);
+
+        expect(axios.post).toHaveBeenCalledTimes(1);
+        expect(axios.post).toHaveBeenCalledWith(
+            expect.stringContaining("/videos/generations"),
+            expect.objectContaining({
+                model: "grok-imagine-video-1.5-720p",
+                prompt: "prompt",
+                image: { url: "data:image/png;base64,cmVm" },
+            }),
+            expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer video-key" }) }),
+        );
+        expect(axios.get).toHaveBeenCalledWith(
+            expect.stringContaining("/videos/task-grok-newapi"),
+            expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer video-key" }) }),
+        );
+        expect(blob.type).toBe("video/mp4");
+    });
+
+    it("keeps object image payload when Grok 1.5 falls back to task generations endpoint", async () => {
+        const notFound = Object.assign(new Error("not found"), {
+            isAxiosError: true,
+            response: { status: 404, data: { message: "not found" } },
+        });
+        (axios.post as Mock)
+            .mockRejectedValueOnce(notFound)
+            .mockResolvedValueOnce({ data: { data: { task_id: "task-grok-fallback", status: "queued" } } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: { data: { id: "task-grok-fallback", status: "completed", video_url: "https://cdn.example.com/grok-fallback.mp4" } } });
         vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(new Blob(["video"], { type: "video/mp4" })));
 
         const reference = {
@@ -173,19 +217,13 @@ describe("canvas video api", () => {
             size: "16:9",
         }, "prompt", [reference]);
 
-        expect(axios.post).toHaveBeenCalledWith(
-            expect.stringContaining("/videos/generations"),
+        expect(axios.post).toHaveBeenNthCalledWith(
+            2,
+            expect.stringContaining("/video/generations"),
             expect.objectContaining({
                 model: "grok-imagine-video-1.5-720p",
-                prompt: "prompt",
                 image: { url: "data:image/png;base64,cmVm" },
-                duration: 6,
-                aspect_ratio: "16:9",
             }),
-            expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer video-key" }) }),
-        );
-        expect(axios.get).toHaveBeenCalledWith(
-            expect.stringContaining("/videos/req-grok-custom-base"),
             expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer video-key" }) }),
         );
     });
