@@ -123,6 +123,8 @@ export interface NewApiAccountSession {
   email?: string
   displayName?: string
   inviteCode?: string
+  /** 注册这个账号时填写的邀请码，和账号自己的 aff_code 不是同一个东西。 */
+  registrationInviteCode?: string
   inviter?: string
   inviterId?: number | string
   boundApiKey?: string

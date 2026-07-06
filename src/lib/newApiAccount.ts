@@ -319,18 +319,22 @@ export async function loginNewApiAccount(profile: ApiProfile, payload: NewApiLog
 }
 
 export async function registerNewApiAccount(profile: ApiProfile, payload: NewApiRegisterPayload): Promise<NewApiAccountSession> {
+  const registrationInviteCode = payload.inviteCode.trim()
   await newApiRequest(profile, '/api/user/register', {
     method: 'POST',
     body: {
       username: payload.username.trim(),
       password: payload.password,
-      aff_code: payload.inviteCode.trim(),
+      aff_code: registrationInviteCode,
     },
   })
   const session = await loginNewApiAccountSession(profile, payload)
   const verifiedSession = await fetchNewApiAccountBalance(profile, session)
   if (!hasConfirmedInviter(verifiedSession)) throw new Error('邀请码无效')
-  return ensureNewApiBoundKey(profile, verifiedSession)
+  return ensureNewApiBoundKey(profile, {
+    ...verifiedSession,
+    registrationInviteCode,
+  })
 }
 
 export async function fetchNewApiAccountBalance(profile: ApiProfile, session: NewApiAccountSession): Promise<NewApiAccountSession> {
@@ -343,6 +347,7 @@ export async function fetchNewApiAccountBalance(profile: ApiProfile, session: Ne
   return {
     ...session,
     inviteCode: readInviteCode(payload) ?? session.inviteCode,
+    registrationInviteCode: session.registrationInviteCode,
     inviter: readInviter(payload) ?? session.inviter,
     inviterId: readInviterId(payload) ?? session.inviterId,
     balanceText: text,

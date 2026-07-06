@@ -100,6 +100,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
         ...session,
         siteProfileId: LOCKED_WENYUN_PROFILE_ID,
         lastKeyRefreshAt: session.lastKeyRefreshAt ?? previousSession?.lastKeyRefreshAt,
+        registrationInviteCode: session.registrationInviteCode ?? previousSession?.registrationInviteCode,
         balanceText: session.balanceText ?? (previousSession?.balanceSource === 'user' ? previousSession.balanceText : undefined),
         balanceSource: session.balanceSource ?? (previousSession?.balanceSource === 'user' ? previousSession.balanceSource : undefined),
         balanceUpdatedAt: session.balanceUpdatedAt ?? previousSession?.balanceUpdatedAt,
@@ -285,8 +286,8 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
                 <span className="text-gray-700 dark:text-gray-200">{accountSession.balanceSource === 'user' && accountSession.balanceText ? accountSession.balanceText : '未查询'}</span>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-gray-500 dark:text-gray-400">我的邀请码</span>
-                <span className="font-mono text-xs text-gray-700 dark:text-gray-200">{accountSession.inviteCode || '未获取'}</span>
+                <span className="text-gray-500 dark:text-gray-400">注册邀请码</span>
+                <span className="font-mono text-xs text-gray-700 dark:text-gray-200">{accountSession.registrationInviteCode || '未记录'}</span>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-gray-500 dark:text-gray-400">邀请人</span>

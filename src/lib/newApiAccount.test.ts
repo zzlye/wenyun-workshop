@@ -186,4 +186,62 @@ describe('readAccessToken', () => {
       expect.objectContaining({ method: 'POST' }),
     )
   })
+
+  it('keeps the registration invite code separate from the account invite code', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/api/user/register')) {
+        return new Response(JSON.stringify({ success: true, data: true }), { status: 200 })
+      }
+      if (url.includes('/api/user/login')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            id: 26,
+            username: 'wafaaf',
+          },
+        }), { status: 200 })
+      }
+      if (url.includes('/api/user/token')) {
+        return new Response(JSON.stringify({ success: true, data: 'user-access-token' }), { status: 200 })
+      }
+      if (url.includes('/api/user/self')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            quota: 0,
+            used_quota: 0,
+            aff_code: 'oDIu',
+            inviter_id: 26,
+          },
+        }), { status: 200 })
+      }
+      if (url.includes('/api/token/?')) {
+        return new Response(JSON.stringify({ success: true, data: { items: [] } }), { status: 200 })
+      }
+      if (url.includes('/api/token/')) {
+        const body = init?.body ? JSON.parse(String(init.body)) : {}
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            id: 88,
+            name: body.name,
+            key: 'created-bound-key',
+          },
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ success: false, message: 'unexpected request' }), { status: 500 })
+    })
+
+    await expect(registerNewApiAccount(DEFAULT_SETTINGS.profiles[0], {
+      username: 'wafaaf',
+      password: 'password123',
+      inviteCode: 'USED-CODE',
+    })).resolves.toMatchObject({
+      inviteCode: 'oDIu',
+      registrationInviteCode: 'USED-CODE',
+      inviterId: 26,
+      boundApiKey: 'created-bound-key',
+    })
+  })
 })

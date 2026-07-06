@@ -478,6 +478,7 @@ function normalizeNewApiAccountSession(value: unknown, siteProfileId: string): N
     email: typeof value.email === 'string' && value.email.trim() ? value.email.trim() : undefined,
     displayName: typeof value.displayName === 'string' && value.displayName.trim() ? value.displayName.trim() : undefined,
     inviteCode: typeof value.inviteCode === 'string' && value.inviteCode.trim() ? value.inviteCode.trim() : undefined,
+    registrationInviteCode: typeof value.registrationInviteCode === 'string' && value.registrationInviteCode.trim() ? value.registrationInviteCode.trim() : undefined,
     inviter: typeof value.inviter === 'string' && value.inviter.trim() ? value.inviter.trim() : undefined,
     inviterId: typeof value.inviterId === 'string' || typeof value.inviterId === 'number' ? value.inviterId : undefined,
     boundApiKey: typeof value.boundApiKey === 'string' ? value.boundApiKey.trim() : undefined,
