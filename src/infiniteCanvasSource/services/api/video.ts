@@ -252,7 +252,7 @@ async function requestNewApiVideoGeneration(config: AiConfig, source: VideoApiSo
         generate_audio: true,
     };
     const images = (await Promise.all(references.slice(0, 7).map((image) => imageToDataUrl(image)))).filter(Boolean);
-    if (images.length) payload.image = isBafangGrokImagineVideo15Model(model) ? { url: images[0] } : images.length === 1 ? images[0] : images;
+    if (images.length) payload.image = images.length === 1 ? images[0] : images;
 
     const created = unwrapNewApiVideoResponse((await axios.post<NewApiVideoResponse>(aiApiUrl(config, source, "/video/generations"), payload, { headers: { ...aiHeaders(config, source), "Content-Type": "application/json" }, timeout: requestTimeout(source) })).data);
     if (!created.id) throw new Error("视频接口没有返回任务 ID");
@@ -368,10 +368,6 @@ function appendJsonVideoReferenceFields(payload: Record<string, unknown>, images
     }
     if (isStandardJsonVideoModel(model)) {
         payload.image_urls = images;
-        return;
-    }
-    if (isBafangGrokImagineVideo15Model(model)) {
-        payload.image = { url: images[0] };
         return;
     }
     // 部分 NewAPI 中转站的旧 Sora/Veo 图生视频不接受 multipart，但接受这组 JSON 图片字段。
@@ -747,7 +743,7 @@ function isGrokVideosMultipartModel(model: string) {
 }
 
 function isBafangGrokImagineVideo15Model(model: string) {
-    return /^grok-imagine-video-1\.5(?:-|$)/i.test(model.trim());
+    return /^grok-imagine-video-1\.5-(?:720p|1080p)$/i.test(model.trim());
 }
 
 function isChatCompletionsFirstModel(model: string) {
