@@ -26,7 +26,6 @@ describe('parseModelListPayload', () => {
       data: [
         { id: 'kling-video-o3-omni' },
         { id: 'grok-imagine-video-1.5-720p' },
-        { id: 'grok-imagine-video-1.5-1080p' },
         { id: 'grok-video-3-pro' },
         { id: 'sora-v3-fast' },
         { id: 'veo_3_1-fast' },
@@ -34,6 +33,6 @@ describe('parseModelListPayload', () => {
         { id: 'sora-2' },
         { id: 'grok-video-3' },
       ],
-    })).toEqual(['sora-2', 'sora-v3-fast', 'veo_3_1-fast', 'veo31-fast', 'kling-video-o3-omni', 'grok-imagine-video-1.5-720p', 'grok-imagine-video-1.5-1080p', 'grok-video-3', 'grok-video-3-pro'])
+    })).toEqual(['sora-2', 'sora-v3-fast', 'veo_3_1-fast', 'veo31-fast', 'kling-video-o3-omni', 'grok-imagine-video-1.5-720p', 'grok-video-3', 'grok-video-3-pro'])
   })
 })

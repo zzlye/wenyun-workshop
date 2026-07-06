@@ -105,11 +105,6 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
 
     for (const source of sources) {
         const labelPrefix = `${formatVideoSourceLabel(source, model)} `;
-        if (isBafangGrokImagineVideo15Model(model)) {
-            const result = await tryGeneration(`${labelPrefix}八方 Grok /videos/generations`, () => requestBafangGrokImagineVideoGeneration(config, source, prompt, references, model), shouldFallbackToNextVideoSource);
-            if (result) return result;
-        }
-
         if (isChatCompletionsFirstModel(model)) {
             const result = await tryGeneration(`${labelPrefix}聊天兼容 /chat/completions`, () => requestChatCompletionsVideoGeneration(config, source, prompt, references, model), shouldFallbackToNextVideoSource);
             if (result) return result;
@@ -139,22 +134,6 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     }
 
     throw buildVideoGenerationError(failures);
-}
-
-async function requestBafangGrokImagineVideoGeneration(config: AiConfig, source: VideoApiSource, prompt: string, references: ReferenceImage[], model: string) {
-    const reference = references[0];
-    if (!reference) throw new Error("Grok 1.5 视频只支持图生视频，请先连接或添加首帧参考图");
-    const imageUrl = await imageToDataUrl(reference);
-    if (!imageUrl) throw new Error("Grok 1.5 视频首帧参考图读取失败，请重新上传或替换这张图片后重试");
-    const payload = {
-        model,
-        prompt,
-        image: { url: imageUrl },
-        duration: Number(normalizeVideoSecondsForModel(config.videoSeconds, model)),
-        aspect_ratio: normalizeVideoAspectRatio(config.size, model),
-    };
-    const created = unwrapVideoTask((await axios.post<ApiVideoResponse>(aiApiUrl(config, source, "/videos/generations"), payload, { headers: { ...aiHeaders(config, source), "Content-Type": "application/json" }, timeout: requestTimeout(source) })).data);
-    return waitOpenAiVideoResult(config, source, created, model);
 }
 
 async function requestOpenAiVideosJsonGeneration(config: AiConfig, source: VideoApiSource, prompt: string, references: ReferenceImage[], audioReferences: ReferenceAudio[], model: string) {
@@ -310,7 +289,6 @@ function normalizeVideoSecondsForModel(value: string, model: string) {
         if (seconds >= 8) return "8";
         return "6";
     }
-    if (isBafangGrokImagineVideo15Model(model)) return String(Math.max(1, Math.min(15, seconds)));
     if (isKlingVideoModel(model)) return String(Math.max(3, Math.min(15, seconds)));
     return normalizeVideoSeconds(value);
 }
@@ -319,7 +297,6 @@ function normalizeVideoAspectRatio(value: string, model: string) {
     const ratio = readVideoAspectRatio(value);
     if (isSora2VideoModel(model) || isVeo31FastVideoModel(model)) return ratio === "9:16" ? "9:16" : "16:9";
     if (isKlingVideoModel(model)) return ["1:1", "9:16"].includes(ratio) ? ratio : "16:9";
-    if (isBafangGrokImagineVideo15Model(model)) return ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"].includes(ratio) ? ratio : "16:9";
     if (isSoraV3VideoModel(model)) {
         if (["21:9", "1:1", "4:3", "3:4", "16:9", "9:16"].includes(ratio)) return ratio;
         return "16:9";
@@ -335,13 +312,6 @@ function readVideoAspectRatio(value: string) {
         if (width && height) {
             if (Math.abs(width - height) / Math.max(width, height) < 0.02) return "1:1";
             const ratio = width / height;
-            if (Math.abs(ratio - 21 / 9) < 0.03) return "21:9";
-            if (Math.abs(ratio - 16 / 9) < 0.03) return "16:9";
-            if (Math.abs(ratio - 9 / 16) < 0.03) return "9:16";
-            if (Math.abs(ratio - 4 / 3) < 0.03) return "4:3";
-            if (Math.abs(ratio - 3 / 4) < 0.03) return "3:4";
-            if (Math.abs(ratio - 3 / 2) < 0.03) return "3:2";
-            if (Math.abs(ratio - 2 / 3) < 0.03) return "2:3";
             if (ratio >= 2) return "21:9";
             if (ratio >= 1.5) return "16:9";
             if (ratio >= 1.15) return "4:3";
@@ -610,7 +580,7 @@ function findVideoTask(input: unknown): NewApiVideoTask | null {
     if (typeof input !== "object") return null;
     const record = input as Record<string, unknown>;
     const nested = findNestedVideoFields(record);
-    const id = stringValue(record.id) || stringValue(record.request_id) || stringValue(record.task_id) || stringValue(record.taskId) || nested.id;
+    const id = stringValue(record.id) || stringValue(record.task_id) || stringValue(record.taskId) || nested.id;
     const url = stringValue(record.url) || stringValue(record.video_url) || stringValue(record.videoUrl) || stringValue(record.output_url) || stringValue(record.result_url) || stringValue(record.file_url) || directHttpUrl(record.output) || directHttpUrl(record.fail_reason) || nested.url;
     const status = stringValue(record.status) || stringValue(record.state) || nested.status;
     if (id || url || status) {
@@ -636,7 +606,7 @@ function findNestedVideoFields(input: unknown, depth = 0): { id: string; status:
     if (typeof input !== "object") return { id: "", status: "", url: "" };
     const record = input as Record<string, unknown>;
     const direct = {
-        id: stringValue(record.id) || stringValue(record.request_id) || stringValue(record.task_id) || stringValue(record.taskId),
+        id: stringValue(record.id) || stringValue(record.task_id) || stringValue(record.taskId),
         status: stringValue(record.status) || stringValue(record.state),
         url: stringValue(record.url) || stringValue(record.video_url) || stringValue(record.videoUrl) || stringValue(record.output_url) || stringValue(record.result_url) || stringValue(record.file_url) || directHttpUrl(record.output) || directHttpUrl(record.fail_reason),
     };
@@ -742,12 +712,8 @@ function isGrokVideosMultipartModel(model: string) {
     return /^grok-video-3(?:-|$)/i.test(model.trim());
 }
 
-function isBafangGrokImagineVideo15Model(model: string) {
-    return /^grok-imagine-video-1\.5-(?:720p|1080p)$/i.test(model.trim());
-}
-
 function isChatCompletionsFirstModel(model: string) {
-    return /^grok-imagine-video(?:-|$)/i.test(model.trim()) && !isBafangGrokImagineVideo15Model(model);
+    return /^grok-imagine-video(?:-|$)/i.test(model.trim());
 }
 
 function isSora2VideoModel(model: string) {
