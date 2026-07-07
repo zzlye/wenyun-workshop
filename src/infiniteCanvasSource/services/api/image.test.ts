@@ -15,7 +15,7 @@ describe("canvas image api", () => {
         vi.unstubAllEnvs();
     });
 
-    it("uses the same image API proxy path as the main workshop", async () => {
+    it("uses the same locked image API direct URL as the main workshop", async () => {
         vi.stubEnv("VITE_API_PROXY_AVAILABLE", "true");
         const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
             new Response(JSON.stringify({ data: [{ b64_json: "ZmluYWw=" }] }), {
@@ -50,7 +50,7 @@ describe("canvas image api", () => {
         );
 
         expect(fetchMock).toHaveBeenCalledWith(
-            "/api-proxy/wenyun/images/generations",
+            "https://zzlye.xyz:60/v1/images/generations",
             expect.objectContaining({ method: "POST" }),
         );
         const [, init] = fetchMock.mock.calls[0];
@@ -132,7 +132,7 @@ describe("canvas image api", () => {
         );
 
         const [, init] = fetchMock.mock.calls[0];
-        expect(String(fetchMock.mock.calls[0][0])).toBe("/api-proxy/public/images/generations");
+        expect(String(fetchMock.mock.calls[0][0])).toBe("https://1520635.xyz:3901/v1/images/generations");
         expect((init as RequestInit).headers).toMatchObject({
             Authorization: "Bearer public-key",
         });
@@ -228,7 +228,7 @@ describe("canvas image api", () => {
         expect(apiCall).toBeTruthy();
         const [url, init] = apiCall!;
         const formData = (init as RequestInit).body as FormData;
-        expect(String(url)).toBe("/api-proxy/wenyun/images/edits");
+        expect(String(url)).toBe("https://zzlye.xyz:60/v1/images/edits");
         expect(formData.get("model")).toBe(requestModel);
         expect(formData.get("prompt")).toBe("帮我美化封面");
         expect(formData.get("aspectRatio")).toBe("16:9");
@@ -286,7 +286,7 @@ describe("canvas image api", () => {
         expect(apiCall).toBeTruthy();
         const [url, init] = apiCall!;
         const formData = (init as RequestInit).body as FormData;
-        expect(String(url)).toBe("/api-proxy/public/images/edits");
+        expect(String(url)).toBe("https://1520635.xyz:3901/v1/images/edits");
         expect(formData.get("model")).toBe(requestModel);
         expect(formData.get("prompt")).toBe("帮我美化封面");
         expect(formData.get("aspectRatio")).toBe("16:9");

@@ -476,10 +476,9 @@ describe('callImageApi', () => {
 
     const [url, init] = fetchMock.mock.calls[0]
     const body = JSON.parse(String((init as RequestInit).body))
-    expect(String(url)).toBe('/api-proxy/wenyun/images/generations')
+    expect(String(url)).toBe('https://zzlye.xyz:60/v1/images/generations')
     expect(body).toMatchObject({
       model: 'nano-banana-pro',
-      stream: true,
       size: DEFAULT_PARAMS.size,
       aspectRatio: '1:1',
       imageSize: '1K',
@@ -615,7 +614,7 @@ describe('callImageApi', () => {
     expect(apiCall).toBeTruthy()
     const [url, init] = apiCall!
     const formData = (init as RequestInit).body as FormData
-    expect(String(url)).toBe('/api-proxy/wenyun/images/edits')
+    expect(String(url)).toBe('https://zzlye.xyz:60/v1/images/edits')
     expect(init).toMatchObject({ method: 'POST' })
     expect(formData.get('model')).toBe(requestModel)
     expect(formData.get('prompt')).toBe('帮我美化封面')
@@ -668,7 +667,7 @@ describe('callImageApi', () => {
     expect(apiCall).toBeTruthy()
     const [url, init] = apiCall!
     const formData = (init as RequestInit).body as FormData
-    expect(String(url)).toBe('/api-proxy/public/images/edits')
+    expect(String(url)).toBe('https://1520635.xyz:3901/v1/images/edits')
     expect(init).toMatchObject({ method: 'POST' })
     expect(formData.get('model')).toBe(requestModel)
     expect(formData.get('prompt')).toBe('帮我美化封面')

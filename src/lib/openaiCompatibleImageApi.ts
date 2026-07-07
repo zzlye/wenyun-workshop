@@ -1,7 +1,7 @@
 import { DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type CustomProviderDefinition, type CustomProviderPollMapping, type CustomProviderResultMapping, type CustomProviderSubmitMapping, type ImageApiResponse, type ImageResponseItem, type ResponsesApiResponse, type ResponsesOutputItem, type TaskParams } from '../types'
 import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './canvasImage'
 import { getFixedImageRequestModel, isBananaImageModel } from './apiProfiles'
-import { buildApiUrl, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from './devProxy'
+import { buildApiUrl, isLockedApiProxyTarget, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from './devProxy'
 import { formatImageRatio, normalizeImageSize, parseRatio } from './size'
 import {
   assertImageInputPayloadSize,
@@ -605,7 +605,10 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
   const shouldStreamImages = Boolean(shouldRequestImageStream() && !isEdit)
   const mime = MIME_MAP[params.output_format] || 'image/png'
   const proxyConfig = readClientDevProxyConfig()
-  const useApiProxy = shouldUseApiProxyForBaseUrl(profile.apiProxy, profile.baseUrl, proxyConfig)
+  const isLockedImageApi = isLockedApiProxyTarget(profile.baseUrl)
+  // 内置 NewAPI 已允许 CORS。图片生成直连可少过一层网站代理/CDN，
+  // 避免“后端成功扣费但前端连接被中间层切断后收不到图”。
+  const useApiProxy = shouldUseApiProxyForBaseUrl(profile.apiProxy, profile.baseUrl, proxyConfig) && !isLockedImageApi
   const requestHeaders = createRequestHeaders(profile)
   const paths = createOpenAICompatiblePaths(customProvider)
   const timeoutSeconds = getImageRequestTimeoutSeconds(profile.model, params, profile.timeout)
