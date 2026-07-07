@@ -71,6 +71,7 @@ export default function CanvasWorkshop({ onBack, onOpenSettings }: CanvasWorksho
   const settings = useStore((s) => s.settings)
   const normalizedSettings = normalizeSettings(settings)
   const appearanceTheme: 'light' | 'dark' = normalizedSettings.appearanceNightMode ? 'dark' : 'light'
+  const activeAccountBoundApiKey = normalizedSettings.newApiAccountSessions[normalizedSettings.activeProfileId]?.boundApiKey ?? ''
   const [route, setRoute] = useState<CanvasRoute>({ pathname: '/canvas', params: {} })
 
 
@@ -82,8 +83,10 @@ export default function CanvasWorkshop({ onBack, onOpenSettings }: CanvasWorksho
   }, [
     appearanceTheme,
     normalizedSettings.activeProfileId,
+    normalizedSettings.accountApiKeyMode,
     normalizedSettings.baseUrl,
     normalizedSettings.apiKey,
+    activeAccountBoundApiKey,
     normalizedSettings.model,
     normalizedSettings.timeout,
     normalizedSettings.textVideoApiKey,

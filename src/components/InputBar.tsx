@@ -10,6 +10,7 @@ import { createMaskPreviewDataUrl } from '../lib/canvasImage'
 import { dismissAllTooltips } from '../lib/tooltipDismiss'
 import { getSafeBoundingClientRect } from '../lib/domRect'
 import { collectAgentRoundOutputImageSlots } from '../lib/agentImageReferences'
+import { getEffectiveImageApiProfile } from '../lib/accountApiKey'
 import { useHintTooltip } from '../hooks/useHintTooltip'
 import { downloadImageIds, formatExportFileTime } from '../lib/downloadImages'
 import Select from './Select'
@@ -592,7 +593,8 @@ export default function InputBar() {
       ? settings
       : normalizeSettings({ ...settings, activeProfileId: activeProfile.id })
   ), [activeProfile.id, currentActiveProfile.id, settings])
-  const hasSubmitApiConfig = Boolean(activeProfile.apiKey)
+  const effectiveActiveProfile = useMemo(() => getEffectiveImageApiProfile(effectiveSettings, activeProfile), [activeProfile, effectiveSettings])
+  const hasSubmitApiConfig = Boolean(effectiveActiveProfile.apiKey)
   const canSubmit = Boolean(prompt.trim() && hasSubmitApiConfig && !activeAgentIsRunning)
   const modelUnitCostText = getApiModelUnitCostText(settings, activeProfile.id, activeProfile.model) ?? 'HUHN --'
   const submitButtonAriaLabel = activeAgentIsRunning
