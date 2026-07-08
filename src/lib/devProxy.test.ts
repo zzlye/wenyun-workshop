@@ -32,6 +32,12 @@ describe('buildApiUrl', () => {
   })
 
   it('routes the locked Wenyun site through its dedicated same-origin proxy', () => {
+    expect(buildApiUrl('https://api.zzlye.xyz/v1', 'images/generations', null, true)).toBe(
+      '/api-proxy/wenyun/images/generations',
+    )
+  })
+
+  it('keeps the legacy Wenyun port address on the same-origin proxy', () => {
     expect(buildApiUrl('https://zzlye.xyz:60/v1', 'images/generations', null, true)).toBe(
       '/api-proxy/wenyun/images/generations',
     )
@@ -44,6 +50,7 @@ describe('buildApiUrl', () => {
   })
 
   it('uses the locked Wenyun proxy even when the generic proxy is unavailable', () => {
+    expect(shouldUseApiProxyForBaseUrl(false, 'https://api.zzlye.xyz/v1', null)).toBe(true)
     expect(shouldUseApiProxyForBaseUrl(false, 'https://zzlye.xyz:60/v1', null)).toBe(true)
   })
 
@@ -57,23 +64,23 @@ describe('buildApiUrl', () => {
   })
 
   it('routes only locked NewAPI performance summary through the credentialed proxy', () => {
-    expect(getLockedNewApiPerformanceProxyUrl('https://zzlye.xyz:60/api/perf-metrics/summary?hours=24')).toBe(
+    expect(getLockedNewApiPerformanceProxyUrl('https://api.zzlye.xyz/api/perf-metrics/summary?hours=24')).toBe(
       '/model-performance-proxy/wenyun/api/perf-metrics/summary?hours=24',
     )
     expect(getLockedNewApiPerformanceProxyUrl('https://1520635.xyz:3901/api/perf-metrics/summary?hours=24')).toBe(
       '/model-performance-proxy/public/api/perf-metrics/summary?hours=24',
     )
-    expect(getLockedNewApiPerformanceProxyUrl('https://zzlye.xyz:60/api/models/')).toBeNull()
+    expect(getLockedNewApiPerformanceProxyUrl('https://api.zzlye.xyz/api/models/')).toBeNull()
   })
 
   it('routes only locked NewAPI pricing through the credentialed proxy', () => {
-    expect(getLockedNewApiPricingProxyUrl('https://zzlye.xyz:60/api/pricing')).toBe(
+    expect(getLockedNewApiPricingProxyUrl('https://api.zzlye.xyz/api/pricing')).toBe(
       '/model-pricing-proxy/wenyun/api/pricing',
     )
     expect(getLockedNewApiPricingProxyUrl('https://1520635.xyz:3901/api/pricing')).toBe(
       '/model-pricing-proxy/public/api/pricing',
     )
-    expect(getLockedNewApiPricingProxyUrl('https://zzlye.xyz:60/api/ratio_config')).toBeNull()
+    expect(getLockedNewApiPricingProxyUrl('https://api.zzlye.xyz/api/ratio_config')).toBeNull()
   })
 
   it('routes third-party image assets through the generic same-origin asset proxy', () => {

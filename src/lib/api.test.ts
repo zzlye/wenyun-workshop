@@ -476,7 +476,7 @@ describe('callImageApi', () => {
 
     const [url, init] = fetchMock.mock.calls[0]
     const body = JSON.parse(String((init as RequestInit).body))
-    expect(String(url)).toBe('https://zzlye.xyz:60/v1/images/generations')
+    expect(String(url)).toBe('https://api.zzlye.xyz/v1/images/generations')
     expect(body).toMatchObject({
       model: 'nano-banana-pro',
       size: DEFAULT_PARAMS.size,
@@ -614,7 +614,7 @@ describe('callImageApi', () => {
     expect(apiCall).toBeTruthy()
     const [url, init] = apiCall!
     const formData = (init as RequestInit).body as FormData
-    expect(String(url)).toBe('https://zzlye.xyz:60/v1/images/edits')
+    expect(String(url)).toBe('https://api.zzlye.xyz/v1/images/edits')
     expect(init).toMatchObject({ method: 'POST' })
     expect(formData.get('model')).toBe(requestModel)
     expect(formData.get('prompt')).toBe('帮我美化封面')

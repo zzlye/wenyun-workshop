@@ -50,7 +50,7 @@ describe("canvas image api", () => {
         );
 
         expect(fetchMock).toHaveBeenCalledWith(
-            "https://zzlye.xyz:60/v1/images/generations",
+            "https://api.zzlye.xyz/v1/images/generations",
             expect.objectContaining({ method: "POST" }),
         );
         const [, init] = fetchMock.mock.calls[0];
@@ -120,7 +120,7 @@ describe("canvas image api", () => {
         await requestGeneration(
             {
                 ...defaultConfig,
-                baseUrl: "https://zzlye.xyz:60/v1",
+                baseUrl: "https://api.zzlye.xyz/v1",
                 apiKey: "wenyun-key",
                 model: "gpt-image-2",
                 imageModel: "gpt-image-2",
@@ -228,7 +228,7 @@ describe("canvas image api", () => {
         expect(apiCall).toBeTruthy();
         const [url, init] = apiCall!;
         const formData = (init as RequestInit).body as FormData;
-        expect(String(url)).toBe("https://zzlye.xyz:60/v1/images/edits");
+        expect(String(url)).toBe("https://api.zzlye.xyz/v1/images/edits");
         expect(formData.get("model")).toBe(requestModel);
         expect(formData.get("prompt")).toBe("帮我美化封面");
         expect(formData.get("aspectRatio")).toBe("16:9");

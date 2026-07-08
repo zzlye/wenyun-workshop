@@ -28,7 +28,7 @@ describe('newApi model unit cost', () => {
 
     const result = await queryNewApiModelUnitCost({
       ...DEFAULT_SETTINGS.profiles[0],
-      baseUrl: 'https://zzlye.xyz:60/v1',
+      baseUrl: 'https://api.zzlye.xyz/v1',
       apiKey: 'test-key',
       model: 'nano-banana-2',
     })
@@ -63,7 +63,7 @@ describe('newApi model unit cost', () => {
 
     const result = await queryNewApiPriceTable({
       ...DEFAULT_SETTINGS.profiles[0],
-      baseUrl: 'https://zzlye.xyz:60/v1',
+      baseUrl: 'https://api.zzlye.xyz/v1',
       apiKey: 'test-key',
     })
 
@@ -198,7 +198,7 @@ describe('newApi model unit cost', () => {
 
     const result = await queryNewApiPriceTable({
       ...DEFAULT_SETTINGS.profiles[0],
-      baseUrl: 'https://zzlye.xyz:60/v1',
+      baseUrl: 'https://api.zzlye.xyz/v1',
       apiKey: 'test-key',
     })
 
@@ -388,7 +388,7 @@ describe('newApi model performance', () => {
 
     const result = await queryNewApiModelPerformance({
       ...DEFAULT_SETTINGS.profiles[0],
-      baseUrl: 'https://zzlye.xyz:60/v1',
+      baseUrl: 'https://api.zzlye.xyz/v1',
       apiKey: 'test-key',
     })
 

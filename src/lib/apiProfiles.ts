@@ -58,7 +58,7 @@ export {
 
 export const LOCKED_WENYUN_PROFILE_ID = 'wenyun-site'
 export const LOCKED_PUBLIC_PROFILE_ID = 'public-site'
-export const LOCKED_WENYUN_BASE_URL = 'https://zzlye.xyz:60/v1'
+export const LOCKED_WENYUN_BASE_URL = 'https://api.zzlye.xyz/v1'
 export const LOCKED_PUBLIC_BASE_URL = 'https://1520635.xyz:3901/v1'
 export const LOCKED_OPENAI_BASE_URL = LOCKED_WENYUN_BASE_URL
 export const PIXIV_RANDOM_BACKGROUND_API_URL = 'https://i.mukyu.ru/random?redirect=1&r18=0&ai_type=0&illust_type=illust&orientation=landscape&min_width=1920&min_height=1080&min_pixels=2500000&attempts=3&pixiv_cat=1&pximg_mirror_host=re'

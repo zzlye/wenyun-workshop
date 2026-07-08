@@ -35,7 +35,7 @@ type LockedFetchProxyRoute = {
 const lockedFetchProxyRoutes: LockedFetchProxyRoute[] = [
   {
     prefix: '/model-performance-proxy/wenyun/api/perf-metrics/summary',
-    target: 'https://zzlye.xyz:60',
+    target: 'https://api.zzlye.xyz',
     rewrite: (path) => path.replace(/^\/model-performance-proxy\/wenyun/, ''),
     exact: true,
     auth: {
@@ -57,7 +57,7 @@ const lockedFetchProxyRoutes: LockedFetchProxyRoute[] = [
   },
   {
     prefix: '/model-pricing-proxy/wenyun/api/pricing',
-    target: 'https://zzlye.xyz:60',
+    target: 'https://api.zzlye.xyz',
     rewrite: (path) => path.replace(/^\/model-pricing-proxy\/wenyun/, ''),
     exact: true,
     auth: {
@@ -79,7 +79,7 @@ const lockedFetchProxyRoutes: LockedFetchProxyRoute[] = [
   },
   {
     prefix: '/api-proxy/wenyun',
-    target: 'https://zzlye.xyz:60',
+    target: 'https://api.zzlye.xyz',
     rewrite: (path) => path.replace(/^\/api-proxy\/wenyun/, '/v1'),
   },
   {
@@ -89,7 +89,7 @@ const lockedFetchProxyRoutes: LockedFetchProxyRoute[] = [
   },
   {
     prefix: '/newapi-proxy/wenyun',
-    target: 'https://zzlye.xyz:60',
+    target: 'https://api.zzlye.xyz',
     rewrite: (path) => path.replace(/^\/newapi-proxy\/wenyun/, ''),
   },
   {
@@ -99,7 +99,7 @@ const lockedFetchProxyRoutes: LockedFetchProxyRoute[] = [
   },
   {
     prefix: '/wy-public/wenyun',
-    target: 'https://zzlye.xyz:60',
+    target: 'https://api.zzlye.xyz',
     rewrite: (path) => path.replace(/^\/wy-public\/wenyun/, ''),
   },
 ]

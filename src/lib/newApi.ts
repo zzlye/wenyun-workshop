@@ -190,7 +190,7 @@ function getWenyunPublicProxyUrl(url: string): string | null {
 
   try {
     const parsed = new URL(url)
-    if (parsed.origin !== 'https://zzlye.xyz:60') return null
+    if (parsed.origin !== 'https://api.zzlye.xyz' && parsed.origin !== 'https://zzlye.xyz:60') return null
     return `${WENYUN_PUBLIC_PROXY_PREFIX}${parsed.pathname}${parsed.search}`
   } catch {
     return null

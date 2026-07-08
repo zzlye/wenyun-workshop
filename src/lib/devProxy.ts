@@ -12,6 +12,14 @@ const DEFAULT_PROXY_PREFIX = '/api-proxy'
 export const ASSET_PROXY_PREFIX = '/asset-proxy'
 const LOCKED_PROXY_TARGETS = [
   {
+    baseUrl: 'https://api.zzlye.xyz/v1',
+    origin: 'https://api.zzlye.xyz',
+    apiPrefix: '/api-proxy/wenyun',
+    newApiPrefix: '/newapi-proxy/wenyun',
+    performancePrefix: '/model-performance-proxy/wenyun',
+    pricingPrefix: '/model-pricing-proxy/wenyun',
+  },
+  {
     baseUrl: 'https://zzlye.xyz:60/v1',
     origin: 'https://zzlye.xyz:60',
     apiPrefix: '/api-proxy/wenyun',
@@ -88,7 +96,7 @@ export function getLockedNewApiProxyUrl(url: string): string | null {
     const target = LOCKED_PROXY_TARGETS.find((item) => {
       if (item.origin.toLowerCase() === parsed.origin.toLowerCase()) return true
       // 文运裸域在服务器上给酒馆使用，图片 API 偶尔会返回裸域资源地址，必须改走同源代理。
-      return item.origin === 'https://zzlye.xyz:60' && parsed.origin.toLowerCase() === 'https://zzlye.xyz'
+      return item.newApiPrefix === '/newapi-proxy/wenyun' && parsed.origin.toLowerCase() === 'https://zzlye.xyz'
     })
     if (!target) return null
     return `${target.newApiPrefix}${parsed.pathname}${parsed.search}`
