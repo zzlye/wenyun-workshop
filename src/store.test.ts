@@ -10,14 +10,24 @@ vi.mock('./lib/db', () => {
   const thumbnails = new Map<string, StoredImageThumbnail>()
   const agentConversations = new Map<string, AgentConversation>()
   let imageSeq = 0
+  const putTask = vi.fn(async (task: TaskRecord) => {
+    tasks.set(task.id, task)
+    return task.id
+  })
+  const putImage = vi.fn(async (image: StoredImage) => {
+    images.set(image.id, image)
+    return image.id
+  })
+  const storeImage = vi.fn(async (dataUrl: string, source: StoredImage['source'] = 'upload') => {
+    const id = `stored-image-${++imageSeq}`
+    images.set(id, { id, dataUrl, source, createdAt: Date.now() })
+    return id
+  })
 
   return {
     CURRENT_THUMBNAIL_VERSION: 2,
     getAllTasks: async () => [...tasks.values()],
-    putTask: async (task: TaskRecord) => {
-      tasks.set(task.id, task)
-      return task.id
-    },
+    putTask,
     deleteTask: async (id: string) => {
       tasks.delete(id)
     },
@@ -44,10 +54,7 @@ vi.mock('./lib/db', () => {
     getStoredFreshImageThumbnail: async (id: string) => thumbnails.get(id),
     getAllImageIds: async () => [...images.keys()],
     getAllImages: async () => [...images.values()],
-    putImage: async (image: StoredImage) => {
-      images.set(image.id, image)
-      return image.id
-    },
+    putImage,
     putImageThumbnail: async (thumbnail: StoredImageThumbnail) => {
       thumbnails.set(thumbnail.id, thumbnail)
       return thumbnail.id
@@ -60,11 +67,7 @@ vi.mock('./lib/db', () => {
       images.clear()
       thumbnails.clear()
     },
-    storeImage: async (dataUrl: string, source: StoredImage['source'] = 'upload') => {
-      const id = `stored-image-${++imageSeq}`
-      images.set(id, { id, dataUrl, source, createdAt: Date.now() })
-      return id
-    },
+    storeImage,
   }
 })
 vi.mock('./lib/api', () => ({
@@ -97,6 +100,7 @@ vi.mock('./lib/agentApi', () => ({
 }))
 import { clearAgentConversations, clearImages, getAllAgentConversations, getAllTasks, putAgentConversation, putImage, putTask as putDbTask } from './lib/db'
 import { callAgentResponsesApi, callBatchImageSingle } from './lib/agentApi'
+import { callImageApi } from './lib/api'
 import { cleanStaleAgentInputDrafts, deleteAgentRoundFromConversation, editOutputs, getActiveAgentRounds, getErrorToastMessage, getPersistedState, getTaskApiProfile, importData, initStore, markInterruptedOpenAIRunningTasks, migratePersistedState, regenerateAgentAssistantMessage, remapAgentRoundMentionsForPathChange, removeTask, reuseConfig, submitAgentMessage, submitTask, useStore } from './store'
 import { useCanvasStore } from './infiniteCanvasSource/app/(user)/canvas/stores/use-canvas-store'
 
@@ -208,6 +212,43 @@ describe('mask draft lifecycle in store actions', () => {
     const state = useStore.getState()
     expect(state.tasks).toHaveLength(1)
     expect(state.showToast).toHaveBeenCalledWith('任务已提交', 'success')
+  })
+
+  it('still sends the request when task persistence hangs', async () => {
+    vi.mocked(putDbTask).mockImplementationOnce(() => new Promise(() => {}))
+    vi.mocked(callImageApi).mockResolvedValueOnce({
+      images: ['data:image/png;base64,done-image'],
+      actualParams: { n: 1 },
+      actualParamsList: [{ n: 1 }],
+      revisedPrompts: [],
+    })
+
+    await submitTask()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const createdTask = useStore.getState().tasks[0]
+    expect(callImageApi).toHaveBeenCalledTimes(1)
+    expect(createdTask?.status).toBe('done')
+    expect(createdTask?.outputImages.length).toBe(1)
+  })
+
+  it('still marks the task done when output image persistence hangs', async () => {
+    vi.mocked(putImage).mockImplementationOnce(() => new Promise(() => {}))
+    vi.mocked(callImageApi).mockResolvedValueOnce({
+      images: ['data:image/png;base64,done-image'],
+      actualParams: { n: 1 },
+      actualParamsList: [{ n: 1 }],
+      revisedPrompts: [],
+    })
+
+    await submitTask()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const createdTask = useStore.getState().tasks[0]
+    expect(createdTask?.status).toBe('done')
+    expect(createdTask?.outputImages.length).toBe(1)
   })
 
   it('preserves selected image mentions when replacing a mask target with an equivalent image id', () => {

@@ -15,6 +15,7 @@ import type {
   ExportData,
   ResponsesApiResponse,
   ResponsesOutputItem,
+  StoredImage,
 } from './types'
 import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_PARAMS } from './types'
 import { DEFAULT_SETTINGS, getActiveApiProfile, getCustomProviderDefinition, mergeImportedSettings, normalizeSettings, validateApiProfile } from './lib/apiProfiles'
@@ -1533,6 +1534,34 @@ function putTask(task: TaskRecord): Promise<IDBValidKey> {
   return dbPutTask(getPersistableTask(task))
 }
 
+function buildStoredImageRecord(id: string, dataUrl: string, source: NonNullable<StoredImage['source']>): StoredImage {
+  return {
+    id,
+    dataUrl,
+    createdAt: Date.now(),
+    source,
+  }
+}
+
+function persistTaskInBackground(task: TaskRecord, reason: string) {
+  void putTask(task).catch((error) => {
+    console.warn(`[task-persist] ${reason} 失败`, task.id, error)
+  })
+}
+
+function persistImageInBackground(id: string, dataUrl: string, source: NonNullable<StoredImage['source']>, reason: string) {
+  void putImage(buildStoredImageRecord(id, dataUrl, source)).catch((error) => {
+    console.warn(`[image-persist] ${reason} 失败`, id, error)
+  })
+}
+
+function createCachedImageId(dataUrl: string, source: NonNullable<StoredImage['source']>, reason: string) {
+  const id = genId()
+  cacheImage(id, dataUrl)
+  persistImageInBackground(id, dataUrl, source, reason)
+  return id
+}
+
 export function getCodexCliPromptKey(settings: AppSettings): string {
   const profile = getActiveApiProfile(settings)
   return `${profile.baseUrl}\n${profile.apiKey}`
@@ -1819,9 +1848,7 @@ async function completeRecoveredFalTask(task: TaskRecord, result: Awaited<Return
   const actualParamsList = await resolveImageSizeParamsList(result.images, result.actualParamsList)
   const outputIds: string[] = []
   for (const dataUrl of result.images) {
-    const imgId = await storeImage(dataUrl, 'generated')
-    cacheImage(imgId, dataUrl)
-    outputIds.push(imgId)
+    outputIds.push(createCachedImageId(dataUrl, 'generated', '恢复 fal 任务时保存输出图'))
   }
 
   updateTaskInStore(task.id, {
@@ -2134,8 +2161,7 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
         })
         return
       }
-      maskImageId = await storeImage(maskDraft.maskDataUrl, 'mask')
-      cacheImage(maskImageId, maskDraft.maskDataUrl)
+      maskImageId = createCachedImageId(maskDraft.maskDataUrl, 'mask', '提交任务时保存遮罩图')
       maskTargetImageId = maskDraft.targetImageId
     } catch (err) {
       if (!inputImages.some((img) => img.id === maskDraft.targetImageId)) {
@@ -2146,9 +2172,10 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     }
   }
 
-  // 持久化输入图片到 IndexedDB（此前只在内存缓存中）
+  // 输入图片先写入内存缓存，落盘放到后台执行，避免 Safari 等浏览器在 IndexedDB 卡住时阻塞真正的接口请求。
   for (const img of orderedInputImages) {
-    await storeImage(img.dataUrl)
+    cacheImage(img.id, img.dataUrl)
+    persistImageInBackground(img.id, img.dataUrl, 'upload', '提交任务时保存输入图')
   }
 
   const normalizedParams = normalizeParamsForSettings(params, requestSettings, { hasInputImages: orderedInputImages.length > 0 })
@@ -2180,7 +2207,7 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
 
   const latestTasks = useStore.getState().tasks
   useStore.getState().setTasks([task, ...latestTasks])
-  await putTask(task)
+  persistTaskInBackground(task, '提交任务时保存任务')
   useStore.getState().showToast('任务已提交', 'success')
 
   if (settings.clearInputAfterSubmit) {
@@ -2190,7 +2217,7 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
   useStore.getState().setReusedTaskApiProfile(null)
 
   // 异步调用 API
-  executeTask(taskId)
+  void executeTask(taskId)
 }
 
 function getActiveAgentConversation(): AgentConversation {
@@ -2533,8 +2560,7 @@ async function deleteUnreferencedImageIds(imageIds: Iterable<string>) {
 
 async function persistTaskStreamPartialImage(taskId: string, dataUrl: string) {
   try {
-    const imgId = await storeImage(dataUrl, 'generated')
-    cacheImage(imgId, dataUrl)
+    const imgId = createCachedImageId(dataUrl, 'generated', '保存流式中间图')
 
     const latestTask = useStore.getState().tasks.find((task) => task.id === taskId)
     if (!latestTask || latestTask.status === 'done') {
@@ -2932,8 +2958,7 @@ export async function submitAgentMessage() {
     try {
       orderedInputImages = orderInputImagesForMask(inputImages, maskDraft.targetImageId)
       await validateMaskMatchesImage(maskDraft.maskDataUrl, orderedInputImages[0].dataUrl)
-      maskImageId = await storeImage(maskDraft.maskDataUrl, 'mask')
-      cacheImage(maskImageId, maskDraft.maskDataUrl)
+      maskImageId = createCachedImageId(maskDraft.maskDataUrl, 'mask', '提交 Agent 消息时保存遮罩图')
       maskTargetImageId = maskDraft.targetImageId
     } catch (err) {
       if (!inputImages.some((img) => img.id === maskDraft.targetImageId)) {
@@ -2947,7 +2972,8 @@ export async function submitAgentMessage() {
   const inputImageIds = uniqueIds(orderedInputImages.map((image) => image.id))
 
   for (const image of orderedInputImages) {
-    await storeImage(image.dataUrl)
+    cacheImage(image.id, image.dataUrl)
+    persistImageInBackground(image.id, image.dataUrl, 'upload', '提交 Agent 消息时保存输入图')
   }
 
   const requestSettings = createSettingsForApiProfile(normalizedSettings, activeProfile)
@@ -3250,7 +3276,7 @@ async function executeAgentRound(
       taskIdByToolCallId.set(toolCallId, task.id)
       useStore.getState().setTasks([task, ...useStore.getState().tasks])
       attachTaskToAgentRound(task.id)
-      await putTask(task)
+      persistTaskInBackground(task, '创建 Agent 图片任务时保存任务')
       return task.id
     }
 
@@ -3260,8 +3286,7 @@ async function executeAgentRound(
       const latestTask = useStore.getState().tasks.find((task) => task.id === taskId)
       if (latestTask?.status === 'done' && latestTask.outputImages.length > 0) return taskId
 
-      const imgId = await storeImage(image.dataUrl, 'generated')
-      cacheImage(imgId, image.dataUrl)
+      const imgId = createCachedImageId(image.dataUrl, 'generated', '完成 Agent 图片任务时保存输出图')
       const actualParams: Partial<TaskParams> = {
         ...(Object.keys(image.actualParams ?? {}).length ? image.actualParams : {}),
         n: 1,
@@ -3541,8 +3566,7 @@ async function executeAgentRound(
         }
         const promptRefIds = uniqueIds(extractAgentReferenceIds(image.revisedPrompt ?? ''))
         const promptRefs = await resolveReferenceImages(promptRefIds)
-        const imgId = await storeImage(image.dataUrl, 'generated')
-        cacheImage(imgId, image.dataUrl)
+        const imgId = createCachedImageId(image.dataUrl, 'generated', '保存 Agent 非流式输出图')
         const actualParams: Partial<TaskParams> = {
           ...(Object.keys(image.actualParams ?? {}).length ? image.actualParams : {}),
           n: 1,
@@ -3578,7 +3602,7 @@ async function executeAgentRound(
         }
         useStore.getState().setTasks([task, ...useStore.getState().tasks])
         attachTaskToAgentRound(task.id)
-        await putTask(task)
+        persistTaskInBackground(task, '保存 Agent 单图结果任务')
       }
 
       if (result.rawResponsePayload && streamingTaskIds.length > 0) {
@@ -3845,11 +3869,10 @@ async function executeTask(taskId: string) {
       return
     }
 
-    // 存储输出图片
+    // 生成结果先进入内存缓存，持久化放后台，避免浏览器本地存储抖动导致“后端已成功但前端一直转圈”。
     const outputIds: string[] = []
     for (const dataUrl of result.images) {
-      const imgId = await storeImage(dataUrl, 'generated')
-      cacheImage(imgId, dataUrl)
+      const imgId = createCachedImageId(dataUrl, 'generated', '任务完成后保存输出图')
       outputIds.push(imgId)
     }
     const isAsyncCustomTask = taskProvider !== 'fal' && taskProvider !== 'openai' && Boolean(customTaskInfo)
@@ -3989,7 +4012,7 @@ export function updateTaskInStore(taskId: string, patch: Partial<TaskRecord>) {
   setTasks(updated)
   maybeOpenSupportPrompt(tasks, updated, taskId)
   const task = updated.find((t) => t.id === taskId)
-  if (task) putTask(task)
+  if (task) persistTaskInBackground(task, '更新任务时保存任务')
 }
 
 /** 重试失败的任务：创建新任务并执行 */
@@ -4020,9 +4043,9 @@ export async function retryTask(task: TaskRecord) {
 
   const latestTasks = useStore.getState().tasks
   useStore.getState().setTasks([newTask, ...latestTasks])
-  await putTask(newTask)
+  persistTaskInBackground(newTask, '重试任务时保存任务')
 
-  executeTask(taskId)
+  void executeTask(taskId)
 }
 
 /** 复用配置 */
@@ -4274,9 +4297,7 @@ async function completeRecoveredCustomTask(task: TaskRecord, result: Awaited<Ret
   const actualParamsList = await readImageSizeParamsList(result.images)
   const outputIds: string[] = []
   for (const dataUrl of result.images) {
-    const imgId = await storeImage(dataUrl, 'generated')
-    cacheImage(imgId, dataUrl)
-    outputIds.push(imgId)
+    outputIds.push(createCachedImageId(dataUrl, 'generated', '恢复自定义异步任务时保存输出图'))
   }
 
   updateTaskInStore(task.id, {
