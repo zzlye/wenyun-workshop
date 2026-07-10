@@ -287,9 +287,9 @@ describe('newApi balance', () => {
       }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         data: {
-          total_available: 7,
-          total_granted: 10,
-          total_used: 3,
+          total_available: 3_500_000,
+          total_granted: 5_000_000,
+          total_used: 1_500_000,
         },
       }), {
         status: 200,
@@ -305,9 +305,9 @@ describe('newApi balance', () => {
       }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         data: {
-          total_available: 6,
-          total_granted: 10,
-          total_used: 4,
+          total_available: 3_000_000,
+          total_granted: 5_000_000,
+          total_used: 2_000_000,
         },
       }), {
         status: 200,
