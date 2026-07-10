@@ -757,6 +757,10 @@ function getPublicPriceUrls(origin: string, apiRoot: string): string[] {
   ]))
 }
 
+function shouldFetchPublicPriceUrls(profile: ApiProfile, urls: string[]): boolean {
+  return Boolean(profile.apiKey.trim()) || urls.some((url) => Boolean(getLockedNewApiPricingProxyUrl(url)))
+}
+
 function isAuthOrRateLimitFailure(error: unknown): boolean {
   return error instanceof HttpStatusError && (error.status === 401 || error.status === 403 || error.status === 429)
 }
@@ -772,8 +776,9 @@ export async function queryNewApiModelUnitCost(profile: ApiProfile): Promise<New
     let price = readModelUnitCostFromPayload(status.raw, requestModel)
       ?? readModelUnitCostFromPayload(status.raw, profile.model)
 
-    if (profile.apiKey.trim()) {
-      for (const url of getPublicPriceUrls(origin, apiRoot)) {
+    const priceUrls = getPublicPriceUrls(origin, apiRoot)
+    if (shouldFetchPublicPriceUrls(profile, priceUrls)) {
+      for (const url of priceUrls) {
         try {
           const payload = await fetchPublicPriceJson(url, profile.apiKey)
           const nextPrice = readModelUnitCostFromPayload(payload, requestModel)
@@ -817,8 +822,9 @@ export async function queryNewApiPriceTable(profile: ApiProfile): Promise<NewApi
 
     addEntries(collectModelPricesFromPayload(status.raw, true))
 
-    if (profile.apiKey.trim()) {
-      for (const url of getPublicPriceUrls(origin, apiRoot)) {
+    const priceUrls = getPublicPriceUrls(origin, apiRoot)
+    if (shouldFetchPublicPriceUrls(profile, priceUrls)) {
+      for (const url of priceUrls) {
         try {
           const fetchedEntries = parseNewApiPricingPayload(await fetchPublicPriceJson(url, profile.apiKey))
           addEntries(fetchedEntries)
