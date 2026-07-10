@@ -149,11 +149,14 @@ async function fetchJsonWithTimeout(url: string, apiKey?: string, timeoutMs = PU
 
 async function fetchPublicJsonWithCorsFallback(url: string, timeoutMs = PUBLIC_FETCH_TIMEOUT_MS): Promise<unknown> {
   const sameOriginProxyUrl = getWenyunPublicProxyUrl(url)
+  const lockedNewApiProxyUrl = getLockedNewApiProxyUrl(url)
   if (sameOriginProxyUrl) {
     try {
       return await fetchJsonWithTimeout(sameOriginProxyUrl, undefined, timeoutMs)
-    } catch {
-      // 同源代理在部分静态部署不可用时，继续尝试直连和公共代理。
+    } catch (err) {
+      // 内置文运站已经固定走同源代理，失败时直接交给上层尝试下一个 NewAPI 候选接口。
+      if (lockedNewApiProxyUrl) throw err
+      // 非内置静态部署可能没有公开代理，失败时继续尝试直连和公共代理。
     }
   }
 

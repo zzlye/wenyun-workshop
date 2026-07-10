@@ -7,8 +7,8 @@ if [ -n "$API_URL" ]; then
 fi
 
 # Docker 默认走文运站；如果用户传旧变量 API_URL，则继续用旧变量兜底。
-DEFAULT_API_URL=${DEFAULT_API_URL:-${API_URL:-https://zzlye.xyz:60/v1}}
-API_PROXY_URL=${API_PROXY_URL:-${API_URL:-https://zzlye.xyz:60/v1}}
+DEFAULT_API_URL=${DEFAULT_API_URL:-${API_URL:-https://api.zzlye.xyz/v1}}
+API_PROXY_URL=${API_PROXY_URL:-${API_URL:-https://api.zzlye.xyz/v1}}
 
 # NewAPI 成功率代理凭证只在容器运行时注入；这里提供空值，保证 Nginx 模板能稳定替换。
 NEWAPI_WENYUN_ACCESS_TOKEN=${NEWAPI_WENYUN_ACCESS_TOKEN:-}

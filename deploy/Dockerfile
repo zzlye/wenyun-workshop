@@ -20,8 +20,8 @@ FROM nginx:alpine
 
 ENV HOST=0.0.0.0
 ENV PORT=80
-ENV DEFAULT_API_URL=https://zzlye.xyz:60/v1
-ENV API_PROXY_URL=https://zzlye.xyz:60/v1
+ENV DEFAULT_API_URL=https://api.zzlye.xyz/v1
+ENV API_PROXY_URL=https://api.zzlye.xyz/v1
 ENV ENABLE_API_PROXY=true
 ENV LOCK_API_PROXY=true
 
