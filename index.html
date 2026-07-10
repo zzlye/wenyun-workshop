@@ -39,26 +39,6 @@
         } catch (error) {}
       })()
     </script>
-    <script>
-      ;(function () {
-        try {
-          // 如果主程序没有正常挂载，提供一个只清应用壳缓存的入口，不影响画布和素材数据。
-          window.setTimeout(function () {
-            var root = document.getElementById('root')
-            if (!root || root.childElementCount > 0) return
-
-            var wrapper = document.createElement('main')
-            wrapper.style.cssText = 'min-height:100vh;display:grid;place-items:center;background:#f5f7fb;color:#111827;font-family:Microsoft YaHei,PingFang SC,system-ui,sans-serif;padding:24px;box-sizing:border-box;'
-            wrapper.innerHTML = '<section style="width:min(420px,100%);padding:28px;border-radius:14px;background:rgba(255,255,255,.94);box-shadow:0 18px 60px rgba(15,23,42,.14);text-align:center;"><h1 style="margin:0 0 12px;font-size:22px;">文运工坊加载异常</h1><p style="margin:0;color:#4b5563;line-height:1.7;">可能是浏览器保存了旧版页面缓存。点击修复只会清理应用壳缓存，不会删除画布、图片和素材。</p><button id="wenyun-cache-reset" type="button" style="margin-top:22px;height:40px;padding:0 18px;border:0;border-radius:10px;background:#2563eb;color:#fff;font-size:15px;cursor:pointer;">修复后重新进入</button></section>'
-            document.body.innerHTML = ''
-            document.body.appendChild(wrapper)
-            document.getElementById('wenyun-cache-reset').addEventListener('click', function () {
-              window.location.href = '/cache-reset.html?from=boot&ts=' + Date.now()
-            })
-          }, 3500)
-        } catch (error) {}
-      })()
-    </script>
   </head>
   <body class="bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100 min-h-screen">
     <div id="root"></div>
