@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { DEFAULT_SETTINGS } from './apiProfiles'
-import { loginNewApiAccount, normalizeNewApiAccountErrorMessage, readAccessToken, registerNewApiAccount } from './newApiAccount'
+import { fetchNewApiAccountBalance, loginNewApiAccount, normalizeNewApiAccountErrorMessage, readAccessToken, registerNewApiAccount } from './newApiAccount'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -109,6 +109,49 @@ describe('readAccessToken', () => {
         headers: expect.objectContaining({
           Authorization: 'Bearer user-access-token',
           'New-Api-User': '2',
+        }),
+      }),
+    )
+  })
+
+  it('refreshes a stale account access token before querying account balance', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const headers = init?.headers as Record<string, string> | undefined
+      if (url.includes('/api/user/self') && headers?.Authorization === 'Bearer old-access-token') {
+        return new Response(JSON.stringify({ success: false, message: 'Access token invalid' }), { status: 200 })
+      }
+      if (url.includes('/api/user/token')) {
+        return new Response(JSON.stringify({ success: true, data: 'new-access-token' }), { status: 200 })
+      }
+      if (url.includes('/api/user/self') && headers?.Authorization === 'Bearer new-access-token') {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            quota: 3_420_000,
+            used_quota: 1_580_000,
+          },
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ success: false, message: 'unexpected request' }), { status: 500 })
+    })
+
+    await expect(fetchNewApiAccountBalance(DEFAULT_SETTINGS.profiles[0], {
+      siteProfileId: DEFAULT_SETTINGS.profiles[0].id,
+      username: '1',
+      accessToken: 'old-access-token',
+      userId: 35,
+    })).resolves.toMatchObject({
+      accessToken: 'new-access-token',
+      balanceText: '可用 HUHN 6.84 / 已用 HUHN 3.16',
+      balanceSource: 'user',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/user/token'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'New-Api-User': '35',
         }),
       }),
     )

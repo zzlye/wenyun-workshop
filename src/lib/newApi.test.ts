@@ -287,8 +287,9 @@ describe('newApi balance', () => {
       }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         data: {
-          quota: 50_000,
-          used_quota: 10_000,
+          total_available: 7,
+          total_granted: 10,
+          total_used: 3,
         },
       }), {
         status: 200,
@@ -304,8 +305,9 @@ describe('newApi balance', () => {
       }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         data: {
-          quota: 40_000,
-          used_quota: 20_000,
+          total_available: 6,
+          total_granted: 10,
+          total_used: 4,
         },
       }), {
         status: 200,
@@ -322,10 +324,10 @@ describe('newApi balance', () => {
     const second = await queryNewApiBalance(profile)
     const balanceUrls = fetchMock.mock.calls
       .map((call) => String(call[0]))
-      .filter((url) => url.includes('/api/user/self'))
+      .filter((url) => url.includes('/api/usage/token/'))
 
-    expect(first.text).toBe('可用 HUHN 0.1 / 已用 HUHN 0.02')
-    expect(second.text).toBe('可用 HUHN 0.08 / 已用 HUHN 0.04')
+    expect(first.text).toBe('可用 HUHN 7 / 总额 HUHN 10')
+    expect(second.text).toBe('可用 HUHN 6 / 总额 HUHN 10')
     expect(balanceUrls).toHaveLength(2)
     expect(balanceUrls[0]).not.toBe(balanceUrls[1])
     expect(balanceUrls.every((url) => url.includes('_t='))).toBe(true)

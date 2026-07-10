@@ -359,10 +359,11 @@ function parseSubscriptionBalance(subscription: unknown, usage: unknown, status:
 }
 
 function parseCreditGrantBalance(payload: unknown, status: NewApiStatusInfo): string | null {
-  if (!isRecord(payload)) return null
-  const available = readNumber(payload, ['total_available', 'available'])
-  const granted = readNumber(payload, ['total_granted', 'granted'])
-  const used = readNumber(payload, ['total_used', 'used'])
+  const data = getPayloadData(payload)
+  if (!isRecord(data)) return null
+  const available = readNumber(data, ['total_available', 'available'])
+  const granted = readNumber(data, ['total_granted', 'granted'])
+  const used = readNumber(data, ['total_used', 'used'])
   if (available != null && granted != null) return `可用 ${formatCurrency(available, status.currencySymbol)} / 总额 ${formatCurrency(granted, status.currencySymbol)}`
   if (available != null) return `可用 ${formatCurrency(available, status.currencySymbol)}`
   if (granted != null && used != null) return `可用 ${formatCurrency(Math.max(0, granted - used), status.currencySymbol)} / 总额 ${formatCurrency(granted, status.currencySymbol)}`
@@ -387,6 +388,7 @@ export async function queryNewApiBalance(profile: ApiProfile): Promise<NewApiBal
   const status = await fetchNewApiStatus(apiRoot, origin)
 
   const attempts: Array<() => Promise<string | null>> = [
+    async () => parseCreditGrantBalance(await fetchJson(`${origin}/api/usage/token/`, profile.apiKey, { noCache: true }), status),
     async () => parseNewApiUserBalance(await fetchJson(`${origin}/api/user/self`, profile.apiKey, { noCache: true }), status),
     async () => {
       const [subscription, usage] = await Promise.all([

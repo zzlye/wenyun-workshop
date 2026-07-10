@@ -338,14 +338,28 @@ export async function registerNewApiAccount(profile: ApiProfile, payload: NewApi
 }
 
 export async function fetchNewApiAccountBalance(profile: ApiProfile, session: NewApiAccountSession): Promise<NewApiAccountSession> {
-  const payload = await newApiRequest<unknown>(profile, '/api/user/self', {
-    accessToken: session.accessToken,
+  const fetchSelf = (accessToken: string) => newApiRequest<unknown>(profile, '/api/user/self', {
+    accessToken,
     userId: session.userId,
   })
+  let accessToken = session.accessToken
+  let payload: unknown
+  try {
+    payload = await fetchSelf(accessToken)
+  } catch (err) {
+    try {
+      // 迁移域名或重复登录后，本地保存的账号管理 Token 可能过期；优先用当前登录态静默刷新一次。
+      accessToken = await fetchNewApiUserAccessToken(profile, session.userId)
+      payload = await fetchSelf(accessToken)
+    } catch {
+      throw err
+    }
+  }
   const text = parseNewApiUserBalance(payload, ACCOUNT_DEFAULT_STATUS)
   if (!text) throw new Error('账号余额查询失败')
   return {
     ...session,
+    accessToken,
     inviteCode: readInviteCode(payload) ?? session.inviteCode,
     registrationInviteCode: session.registrationInviteCode,
     inviter: readInviter(payload) ?? session.inviter,
