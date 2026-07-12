@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS } from './apiProfiles'
 import {
   calculateNewApiTopupAmount,
+  createNewApiBoundToken,
   createNewApiTopupOrder,
   fetchNewApiAccountBalance,
   fetchNewApiTopupInfo,
@@ -121,6 +122,36 @@ describe('readAccessToken', () => {
         }),
       }),
     )
+  })
+
+  it('uses a short bound key name for long account names', async () => {
+    let requestedName = ''
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : {}
+      requestedName = String(body.name ?? '')
+      return new Response(JSON.stringify({
+        success: true,
+        data: {
+          id: 9,
+          name: requestedName,
+          key: 'created-bound-key',
+        },
+      }), { status: 200 })
+    })
+
+    await expect(createNewApiBoundToken(DEFAULT_SETTINGS.profiles[0], {
+      siteProfileId: DEFAULT_SETTINGS.profiles[0].id,
+      username: '1511488406@qq.com-extra-long-account-name',
+      accessToken: 'user-access-token',
+      userId: 9,
+    })).resolves.toMatchObject({
+      key: 'created-bound-key',
+      id: 9,
+    })
+
+    expect(requestedName).toMatch(/^wy-bound-/)
+    expect(requestedName).not.toContain('1511488406@qq.com')
+    expect(new TextEncoder().encode(requestedName).length).toBeLessThanOrEqual(50)
   })
 
   it('refreshes a stale account access token before querying account balance', async () => {

@@ -3,7 +3,8 @@ import { getLockedNewApiProxyUrl } from './devProxy'
 import { parseNewApiUserBalance, type NewApiStatusInfo } from './newApi'
 
 export const ACCOUNT_KEY_REFRESH_COOLDOWN_MS = 30 * 60 * 1000
-const ACCOUNT_BOUND_TOKEN_PREFIX = '文运工坊绑定 Key'
+const ACCOUNT_BOUND_TOKEN_PREFIX = 'wy-bound'
+const LEGACY_ACCOUNT_BOUND_TOKEN_PREFIX = '文运工坊绑定 Key'
 
 export interface NewApiLoginPayload {
   username: string
@@ -279,7 +280,8 @@ function normalizeTokenList(payload: unknown): Record<string, unknown>[] {
 function isBoundToken(token: Record<string, unknown>, expectedName?: string) {
   const name = readTokenName(token) ?? ''
   if (expectedName && name === expectedName) return true
-  return name.startsWith(ACCOUNT_BOUND_TOKEN_PREFIX)
+  // 兼容旧版中文名称，避免老用户登录时重复创建 Key。
+  return name.startsWith(ACCOUNT_BOUND_TOKEN_PREFIX) || name.startsWith(LEGACY_ACCOUNT_BOUND_TOKEN_PREFIX)
 }
 
 function pickLatestBoundTokenRecord(tokens: Record<string, unknown>[], expectedName?: string): Record<string, unknown> | null {
@@ -287,8 +289,9 @@ function pickLatestBoundTokenRecord(tokens: Record<string, unknown>[], expectedN
   return candidates[candidates.length - 1] ?? null
 }
 
-function makeBoundTokenName(username: string) {
-  return `${ACCOUNT_BOUND_TOKEN_PREFIX}-${username}-${Date.now()}`
+function makeBoundTokenName() {
+  // NewAPI 按 UTF-8 字节限制名称长度，不再把可变长度的账号写入名称。
+  return `${ACCOUNT_BOUND_TOKEN_PREFIX}-${Date.now().toString(36)}`
 }
 
 export async function fetchNewApiUserAccessToken(
@@ -430,7 +433,7 @@ async function toUsableBoundToken(
 }
 
 export async function createNewApiBoundToken(profile: ApiProfile, session: NewApiAccountSession): Promise<NewApiBoundKeyResult> {
-  const name = makeBoundTokenName(session.username)
+  const name = makeBoundTokenName()
   const result = await newApiRequest<unknown>(profile, '/api/token/', {
     method: 'POST',
     accessToken: session.accessToken,
