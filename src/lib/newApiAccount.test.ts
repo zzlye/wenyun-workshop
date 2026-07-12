@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { DEFAULT_SETTINGS } from './apiProfiles'
-import { fetchNewApiAccountBalance, loginNewApiAccount, normalizeNewApiAccountErrorMessage, readAccessToken, registerNewApiAccount } from './newApiAccount'
+import {
+  calculateNewApiTopupAmount,
+  createNewApiTopupOrder,
+  fetchNewApiAccountBalance,
+  fetchNewApiTopupInfo,
+  loginNewApiAccount,
+  normalizeNewApiAccountErrorMessage,
+  readAccessToken,
+  registerNewApiAccount,
+} from './newApiAccount'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -286,5 +295,91 @@ describe('readAccessToken', () => {
       inviterId: 26,
       boundApiKey: 'created-bound-key',
     })
+  })
+})
+
+describe('NewAPI 在线支付', () => {
+  const session = {
+    siteProfileId: DEFAULT_SETTINGS.profiles[0].id,
+    username: 'payment-user',
+    accessToken: 'payment-access-token',
+    userId: 42,
+  }
+
+  it('读取后台启用的支付方式和充值金额', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      data: {
+        enable_online_topup: true,
+        min_topup: 10,
+        amount_options: '[10,20,50]',
+        pay_methods: JSON.stringify([
+          { name: '支付宝', type: 'alipay', min_topup: '10' },
+          { name: '微信支付', type: 'wxpay', min_topup: '20' },
+        ]),
+      },
+    }), { status: 200 }))
+
+    await expect(fetchNewApiTopupInfo(DEFAULT_SETTINGS.profiles[0], session)).resolves.toEqual({
+      enabled: true,
+      minTopup: 10,
+      amountOptions: [10, 20, 50],
+      paymentMethods: [
+        { name: '支付宝', type: 'alipay', minTopup: 10 },
+        { name: '微信支付', type: 'wxpay', minTopup: 20 },
+      ],
+    })
+  })
+
+  it('试算失败时显示 NewAPI 返回的具体原因', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      message: 'error',
+      data: '充值数量不能小于 10',
+    }), { status: 200 }))
+
+    await expect(calculateNewApiTopupAmount(
+      DEFAULT_SETTINGS.profiles[0],
+      session,
+      5,
+      'alipay',
+    )).rejects.toThrow('充值数量不能小于 10')
+  })
+
+  it('保留易支付订单外层地址和表单参数', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      message: 'success',
+      url: 'https://pay.example.com/submit.php',
+      data: {
+        pid: '1001',
+        money: '10.00',
+        type: 'alipay',
+      },
+    }), { status: 200 }))
+
+    await expect(createNewApiTopupOrder(
+      DEFAULT_SETTINGS.profiles[0],
+      session,
+      10,
+      'alipay',
+    )).resolves.toEqual({
+      kind: 'form',
+      url: 'https://pay.example.com/submit.php',
+      fields: {
+        pid: '1001',
+        money: '10.00',
+        type: 'alipay',
+      },
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/user/pay'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer payment-access-token',
+          'New-Api-User': '42',
+        }),
+      }),
+    )
   })
 })

@@ -1,14 +1,19 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { LOCKED_WENYUN_PROFILE_ID, getActiveApiProfile, normalizeSettings, setApiBalanceSnapshot } from '../lib/apiProfiles'
 import {
   ACCOUNT_KEY_REFRESH_COOLDOWN_MS,
+  calculateNewApiTopupAmount,
+  createNewApiTopupOrder,
   fetchNewApiAccountBalance,
+  fetchNewApiTopupInfo,
   loginNewApiAccount,
   maskApiKey,
   redeemNewApiCode,
   refreshNewApiBoundKey,
   registerNewApiAccount,
+  type NewApiPaymentOrder,
+  type NewApiTopupInfo,
 } from '../lib/newApiAccount'
 import { copyTextToClipboard, getClipboardFailureMessage } from '../lib/clipboard'
 import { useStore } from '../store'
@@ -34,6 +39,31 @@ const REGISTER_PASSWORD_MIN_LENGTH = 8
 function formatAccountKeyCooldown(ms: number) {
   if (ms <= 0) return ''
   return `${Math.ceil(ms / 60_000)} 分钟后可刷新`
+}
+
+function submitPaymentOrder(order: NewApiPaymentOrder, popup: Window) {
+  popup.opener = null
+  if (order.kind === 'redirect') {
+    popup.location.replace(order.url)
+    return
+  }
+
+  const target = `wenyun-payment-${Date.now()}`
+  popup.name = target
+  const form = document.createElement('form')
+  form.action = order.url
+  form.method = 'POST'
+  form.target = target
+  Object.entries(order.fields).forEach(([name, value]) => {
+    const input = document.createElement('input')
+    input.type = 'hidden'
+    input.name = name
+    input.value = value
+    form.appendChild(input)
+  })
+  document.body.appendChild(form)
+  form.submit()
+  form.remove()
 }
 
 function PasswordInput({
@@ -84,10 +114,84 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
   const [isRedeemingCode, setIsRedeemingCode] = useState(false)
   const [isRefreshingAccountKey, setIsRefreshingAccountKey] = useState(false)
   const [isQueryingBalance, setIsQueryingBalance] = useState(false)
+  const [topupInfo, setTopupInfo] = useState<NewApiTopupInfo | null>(null)
+  const [topupAmount, setTopupAmount] = useState('')
+  const [topupPaymentMethod, setTopupPaymentMethod] = useState('')
+  const [calculatedPaymentAmount, setCalculatedPaymentAmount] = useState<number | null>(null)
+  const [isLoadingTopupInfo, setIsLoadingTopupInfo] = useState(false)
+  const [isCalculatingTopup, setIsCalculatingTopup] = useState(false)
+  const [isCreatingTopupOrder, setIsCreatingTopupOrder] = useState(false)
+  const [topupError, setTopupError] = useState('')
+  const [topupReloadKey, setTopupReloadKey] = useState(0)
   const normalizedSettings = normalizeSettings(settings)
   const wenyunProfile = normalizedSettings.profiles.find((profile) => profile.id === LOCKED_WENYUN_PROFILE_ID) ?? getActiveApiProfile(normalizedSettings)
   const accountSession = normalizedSettings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] ?? null
   const accountKeyCooldownRemainingMs = Math.max(0, ACCOUNT_KEY_REFRESH_COOLDOWN_MS - (Date.now() - (accountSession?.lastKeyRefreshAt ?? 0)))
+
+  useEffect(() => {
+    let cancelled = false
+    if (!open || !accountSession) {
+      setTopupInfo(null)
+      setTopupError('')
+      return
+    }
+
+    setIsLoadingTopupInfo(true)
+    setTopupError('')
+    void fetchNewApiTopupInfo(wenyunProfile, accountSession)
+      .then((info) => {
+        if (cancelled) return
+        setTopupInfo(info)
+        const firstAmount = info.amountOptions[0] ?? info.minTopup
+        setTopupAmount((current) => current || String(firstAmount))
+        setTopupPaymentMethod((current) => info.paymentMethods.some((method) => method.type === current)
+          ? current
+          : info.paymentMethods[0]?.type ?? '')
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setTopupInfo(null)
+        setTopupError(error instanceof Error ? error.message : '在线支付配置加载失败')
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingTopupInfo(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, accountSession?.accessToken, accountSession?.userId, topupReloadKey, wenyunProfile.baseUrl])
+
+  useEffect(() => {
+    let cancelled = false
+    const amount = Math.floor(Number(topupAmount))
+    const method = topupInfo?.paymentMethods.find((item) => item.type === topupPaymentMethod)
+    const minTopup = method?.minTopup || topupInfo?.minTopup || 0
+    if (!open || !accountSession || !method || !Number.isFinite(amount) || amount < minTopup) {
+      setCalculatedPaymentAmount(null)
+      setIsCalculatingTopup(false)
+      return
+    }
+
+    setIsCalculatingTopup(true)
+    const timer = window.setTimeout(() => {
+      void calculateNewApiTopupAmount(wenyunProfile, accountSession, amount, method.type)
+        .then((value) => {
+          if (!cancelled) setCalculatedPaymentAmount(value)
+        })
+        .catch(() => {
+          if (!cancelled) setCalculatedPaymentAmount(null)
+        })
+        .finally(() => {
+          if (!cancelled) setIsCalculatingTopup(false)
+        })
+    }, 350)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [open, accountSession?.accessToken, accountSession?.userId, topupAmount, topupInfo, topupPaymentMethod, wenyunProfile.baseUrl])
 
   if (!open || typeof document === 'undefined') return null
 
@@ -216,6 +320,42 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
     }
   }
 
+  const handleCreateTopupOrder = async () => {
+    if (!accountSession || !topupInfo) {
+      showToast('请先登录账号', 'error')
+      return
+    }
+    const method = topupInfo.paymentMethods.find((item) => item.type === topupPaymentMethod)
+    if (!method) {
+      showToast('请选择支付方式', 'error')
+      return
+    }
+    const amount = Math.floor(Number(topupAmount))
+    const minTopup = method.minTopup || topupInfo.minTopup
+    if (!Number.isFinite(amount) || amount < minTopup) {
+      showToast(`充值金额不能低于 ${minTopup}`, 'error')
+      return
+    }
+
+    const popup = window.open('about:blank', '_blank')
+    if (!popup) {
+      showToast('浏览器拦截了支付页面，请允许弹窗后重试', 'error')
+      return
+    }
+
+    setIsCreatingTopupOrder(true)
+    try {
+      const order = await createNewApiTopupOrder(wenyunProfile, accountSession, amount, method.type)
+      submitPaymentOrder(order, popup)
+      showToast('支付页面已打开，完成后请查询账号余额', 'success')
+    } catch (err) {
+      popup.close()
+      showToast(err instanceof Error ? err.message : '创建支付订单失败', 'error')
+    } finally {
+      setIsCreatingTopupOrder(false)
+    }
+  }
+
   const handleAccountLogout = () => {
     const manualKey = normalizedSettings.profiles.find((profile) => profile.id === LOCKED_WENYUN_PROFILE_ID)?.apiKey.trim() ?? ''
     updateAccountSession(null, { accountApiKeyMode: manualKey ? 'manual' : normalizedSettings.accountApiKeyMode })
@@ -237,11 +377,11 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
 
   return createPortal(
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 px-4 py-8 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="w-full max-w-md rounded-2xl border border-white/60 bg-white/95 p-5 shadow-2xl backdrop-blur-xl dark:border-white/[0.08] dark:bg-gray-950/95">
+      <div className="max-h-[calc(100vh-4rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-white/60 bg-white/95 p-5 shadow-2xl backdrop-blur-xl dark:border-white/[0.08] dark:bg-gray-950/95">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
             <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">文运站账号</h3>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">登录后可使用账号绑定 Key 和兑换码。</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">登录后可使用账号绑定 Key、在线充值和兑换码。</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-100" aria-label="关闭">
             <CloseIcon className="h-4 w-4" />
@@ -304,6 +444,69 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
               <button type="button" onClick={handleAccountLogout} className="rounded-xl border border-gray-200/70 bg-white/70 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:border-red-400/30 dark:hover:bg-red-500/15 dark:hover:text-red-200">
                 退出登录
               </button>
+            </div>
+            <div className="space-y-3 border-t border-gray-200/70 pt-3 dark:border-white/[0.08]">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-100">在线充值</span>
+                {calculatedPaymentAmount !== null && (
+                  <span className="text-xs text-gray-500 dark:text-gray-400">实际支付 {calculatedPaymentAmount.toFixed(2)}</span>
+                )}
+              </div>
+              {isLoadingTopupInfo ? (
+                <div className="h-20 animate-pulse rounded-xl bg-gray-100 dark:bg-white/[0.05]" />
+              ) : topupInfo?.enabled ? (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    {topupInfo.amountOptions.map((amount) => (
+                      <button
+                        key={amount}
+                        type="button"
+                        onClick={() => setTopupAmount(String(amount))}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${Number(topupAmount) === amount ? 'border-blue-400 bg-blue-50 text-blue-600 dark:border-blue-400/50 dark:bg-blue-500/15 dark:text-blue-200' : 'border-gray-200/70 bg-white/70 text-gray-600 hover:border-blue-200 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300'}`}
+                      >
+                        {amount}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    value={topupAmount}
+                    onChange={(event) => setTopupAmount(event.target.value)}
+                    type="number"
+                    min={topupInfo.minTopup}
+                    step="1"
+                    placeholder={`充值金额，最低 ${topupInfo.minTopup}`}
+                    className="w-full rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    {topupInfo.paymentMethods.map((method) => (
+                      <button
+                        key={method.type}
+                        type="button"
+                        onClick={() => setTopupPaymentMethod(method.type)}
+                        className={`min-w-0 rounded-xl border px-3 py-2 text-xs font-medium transition ${topupPaymentMethod === method.type ? 'border-blue-400 bg-blue-50 text-blue-600 dark:border-blue-400/50 dark:bg-blue-500/15 dark:text-blue-200' : 'border-gray-200/70 bg-white/70 text-gray-600 hover:border-blue-200 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300'}`}
+                      >
+                        <span className="block truncate">{method.name}</span>
+                        {method.minTopup > 0 && <span className="mt-0.5 block text-[10px] font-normal opacity-70">最低 {method.minTopup}</span>}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleCreateTopupOrder()}
+                    disabled={isCreatingTopupOrder || isCalculatingTopup}
+                    className="w-full rounded-xl bg-blue-500 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isCreatingTopupOrder ? '正在创建订单...' : isCalculatingTopup ? '正在计算金额...' : '去支付'}
+                  </button>
+                </>
+              ) : (
+                <div className="flex items-center justify-between gap-3 rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-white/[0.03] dark:text-gray-400">
+                  <span>{topupError || '在线支付暂未开放'}</span>
+                  {topupError && (
+                    <button type="button" onClick={() => setTopupReloadKey((value) => value + 1)} className="shrink-0 font-medium text-blue-500 hover:text-blue-600">重试</button>
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex gap-2">
               <input value={accountRedeemCode} onChange={(event) => setAccountRedeemCode(event.target.value)} placeholder="兑换码" className="min-w-0 flex-1 rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50" />

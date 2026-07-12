@@ -20,6 +20,23 @@ export interface NewApiBoundKeyResult {
   name?: string
 }
 
+export interface NewApiTopupPaymentMethod {
+  name: string
+  type: string
+  minTopup: number
+}
+
+export interface NewApiTopupInfo {
+  enabled: boolean
+  minTopup: number
+  amountOptions: number[]
+  paymentMethods: NewApiTopupPaymentMethod[]
+}
+
+export type NewApiPaymentOrder =
+  | { kind: 'redirect'; url: string }
+  | { kind: 'form'; url: string; fields: Record<string, string> }
+
 const ACCOUNT_DEFAULT_STATUS: NewApiStatusInfo = {
   currencySymbol: 'HUHN',
   quotaPerUnit: 500_000,
@@ -81,7 +98,7 @@ function readErrorMessage(payload: unknown): string {
   const nested = readErrorMessage(record.details) || readErrorMessage(record.errors) || readErrorMessage(record.data) || (typeof record.error === 'object' ? readErrorMessage(record.error) : '')
   const direct = getString(record.message) || getString(record.msg) || (typeof record.error === 'string' ? getString(record.error) : '')
   // NewAPI 校验失败时外层常见提示是“操作失败，请查看详情”，真正原因放在 details/data 里。
-  if (nested && (!direct || /查看详情|details/i.test(direct))) return normalizeNewApiAccountErrorMessage(nested)
+  if (nested && (!direct || /^error$/i.test(direct) || /查看详情|details/i.test(direct))) return normalizeNewApiAccountErrorMessage(nested)
   return normalizeNewApiAccountErrorMessage(direct || nested)
 }
 
@@ -103,6 +120,7 @@ async function newApiRequest<T>(
     body?: unknown
     accessToken?: string
     userId?: number | string
+    returnEnvelope?: boolean
   } = {},
 ): Promise<T> {
   const headers: Record<string, string> = {}
@@ -121,12 +139,14 @@ async function newApiRequest<T>(
   const record = getRecord(payload)
   const code = record && typeof record.code === 'number' ? record.code : undefined
   const success = record && typeof record.success === 'boolean' ? record.success : undefined
+  const message = record ? getString(record.message) : ''
+  const businessError = /^error$/i.test(message)
 
-  if (!response.ok || code !== undefined && code !== 0 || success === false) {
+  if (!response.ok || code !== undefined && code !== 0 || success === false || businessError) {
     throw new Error(readErrorMessage(payload) || `请求失败：${response.status}`)
   }
 
-  return getPayloadData(payload) as T
+  return (options.returnEnvelope ? payload : getPayloadData(payload)) as T
 }
 
 export function readAccessToken(payload: unknown): string {
@@ -492,6 +512,154 @@ export async function redeemNewApiCode(profile: ApiProfile, session: NewApiAccou
     body: { key: code.trim() },
   })
   return fetchNewApiAccountBalance(profile, session)
+}
+
+function readBoolean(record: Record<string, unknown>, key: string): boolean {
+  return record[key] === true
+}
+
+function readPositiveNumber(value: unknown): number {
+  const number = Number(value)
+  return Number.isFinite(number) && number > 0 ? number : 0
+}
+
+function readJsonArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value
+  if (typeof value !== 'string') return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function readTopupPaymentMethods(value: unknown): NewApiTopupPaymentMethod[] {
+  return readJsonArray(value)
+    .map(getRecord)
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item) => ({
+      name: getString(item.name),
+      type: getString(item.type),
+      minTopup: readPositiveNumber(item.min_topup),
+    }))
+    .filter((item) => item.name && item.type)
+}
+
+function uniquePositiveIntegers(value: unknown): number[] {
+  return [...new Set(readJsonArray(value)
+    .map((item) => Math.floor(Number(item)))
+    .filter((item) => Number.isFinite(item) && item > 0))]
+}
+
+export async function fetchNewApiTopupInfo(
+  profile: ApiProfile,
+  session: NewApiAccountSession,
+): Promise<NewApiTopupInfo> {
+  const payload = await newApiRequest<unknown>(profile, '/api/user/topup/info', {
+    accessToken: session.accessToken,
+    userId: session.userId,
+  })
+  const record = getRecord(payload)
+  if (!record) throw new Error('在线支付配置无效')
+
+  const paymentMethods = readTopupPaymentMethods(record.pay_methods)
+  const enabled = readBoolean(record, 'enable_online_topup')
+    || readBoolean(record, 'enable_stripe_topup')
+    || readBoolean(record, 'enable_waffo_topup')
+    || readBoolean(record, 'enable_waffo_pancake_topup')
+  const configuredMinTopup = readPositiveNumber(record.min_topup)
+  const methodMinimums = paymentMethods.map((item) => item.minTopup).filter((item) => item > 0)
+  const minTopup = configuredMinTopup || (methodMinimums.length ? Math.min(...methodMinimums) : 1)
+  const amountOptions = uniquePositiveIntegers(record.amount_options)
+
+  return {
+    enabled: enabled && paymentMethods.length > 0,
+    minTopup,
+    amountOptions: amountOptions.length ? amountOptions : [minTopup, minTopup * 2, minTopup * 5, minTopup * 10],
+    paymentMethods,
+  }
+}
+
+function getTopupEndpoint(paymentMethod: string, action: 'amount' | 'pay'): string {
+  if (paymentMethod === 'stripe') return `/api/user/stripe/${action}`
+  if (paymentMethod === 'waffo') return `/api/user/waffo/${action}`
+  if (paymentMethod === 'waffo_pancake' || paymentMethod === 'waffo-pancake') return `/api/user/waffo-pancake/${action}`
+  return action === 'amount' ? '/api/user/amount' : '/api/user/pay'
+}
+
+export async function calculateNewApiTopupAmount(
+  profile: ApiProfile,
+  session: NewApiAccountSession,
+  amount: number,
+  paymentMethod: string,
+): Promise<number> {
+  const payload = await newApiRequest<unknown>(profile, getTopupEndpoint(paymentMethod, 'amount'), {
+    method: 'POST',
+    accessToken: session.accessToken,
+    userId: session.userId,
+    body: { amount: Math.floor(amount) },
+  })
+  const paymentAmount = Number(payload)
+  if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) throw new Error('支付金额计算失败')
+  return paymentAmount
+}
+
+function requireSafePaymentUrl(value: unknown): string {
+  const url = getString(value)
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return parsed.toString()
+  } catch {
+    // 支付地址由 NewAPI 返回，格式异常时禁止继续跳转。
+  }
+  throw new Error('支付地址无效')
+}
+
+function readPaymentFormFields(value: unknown): Record<string, string> {
+  const record = getRecord(value)
+  if (!record) return {}
+  return Object.fromEntries(Object.entries(record)
+    .filter(([, fieldValue]) => ['string', 'number', 'boolean'].includes(typeof fieldValue))
+    .map(([key, fieldValue]) => [key, String(fieldValue)]))
+}
+
+export async function createNewApiTopupOrder(
+  profile: ApiProfile,
+  session: NewApiAccountSession,
+  amount: number,
+  paymentMethod: string,
+): Promise<NewApiPaymentOrder> {
+  const normalizedAmount = Math.floor(amount)
+  const body = paymentMethod === 'stripe'
+    ? { amount: normalizedAmount, payment_method: 'stripe' }
+    : { amount: normalizedAmount, payment_method: paymentMethod }
+  const payload = await newApiRequest<unknown>(profile, getTopupEndpoint(paymentMethod, 'pay'), {
+    method: 'POST',
+    accessToken: session.accessToken,
+    userId: session.userId,
+    body,
+    returnEnvelope: true,
+  })
+  const envelope = getRecord(payload)
+  const data = envelope ? envelope.data : undefined
+  const dataRecord = getRecord(data)
+
+  if (paymentMethod === 'stripe') {
+    return { kind: 'redirect', url: requireSafePaymentUrl(dataRecord?.pay_link) }
+  }
+  if (paymentMethod === 'waffo') {
+    return { kind: 'redirect', url: requireSafePaymentUrl(dataRecord?.payment_url ?? data) }
+  }
+  if (paymentMethod === 'waffo_pancake' || paymentMethod === 'waffo-pancake') {
+    return { kind: 'redirect', url: requireSafePaymentUrl(dataRecord?.checkout_url ?? data) }
+  }
+
+  return {
+    kind: 'form',
+    url: requireSafePaymentUrl(envelope?.url),
+    fields: readPaymentFormFields(data),
+  }
 }
 
 export function maskApiKey(key?: string): string {
