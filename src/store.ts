@@ -2184,11 +2184,14 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     useStore.getState().setParams(normalizedParamPatch)
   }
 
-  const taskId = genId()
-  const task: TaskRecord = {
-    id: taskId,
+  const taskCount = Math.max(1, Math.trunc(normalizedParams.n))
+  const singleTaskParams: TaskParams = { ...normalizedParams, n: 1 }
+  const submittedAt = Date.now()
+  // 数量代表独立任务数，每个任务只请求一张图，让先完成的结果可以立即展示。
+  const submittedTasks: TaskRecord[] = Array.from({ length: taskCount }, () => ({
+    id: genId(),
     prompt: prompt.trim(),
-    params: normalizedParams,
+    params: { ...singleTaskParams },
     apiProvider: activeProfile.provider,
     apiProfileId: activeProfile.id,
     apiProfileName: activeProfile.name,
@@ -2200,15 +2203,15 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     outputImages: [],
     status: 'running',
     error: null,
-    createdAt: Date.now(),
+    createdAt: submittedAt,
     finishedAt: null,
     elapsed: null,
-  }
+  }))
 
   const latestTasks = useStore.getState().tasks
-  useStore.getState().setTasks([task, ...latestTasks])
-  persistTaskInBackground(task, '提交任务时保存任务')
-  useStore.getState().showToast('任务已提交', 'success')
+  useStore.getState().setTasks([...submittedTasks, ...latestTasks])
+  submittedTasks.forEach((task) => persistTaskInBackground(task, '提交独立任务时保存任务'))
+  useStore.getState().showToast(taskCount > 1 ? `已提交 ${taskCount} 个独立任务` : '任务已提交', 'success')
 
   if (settings.clearInputAfterSubmit) {
     useStore.getState().setPrompt('')
@@ -2216,8 +2219,8 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
   }
   useStore.getState().setReusedTaskApiProfile(null)
 
-  // 异步调用 API
-  void executeTask(taskId)
+  // 所有任务并行启动，接口返回一张就立即完成对应卡片。
+  submittedTasks.forEach((task) => void executeTask(task.id))
 }
 
 function getActiveAgentConversation(): AgentConversation {

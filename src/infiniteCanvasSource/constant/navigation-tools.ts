@@ -1,15 +1,10 @@
-import { FileText, Images, Maximize2 } from "lucide-react";
+import { Images, Maximize2 } from "lucide-react";
 
 export const navigationTools = [
     {
         slug: "canvas",
         label: "我的画布",
         icon: Maximize2,
-    },
-    {
-        slug: "prompts",
-        label: "提示词库",
-        icon: FileText,
     },
     {
         slug: "assets",

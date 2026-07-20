@@ -3,7 +3,6 @@ import 'antd/dist/reset.css'
 import UserLayout from '../infiniteCanvasSource/app/(user)/layout'
 import OriginalCanvasPage from '../infiniteCanvasSource/app/(user)/canvas/page'
 import OriginalCanvasClientPage from '../infiniteCanvasSource/app/(user)/canvas/[id]/canvas-client-page'
-import PromptsPage from '../infiniteCanvasSource/app/(user)/prompts/page'
 import AssetsPage from '../infiniteCanvasSource/app/(user)/assets/page'
 import { AppProviders } from '../infiniteCanvasSource/components/layout/app-providers'
 import { useThemeStore } from '../infiniteCanvasSource/stores/use-theme-store'
@@ -61,7 +60,6 @@ function routeFromHref(href: string): CanvasRoute {
 function CanvasRoutePage({ route }: { route: CanvasRoute }) {
   if (route.pathname === '/canvas') return <OriginalCanvasPage />
   if (route.params.id) return <OriginalCanvasClientPage />
-  if (route.pathname === '/prompts') return <PromptsPage />
   if (route.pathname === '/assets') return <AssetsPage />
   return <OriginalCanvasPage />
 }

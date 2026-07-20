@@ -100,7 +100,7 @@ vi.mock('./lib/agentApi', () => ({
 }))
 import { clearAgentConversations, clearImages, getAllAgentConversations, getAllTasks, putAgentConversation, putImage, putTask as putDbTask } from './lib/db'
 import { callAgentResponsesApi, callBatchImageSingle } from './lib/agentApi'
-import { callImageApi } from './lib/api'
+import { callImageApi, type CallApiResult } from './lib/api'
 import { cleanStaleAgentInputDrafts, deleteAgentRoundFromConversation, editOutputs, getActiveAgentRounds, getErrorToastMessage, getPersistedState, getTaskApiProfile, importData, initStore, markInterruptedOpenAIRunningTasks, migratePersistedState, regenerateAgentAssistantMessage, remapAgentRoundMentionsForPathChange, removeTask, reuseConfig, submitAgentMessage, submitTask, useStore } from './store'
 import { useCanvasStore } from './infiniteCanvasSource/app/(user)/canvas/stores/use-canvas-store'
 
@@ -156,6 +156,13 @@ function importFile(data: ExportData): File {
 
 describe('mask draft lifecycle in store actions', () => {
   beforeEach(() => {
+    vi.mocked(callImageApi).mockReset()
+    vi.mocked(callImageApi).mockResolvedValue({
+      images: [],
+      actualParams: {},
+      actualParamsList: [],
+      revisedPrompts: [],
+    })
     useStore.setState({
       settings: { ...DEFAULT_SETTINGS, apiKey: 'test-key' },
       prompt: 'prompt',
@@ -212,6 +219,53 @@ describe('mask draft lifecycle in store actions', () => {
     const state = useStore.getState()
     expect(state.tasks).toHaveLength(1)
     expect(state.showToast).toHaveBeenCalledWith('任务已提交', 'success')
+  })
+
+  it('splits the requested image count into independent gallery tasks', async () => {
+    const requestResolvers: Array<(result: CallApiResult) => void> = []
+    vi.mocked(callImageApi).mockImplementation(
+      () => new Promise((resolve) => requestResolvers.push(resolve)),
+    )
+    useStore.setState({ params: { ...DEFAULT_PARAMS, n: 3 } })
+
+    await submitTask()
+
+    const submittedTasks = useStore.getState().tasks
+    expect(submittedTasks).toHaveLength(3)
+    expect(submittedTasks.every((task) => task.params.n === 1)).toBe(true)
+    expect(callImageApi).toHaveBeenCalledTimes(3)
+    expect(vi.mocked(callImageApi).mock.calls.every(([options]) => options.params.n === 1)).toBe(true)
+
+    requestResolvers[1]({
+      images: ['data:image/png;base64,second-image'],
+      actualParams: { n: 1 },
+      actualParamsList: [{ n: 1 }],
+      revisedPrompts: [],
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const partiallyCompletedTasks = useStore.getState().tasks
+    expect(partiallyCompletedTasks.filter((task) => task.status === 'done')).toHaveLength(1)
+    expect(partiallyCompletedTasks.filter((task) => task.status === 'running')).toHaveLength(2)
+
+    requestResolvers[0]({
+      images: ['data:image/png;base64,first-image'],
+      actualParams: { n: 1 },
+      actualParamsList: [{ n: 1 }],
+      revisedPrompts: [],
+    })
+    requestResolvers[2]({
+      images: ['data:image/png;base64,third-image'],
+      actualParams: { n: 1 },
+      actualParamsList: [{ n: 1 }],
+      revisedPrompts: [],
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(useStore.getState().tasks.every((task) => task.status === 'done')).toBe(true)
+    expect(useStore.getState().tasks.every((task) => task.outputImages.length === 1)).toBe(true)
   })
 
   it('still sends the request when task persistence hangs', async () => {
