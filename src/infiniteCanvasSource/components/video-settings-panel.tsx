@@ -4,7 +4,6 @@ import { useEffect, type ReactNode } from "react";
 
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
-import { getSoraV3FixedResolution, isSoraV3VideoModel } from "@/lib/video-model-capabilities";
 import type { AiConfig } from "@/stores/use-config-store";
 
 const defaultResolutionOptions = [
@@ -40,12 +39,11 @@ const klingSizeOptions = [
 ];
 
 const soraV3SizeOptions = [
-    { value: "21:9", label: "21:9", width: 21, height: 9 },
-    { value: "16:9", label: "16:9", width: 16, height: 9 },
-    { value: "4:3", label: "4:3", width: 4, height: 3 },
-    { value: "1:1", label: "1:1", width: 1, height: 1 },
-    { value: "3:4", label: "3:4", width: 3, height: 4 },
-    { value: "9:16", label: "9:16", width: 9, height: 16 },
+    ...standardLandscapeSizeOptions,
+    { value: "1024x1024", label: "方形", width: 1024, height: 1024 },
+    { value: "1680x720", label: "21:9", width: 1680, height: 720 },
+    { value: "1024x768", label: "4:3", width: 1024, height: 768 },
+    { value: "768x1024", label: "3:4", width: 768, height: 1024 },
 ];
 
 const defaultSecondOptions = [6, 10, 12, 16, 20];
@@ -71,7 +69,6 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const size = normalizeVideoSizeValue(config.size, videoModel);
     const dimensions = readSizeDimensions(size);
     const resolution = normalizeVideoResolutionValue(config.vquality, videoModel);
-    const usesFixedSoraV3Settings = isSoraV3VideoModel(videoModel);
     const updateDimension = (key: "width" | "height", value: number | null) => {
         const next = Math.max(1, Math.floor(value || dimensions[key] || 720));
         onConfigChange("size", `${key === "width" ? next : dimensions.width}x${key === "height" ? next : dimensions.height}`);
@@ -97,23 +94,21 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
             <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
                 {showTitle ? <div className="text-lg font-semibold">视频设置</div> : null}
                 <SettingGroup title="清晰度" color={theme.node.muted}>
-                    <div className={usesFixedSoraV3Settings ? "grid grid-cols-1 gap-2.5" : "grid grid-cols-3 gap-2.5"}>
+                    <div className="grid grid-cols-3 gap-2.5">
                         {resolutionOptions.map((item) => (
                             <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => onConfigChange("vquality", item.value)}>
                                 {item.label}
                             </OptionPill>
                         ))}
-                        {usesFixedSoraV3Settings ? null : <ResolutionInput value={resolution} theme={theme} onChange={(value) => onConfigChange("vquality", value)} />}
+                        <ResolutionInput value={resolution} theme={theme} onChange={(value) => onConfigChange("vquality", value)} />
                     </div>
                 </SettingGroup>
-                <SettingGroup title={usesFixedSoraV3Settings ? "比例" : "尺寸"} color={theme.node.muted}>
-                    {usesFixedSoraV3Settings ? null : (
-                        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
-                            <DimensionInput prefix="W" value={dimensions.width} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("width", value)} />
-                            <span className="text-lg opacity-45">↔</span>
-                            <DimensionInput prefix="H" value={dimensions.height} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("height", value)} />
-                        </div>
-                    )}
+                <SettingGroup title="尺寸" color={theme.node.muted}>
+                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
+                        <DimensionInput prefix="W" value={dimensions.width} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("width", value)} />
+                        <span className="text-lg opacity-45">↔</span>
+                        <DimensionInput prefix="H" value={dimensions.height} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("height", value)} />
+                    </div>
                     <div className="grid grid-cols-3 gap-2.5">
                         {sizeOptions.map((item) => (
                             <button
@@ -126,7 +121,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                             >
                                 <SizePreview width={item.width} height={item.height} color={theme.node.text} />
                                 <span>{item.label}</span>
-                                {item.value === "auto" || item.label === item.value ? null : (
+                                {item.value === "auto" ? null : (
                                     <span className="text-[11px] leading-none opacity-55">
                                         {item.value}
                                     </span>
@@ -164,13 +159,19 @@ export function videoSecondsLabel(value: string, model = "") {
 }
 
 export function normalizeVideoSizeValue(value: string, model = "") {
-    if (isSoraV3VideoModel(model)) return readAspectRatio(value === "auto" ? "16:9" : value);
     if (value === "auto") return isSora2VideoModel(model) || isVeo31FastVideoModel(model) || isKlingVideoModel(model) || isSoraV3VideoModel(model) ? "1280x720" : "auto";
     const size = /^\d+x\d+$/.test(value || "") ? value : ratioToVideoSize(value);
     const aspectRatio = readAspectRatio(size);
     if (isSora2VideoModel(model) || isVeo31FastVideoModel(model)) return aspectRatio === "9:16" ? "720x1280" : "1280x720";
     if (isKlingVideoModel(model)) {
         if (aspectRatio === "1:1") return "1024x1024";
+        return aspectRatio === "9:16" ? "720x1280" : "1280x720";
+    }
+    if (isSoraV3VideoModel(model)) {
+        if (aspectRatio === "1:1") return "1024x1024";
+        if (aspectRatio === "21:9") return "1680x720";
+        if (aspectRatio === "4:3") return "1024x768";
+        if (aspectRatio === "3:4") return "768x1024";
         return aspectRatio === "9:16" ? "720x1280" : "1280x720";
     }
     return size;
@@ -186,12 +187,11 @@ function ratioToVideoSize(value: string) {
 }
 
 export function normalizeVideoResolutionValue(value: string, model = "") {
-    const soraV3Resolution = getSoraV3FixedResolution(model);
-    if (soraV3Resolution) return soraV3Resolution.replace(/p$/i, "");
     if (value === "480p" || value === "low") return "480";
     if (value === "720p" || value === "auto" || value === "high" || value === "medium") return "720";
     const resolution = value.replace(/p$/i, "") || "720";
     if (isSora2VideoModel(model)) return "720";
+    if (isSoraV3VideoModel(model)) return resolution === "480" ? "480" : "720";
     if (isKlingVideoModel(model) || isVeo31FastVideoModel(model)) return resolution === "1080" ? "1080" : "720";
     return resolution;
 }
@@ -232,8 +232,6 @@ function allowsCustomVideoSeconds(model = "") {
 }
 
 function getVideoResolutionOptions(model = "") {
-    const soraV3Resolution = getSoraV3FixedResolution(model);
-    if (soraV3Resolution) return [{ value: soraV3Resolution.replace(/p$/i, ""), label: soraV3Resolution }];
     if (isKlingVideoModel(model) || isVeo31FastVideoModel(model)) return hdResolutionOptions;
     return defaultResolutionOptions;
 }
@@ -246,7 +244,6 @@ function getVideoSizeOptions(model = "") {
 }
 
 function readAspectRatio(value: string) {
-    if (["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"].includes(value)) return value;
     if (!/^\d+x\d+$/.test(value || "")) return "16:9";
     const [width, height] = value.split("x").map(Number);
     if (!width || !height) return "16:9";
@@ -262,6 +259,10 @@ function readAspectRatio(value: string) {
 
 function isSora2VideoModel(model = "") {
     return /^sora-?2(?:-|$)/i.test(model.trim());
+}
+
+function isSoraV3VideoModel(model = "") {
+    return /^sora-v3(?:-|$)/i.test(model.trim());
 }
 
 function isVeo31FastVideoModel(model = "") {

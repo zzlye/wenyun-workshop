@@ -4,10 +4,9 @@ import axios from "axios";
 import { dataUrlToFile, getDataUrlByteSize } from "@/lib/image-utils";
 import { mediaToDataUrl } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
-import { getSoraV3FixedResolution, isSoraV3VideoModel } from "@/lib/video-model-capabilities";
 import type { AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
-import type { ReferenceAudio, ReferenceImage, ReferenceVideo } from "@/types/image";
+import type { ReferenceAudio, ReferenceImage } from "@/types/image";
 import { buildApiUrl as buildDevApiUrl, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from "../../../lib/devProxy";
 import { sanitizeApiErrorMessage } from "../../../lib/imageApiShared";
 
@@ -88,7 +87,7 @@ function requestTimeout(source: VideoApiSource) {
     return Math.max(1, source.timeout || 120) * 1000;
 }
 
-export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], audioReferences: ReferenceAudio[] = [], videoReferences: ReferenceVideo[] = []) {
+export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], audioReferences: ReferenceAudio[] = []) {
     const model = config.videoModel || config.model;
     const sources = resolveVideoApiSources(config);
     if (!sources.length) throw new Error("请先在设置里填写支持视频生成的 API URL 和 Key");
@@ -112,7 +111,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
         }
 
         if (isJsonVideosFirstModel(model)) {
-            const result = await tryGeneration(`${labelPrefix}OpenAI JSON /videos`, () => requestOpenAiVideosJsonGeneration(config, source, prompt, references, audioReferences, videoReferences, model), shouldFallbackToNextVideoSource);
+            const result = await tryGeneration(`${labelPrefix}OpenAI JSON /videos`, () => requestOpenAiVideosJsonGeneration(config, source, prompt, references, audioReferences, model), shouldFallbackToNextVideoSource);
             if (result) return result;
         }
 
@@ -137,8 +136,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     throw buildVideoGenerationError(failures);
 }
 
-async function requestOpenAiVideosJsonGeneration(config: AiConfig, source: VideoApiSource, prompt: string, references: ReferenceImage[], audioReferences: ReferenceAudio[], videoReferences: ReferenceVideo[], model: string) {
-    assertSoraV3Request(model, prompt, references, videoReferences, audioReferences);
+async function requestOpenAiVideosJsonGeneration(config: AiConfig, source: VideoApiSource, prompt: string, references: ReferenceImage[], audioReferences: ReferenceAudio[], model: string) {
     const seconds = normalizeVideoSecondsForModel(config.videoSeconds, model);
     const payload: Record<string, unknown> = isGeekNowSoraModel(model)
         ? { model, prompt, size: normalizeSoraVideoSize(config.size, model), seconds }
@@ -148,17 +146,15 @@ async function requestOpenAiVideosJsonGeneration(config: AiConfig, source: Video
               aspect_ratio: normalizeVideoAspectRatio(config.size, model),
               duration: Number(seconds),
               seconds,
+              size: normalizeVideoSize(config.size) || undefined,
               resolution: normalizeVideoResolutionForModel(config.vquality, model),
               generate_audio: true,
           };
-    if (!isSoraV3VideoModel(model)) payload.size = normalizeVideoSize(config.size) || undefined;
     const images = (await Promise.all(references.slice(0, getJsonVideoReferenceLimit(model)).map((image) => imageToDataUrl(image)))).filter(Boolean);
-    const videos = await prepareJsonVideoUrls(model, videoReferences);
     appendJsonVideoReferenceFields(payload, images, model);
-    appendJsonVideoFields(payload, videos);
-    assertJsonVideoAudioReferences(model, images, videos, audioReferences);
+    assertJsonVideoAudioReferences(model, images, audioReferences);
     const audios = await prepareJsonVideoAudioUrls(model, audioReferences);
-    appendJsonVideoAudioFields(payload, audios, model);
+    appendJsonVideoAudioFields(payload, audios);
     const created = unwrapVideoTask((await axios.post<ApiVideoResponse>(aiApiUrl(config, source, "/videos"), payload, { headers: { ...aiHeaders(config, source), "Content-Type": "application/json" }, timeout: requestTimeout(source) })).data);
     return waitOpenAiVideoResult(config, source, created, model);
 }
@@ -333,11 +329,6 @@ function appendJsonVideoReferenceFields(payload: Record<string, unknown>, images
         payload.input_reference = images.length === 1 ? images[0] : images;
         return;
     }
-    if (isSoraV3VideoModel(model)) {
-        // Sora V3 每类参考素材只发送一个规范字段，避免多个别名内容不一致被上游拒绝。
-        payload.image_urls = images;
-        return;
-    }
     if (isPixelleJsonVideoModel(model)) {
         // Pixelle/Sora V3 风格接口使用 image_url 作为主参考图，reference_image_urls 作为额外参考图。
         payload.image_url = images[0];
@@ -354,37 +345,17 @@ function appendJsonVideoReferenceFields(payload: Record<string, unknown>, images
     payload.input_reference = images.length === 1 ? images[0] : images;
 }
 
-function appendJsonVideoAudioFields(payload: Record<string, unknown>, audios: string[], model: string) {
+function appendJsonVideoAudioFields(payload: Record<string, unknown>, audios: string[]) {
     if (!audios.length) return;
-    if (isSoraV3VideoModel(model)) {
-        payload.audio_urls = audios;
-        return;
-    }
     payload.audio_url = audios[0];
     if (audios.length > 1) payload.audio_urls = audios;
 }
 
-function appendJsonVideoFields(payload: Record<string, unknown>, videos: string[]) {
-    if (!videos.length) return;
-    payload.video_urls = videos;
-}
-
-function assertJsonVideoAudioReferences(model: string, images: string[], videos: string[], audioReferences: ReferenceAudio[]) {
+function assertJsonVideoAudioReferences(model: string, images: string[], audioReferences: ReferenceAudio[]) {
     if (!audioReferences.length || !isPixelleJsonVideoModel(model)) return;
-    if (!images.length && !videos.length) throw new Error("视频参考音频必须同时连接至少一张参考图或一个参考视频");
-    if (isSoraV3VideoModel(model)) return;
+    if (!images.length) throw new Error("视频参考音频必须同时连接至少一张参考图");
     const invalidDuration = audioReferences.find((audio) => typeof audio.duration === "number" && (audio.duration <= 2 || audio.duration >= 15));
     if (invalidDuration) throw new Error("视频参考音频时长需要大于 2 秒且小于 15 秒");
-}
-
-function assertSoraV3Request(model: string, prompt: string, images: ReferenceImage[], videos: ReferenceVideo[], audios: ReferenceAudio[]) {
-    if (!isSoraV3VideoModel(model)) return;
-    if (Array.from(prompt).length > 2500) throw new Error("提示词不能超过2500个字符");
-    if (images.length > 9) throw new Error("Sora V3 最多支持 9 张参考图");
-    if (videos.length > 3) throw new Error("Sora V3 最多支持 3 个参考视频");
-    if (audios.length > 3) throw new Error("Sora V3 最多支持 3 个参考音频");
-    if (images.length + videos.length + audios.length > 12) throw new Error("Sora V3 参考素材合计不能超过 12 个");
-    if (audios.length && !images.length && !videos.length) throw new Error("视频参考音频必须同时连接至少一张参考图或一个参考视频");
 }
 
 async function prepareJsonVideoAudioUrls(model: string, audioReferences: ReferenceAudio[]) {
@@ -392,20 +363,8 @@ async function prepareJsonVideoAudioUrls(model: string, audioReferences: Referen
     if (!limit) return [];
     const audios = audioReferences.slice(0, limit);
     if (!isPixelleJsonVideoModel(model)) return (await Promise.all(audios.map((audio) => audioToDataUrl(audio)))).filter(Boolean);
-    if (isSoraV3VideoModel(model)) return (await Promise.all(audios.map(mediaReferenceToUrl))).filter(Boolean);
 
     return (await Promise.all(audios.map(audioToVideoReferenceUrl))).filter(Boolean);
-}
-
-async function prepareJsonVideoUrls(model: string, videoReferences: ReferenceVideo[]) {
-    if (!isSoraV3VideoModel(model)) return [];
-    return (await Promise.all(videoReferences.slice(0, 3).map(mediaReferenceToUrl))).filter(Boolean);
-}
-
-async function mediaReferenceToUrl(media: ReferenceAudio | ReferenceVideo) {
-    const directUrl = (media.url || "").trim();
-    if (/^https?:\/\//i.test(directUrl)) return directUrl;
-    return mediaToDataUrl(media);
 }
 
 function getJsonVideoReferenceLimit(model: string) {
@@ -447,8 +406,7 @@ function normalizeVideoResolution(value: string) {
 function normalizeVideoResolutionForModel(value: string, model: string) {
     const resolution = normalizeVideoResolution(value);
     if (isSora2VideoModel(model)) return "720p";
-    const soraV3Resolution = getSoraV3FixedResolution(model);
-    if (soraV3Resolution) return soraV3Resolution;
+    if (isSoraV3VideoModel(model)) return resolution === "480p" ? "480p" : "720p";
     if (isKlingVideoModel(model) || isVeo31FastVideoModel(model)) return resolution === "1080p" ? "1080p" : "720p";
     return resolution;
 }
@@ -764,6 +722,10 @@ function isSora2VideoModel(model: string) {
 
 function isGeekNowSoraModel(model: string) {
     return /^sora-2(?:-pro)?$/i.test(model.trim());
+}
+
+function isSoraV3VideoModel(model: string) {
+    return /^sora-v3(?:-|$)/i.test(model.trim());
 }
 
 function isSeedanceVideoModel(model: string) {

@@ -4,8 +4,7 @@ const MENTION_START = '\u2063'
 const MENTION_END = '\u2064'
 const SELECTED_IMAGE_MENTION_RE = /\u2063@图(\d+)\u2064/g
 const SELECTED_AUDIO_MENTION_RE = /\u2063@音频(\d+)\u2064/g
-const SELECTED_VIDEO_MENTION_RE = /\u2063@视频(\d+)\u2064/g
-const SELECTED_MENTION_RE = /\u2063(@图(\d+)|@音频(\d+)|@视频(\d+)|@(?:第)?\d+轮图\d+)\u2064/g
+const SELECTED_MENTION_RE = /\u2063(@图(\d+)|@音频(\d+)|@(?:第)?\d+轮图\d+)\u2064/g
 
 export interface AtImageQuery {
   start: number
@@ -18,10 +17,6 @@ export function getImageMentionLabel(index: number) {
 
 export function getAudioMentionLabel(index: number) {
   return `@音频${index + 1}`
-}
-
-export function getVideoMentionLabel(index: number) {
-  return `@视频${index + 1}`
 }
 
 export function getSelectedImageMentionLabel(index: number) {
@@ -76,10 +71,6 @@ export function audioMentionMatches(query: string, index: number) {
   return mediaMentionMatches(query, index, '音频')
 }
 
-export function videoMentionMatches(query: string, index: number) {
-  return mediaMentionMatches(query, index, '视频')
-}
-
 function mediaMentionMatches(query: string, index: number, labelPrefix: string) {
   const normalized = query.trim().toLowerCase()
   if (!normalized) return true
@@ -105,10 +96,6 @@ export function insertImageMentionAtVisibleRange(prompt: string, start: number, 
 
 export function insertAudioMentionAtVisibleRange(prompt: string, start: number, cursor: number, audioIndex: number) {
   return insertTextMentionAtVisibleRange(prompt, start, cursor, getAudioMentionLabel(audioIndex))
-}
-
-export function insertVideoMentionAtVisibleRange(prompt: string, start: number, cursor: number, videoIndex: number) {
-  return insertTextMentionAtVisibleRange(prompt, start, cursor, getVideoMentionLabel(videoIndex))
 }
 
 export function insertTextMentionAtVisibleRange(prompt: string, start: number, cursor: number, text: string) {
@@ -142,14 +129,6 @@ export function replaceAudioMentionsForApi(prompt: string, audioCount?: number, 
     const index = Number(n) - 1
     if (audioCount != null && (index < 0 || index >= audioCount)) return stripImageMentionMarkers(text)
     return formatAudio ? formatAudio(index) : `[audio ${n}]`
-  })
-}
-
-export function replaceVideoMentionsForApi(prompt: string, videoCount?: number, formatVideo?: (index: number) => string): string {
-  return prompt.replace(SELECTED_VIDEO_MENTION_RE, (text, n) => {
-    const index = Number(n) - 1
-    if (videoCount != null && (index < 0 || index >= videoCount)) return stripImageMentionMarkers(text)
-    return formatVideo ? formatVideo(index) : `[video ${n}]`
   })
 }
 

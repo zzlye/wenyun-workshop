@@ -260,92 +260,11 @@ describe("canvas video api", () => {
                 resolution: "720p",
                 generate_audio: true,
                 image_urls: ["data:image/png;base64,cmVm"],
+                image_url: "data:image/png;base64,cmVm",
             }),
             expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer video-key" }) }),
         );
         expect((axios.post as Mock).mock.calls[0][1]).not.toBeInstanceOf(FormData);
-    });
-
-    it.each([
-        ["seedream2.0-fast-720p", "720p"],
-        ["seedream2.0-720p", "720p"],
-        ["seedream2.0-1080p", "1080p"],
-    ])("keeps mapped model name %s and applies its fixed resolution", async (model, resolution) => {
-        (axios.post as Mock).mockResolvedValueOnce({ data: { task_id: "task-mapped", status: "queued" } });
-        (axios.get as Mock)
-            .mockResolvedValueOnce({ data: { task_id: "task-mapped", status: "completed", video_url: "https://cdn.example.com/mapped.mp4" } })
-            .mockResolvedValueOnce({ data: new Blob(["video"], { type: "video/mp4" }) });
-
-        await requestVideoGeneration(
-            {
-                ...defaultConfig,
-                videoBaseUrl: "https://api.example.com/v1",
-                videoApiKey: "video-key",
-                videoModel: model,
-                videoSeconds: "20",
-                vquality: "480",
-                size: "3:4",
-            },
-            "prompt",
-            [{ id: "image-1", name: "image.png", type: "image/png", dataUrl: "data:image/png;base64,aW1hZ2U=" }],
-            [{ id: "audio-1", name: "audio.mp3", type: "audio/mpeg", url: "https://cdn.example.com/audio.mp3" }],
-            [{ id: "video-1", name: "video.mp4", type: "video/mp4", url: "https://cdn.example.com/reference.mp4" }],
-        );
-
-        const [url, body] = (axios.post as Mock).mock.calls[0];
-        expect(url).toBe("https://api.example.com/v1/videos");
-        expect(body).toEqual(expect.objectContaining({
-            model,
-            prompt: "prompt",
-            aspect_ratio: "3:4",
-            duration: 15,
-            seconds: "15",
-            resolution,
-            generate_audio: true,
-            image_urls: ["data:image/png;base64,aW1hZ2U="],
-            video_urls: ["https://cdn.example.com/reference.mp4"],
-            audio_urls: ["https://cdn.example.com/audio.mp3"],
-        }));
-        expect(body).not.toHaveProperty("size");
-        expect(body).not.toHaveProperty("image_url");
-        expect(body).not.toHaveProperty("audio_url");
-    });
-
-    it("allows a mapped Sora V3 audio reference when a video reference is connected", async () => {
-        (axios.post as Mock).mockResolvedValueOnce({ data: { task_id: "task-video-audio", status: "queued" } });
-        (axios.get as Mock)
-            .mockResolvedValueOnce({ data: { task_id: "task-video-audio", status: "completed", video_url: "https://cdn.example.com/result.mp4" } })
-            .mockResolvedValueOnce({ data: new Blob(["video"], { type: "video/mp4" }) });
-
-        await requestVideoGeneration(
-            { ...defaultConfig, videoBaseUrl: "https://api.example.com/v1", videoApiKey: "video-key", videoModel: "seedream2.0-720p" },
-            "prompt",
-            [],
-            [{ id: "audio-1", name: "audio.mp3", type: "audio/mpeg", url: "https://cdn.example.com/audio.mp3" }],
-            [{ id: "video-1", name: "video.mp4", type: "video/mp4", url: "https://cdn.example.com/reference.mp4" }],
-        );
-
-        expect((axios.post as Mock).mock.calls[0][1]).toEqual(expect.objectContaining({
-            video_urls: ["https://cdn.example.com/reference.mp4"],
-            audio_urls: ["https://cdn.example.com/audio.mp3"],
-        }));
-    });
-
-    it("rejects mapped Sora V3 requests that exceed documented limits", async () => {
-        const videos = Array.from({ length: 4 }, (_, index) => ({ id: `video-${index}`, name: `video-${index}.mp4`, type: "video/mp4", url: `https://cdn.example.com/${index}.mp4` }));
-        await expect(requestVideoGeneration(
-            { ...defaultConfig, videoBaseUrl: "https://api.example.com/v1", videoApiKey: "video-key", videoModel: "seedream2.0-fast-720p" },
-            "prompt",
-            [],
-            [],
-            videos,
-        )).rejects.toThrow("Sora V3 最多支持 3 个参考视频");
-
-        await expect(requestVideoGeneration(
-            { ...defaultConfig, videoBaseUrl: "https://api.example.com/v1", videoApiKey: "video-key", videoModel: "seedream2.0-fast-720p" },
-            "字".repeat(2501),
-        )).rejects.toThrow("提示词不能超过2500个字符");
-        expect(axios.post).not.toHaveBeenCalled();
     });
 
     it("uses standard JSON videos payload for Kling models", async () => {
@@ -701,7 +620,7 @@ describe("canvas video api", () => {
             "prompt",
             [],
             [{ id: "audio-1", name: "audio.mp3", type: "audio/mpeg", url: "https://cdn.example.com/audio.mp3", duration: 8 }],
-        )).rejects.toThrow("视频参考音频必须同时连接至少一张参考图或一个参考视频");
+        )).rejects.toThrow("视频参考音频必须同时连接至少一张参考图");
 
         expect(axios.post).not.toHaveBeenCalled();
     });

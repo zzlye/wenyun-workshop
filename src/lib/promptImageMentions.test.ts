@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { InputImage } from '../types'
-import { getAtImageQuery, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, insertImageMention, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, remapImageMentionsForOrder, replaceAudioMentionsForApi, replaceImageMentionsForApi, replaceVideoMentionsForApi } from './promptImageMentions'
+import { getAtImageQuery, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, insertImageMention, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, remapImageMentionsForOrder, replaceAudioMentionsForApi, replaceImageMentionsForApi } from './promptImageMentions'
 
 const images: InputImage[] = [
   { id: 'image-a', dataUrl: 'data:image/png;base64,a' },
@@ -77,16 +77,6 @@ describe('prompt image mentions', () => {
       { type: 'text', text: '节奏' },
     ])
     expect(replaceAudioMentionsForApi(`参考${audioMention}节奏`, 1)).toBe('参考[audio 1]节奏')
-  })
-
-  it('splits and replaces selected video mentions', () => {
-    const videoMention = getSelectedTextMentionLabel('@视频1')
-    expect(getPromptMentionParts(`参考${videoMention}运镜`, images)).toEqual([
-      { type: 'text', text: '参考' },
-      { type: 'mention', text: '@视频1', mentionText: videoMention },
-      { type: 'text', text: '运镜' },
-    ])
-    expect(replaceVideoMentionsForApi(`参考${videoMention}运镜`, 1)).toBe('参考[video 1]运镜')
   })
 
   it('detects cursor inside selected image mentions', () => {

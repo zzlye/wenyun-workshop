@@ -17,12 +17,3 @@ export type ReferenceAudio = {
     storageKey?: string;
     duration?: number;
 };
-
-export type ReferenceVideo = {
-    id: string;
-    name: string;
-    type: string;
-    url?: string;
-    storageKey?: string;
-    duration?: number;
-};
