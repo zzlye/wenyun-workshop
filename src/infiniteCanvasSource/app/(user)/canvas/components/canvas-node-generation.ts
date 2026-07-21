@@ -1,13 +1,15 @@
 import type { ChatCompletionMessage } from "@/services/api/image";
-import type { ReferenceAudio, ReferenceImage } from "@/types/image";
+import type { ReferenceAudio, ReferenceImage, ReferenceVideo } from "@/types/image";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "../types";
 
 export type NodeGenerationContext = {
     prompt: string;
     referenceImages: ReferenceImage[];
+    referenceVideos: ReferenceVideo[];
     referenceAudios: ReferenceAudio[];
     textCount: number;
     imageCount: number;
+    videoCount: number;
     audioCount: number;
 };
 
@@ -17,6 +19,7 @@ export type NodeGenerationInput = {
     title: string;
     text?: string;
     image?: ReferenceImage;
+    video?: ReferenceVideo;
     audio?: ReferenceAudio;
 };
 
@@ -24,14 +27,17 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
     const inputs = buildNodeGenerationInputs(nodeId, nodes, connections);
     const upstreamText = buildConnectedPromptText(inputs);
     const referenceImages = getNodeGenerationInputReferenceImages(inputs);
+    const referenceVideos = getNodeGenerationInputReferenceVideos(inputs);
     const referenceAudios = getNodeGenerationInputReferenceAudios(inputs);
 
     return {
         prompt: combineNodeGenerationPrompt(prompt, upstreamText),
         referenceImages,
+        referenceVideos,
         referenceAudios,
         textCount: inputs.filter((input) => input.type === "text").length,
         imageCount: referenceImages.length,
+        videoCount: referenceVideos.length,
         audioCount: referenceAudios.length,
     };
 }
@@ -85,6 +91,10 @@ export function getNodeGenerationInputReferenceAudios(inputs: NodeGenerationInpu
     return inputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
 }
 
+export function getNodeGenerationInputReferenceVideos(inputs: NodeGenerationInput[]) {
+    return inputs.map((input) => input.video).filter((video): video is ReferenceVideo => Boolean(video));
+}
+
 export function mergeNodeReferenceImages(...groups: ReferenceImage[][]) {
     const seen = new Set<string>();
     const result: ReferenceImage[] = [];
@@ -113,12 +123,30 @@ export function mergeNodeReferenceAudios(...groups: ReferenceAudio[][]) {
     return result;
 }
 
+export function mergeNodeReferenceVideos(...groups: ReferenceVideo[][]) {
+    const seen = new Set<string>();
+    const result: ReferenceVideo[] = [];
+    for (const group of groups) {
+        for (const video of group) {
+            const key = referenceVideoIdentity(video);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            result.push(video);
+        }
+    }
+    return result;
+}
+
 export function referenceImageIdentity(image: Pick<ReferenceImage, "id" | "dataUrl" | "url" | "storageKey">) {
     return image.storageKey || image.url || image.dataUrl || image.id;
 }
 
 export function referenceAudioIdentity(audio: Pick<ReferenceAudio, "id" | "url" | "storageKey">) {
     return audio.storageKey || audio.url || audio.id;
+}
+
+export function referenceVideoIdentity(video: Pick<ReferenceVideo, "id" | "url" | "storageKey">) {
+    return video.storageKey || video.url || video.id;
 }
 
 export function buildNodeChatMessages(context: NodeGenerationContext): ChatCompletionMessage[] {
@@ -140,8 +168,15 @@ export async function hydrateNodeGenerationContext(context: NodeGenerationContex
     return {
         ...context,
         referenceImages: await Promise.all(context.referenceImages.map(async (image) => ({ ...image, dataUrl: await imageToDataUrl(image) }))),
-        referenceAudios: await Promise.all(context.referenceAudios.map(async (audio) => ({ ...audio, url: await mediaToDataUrl(audio) }))),
+        referenceVideos: await Promise.all(context.referenceVideos.map(async (video) => ({ ...video, url: await hydrateReferenceMediaUrl(video, mediaToDataUrl) }))),
+        referenceAudios: await Promise.all(context.referenceAudios.map(async (audio) => ({ ...audio, url: await hydrateReferenceMediaUrl(audio, mediaToDataUrl) }))),
     };
+}
+
+async function hydrateReferenceMediaUrl(media: ReferenceAudio | ReferenceVideo, toDataUrl: typeof import("@/services/file-storage").mediaToDataUrl) {
+    // 公网素材直接交给上游读取，本地 Blob 和浏览器存储素材才需要内联进请求。
+    if (/^https?:\/\//i.test((media.url || "").trim())) return media.url || "";
+    return toDataUrl(media);
 }
 
 function readNodeTextInput(node: CanvasNodeData) {
@@ -156,6 +191,9 @@ function buildNodeGenerationInputsFromNode(node: CanvasNodeData, nodes: CanvasNo
     const upstreamInputs = getOrderedUpstreamNodes(node.id, nodes, connections).flatMap((upstreamNode) => buildNodeGenerationInputsFromNode(upstreamNode, nodes, connections, visited));
     const image = readReferenceImage(node);
     if (image) return [...upstreamInputs, { nodeId: node.id, type: "image" as const, title: node.title, image }];
+
+    const video = readReferenceVideo(node);
+    if (video) return [...upstreamInputs, { nodeId: node.id, type: "video" as const, title: node.title, video }];
 
     const audio = readReferenceAudio(node);
     if (audio) return [...upstreamInputs, { nodeId: node.id, type: "audio" as const, title: node.title, audio }];
@@ -184,6 +222,18 @@ function readReferenceAudio(node: CanvasNodeData): ReferenceAudio | null {
         type: node.metadata.mimeType || "audio/mpeg",
         url: node.metadata.content,
         storageKey: node.metadata.storageKey,
+    };
+}
+
+function readReferenceVideo(node: CanvasNodeData): ReferenceVideo | null {
+    if (node.type !== CanvasNodeType.Video || !node.metadata?.content) return null;
+    return {
+        id: node.id,
+        name: node.title || `${node.id}.mp4`,
+        type: node.metadata.mimeType || "video/mp4",
+        url: node.metadata.content,
+        storageKey: node.metadata.storageKey,
+        duration: node.metadata.duration,
     };
 }
 

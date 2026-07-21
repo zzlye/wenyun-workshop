@@ -35,4 +35,15 @@ describe('parseModelListPayload', () => {
       ],
     })).toEqual(['sora-2', 'sora-v3-fast', 'veo_3_1-fast', 'veo31-fast', 'kling-video-o3-omni', 'grok-imagine-video-1.5-720p', 'grok-video-3', 'grok-video-3-pro'])
   })
+
+  it('prioritizes mapped Sora V3 model names in configured order', () => {
+    expect(parseModelListPayload({
+      data: [
+        { id: 'seedream2.0-1080p' },
+        { id: 'text-model' },
+        { id: 'seedream2.0-fast-720p' },
+        { id: 'seedream2.0-720p' },
+      ],
+    })).toEqual(['seedream2.0-fast-720p', 'seedream2.0-720p', 'seedream2.0-1080p', 'text-model'])
+  })
 })

@@ -127,6 +127,26 @@ describe("canvas node generation prompt handling", () => {
         expect(context.referenceAudios[0]).toMatchObject({ id: audioNode.id, url: audioNode.metadata?.content, storageKey: "audio:source" });
     });
 
+    it("视频节点会递归继承上游视频节点作为参考视频", () => {
+        const sourceVideo = baseNode({
+            id: "video-source",
+            type: CanvasNodeType.Video,
+            title: "运镜参考",
+            metadata: { content: "blob:video-url", storageKey: "video:source", mimeType: "video/mp4", duration: 8 },
+        });
+        const targetVideo = baseNode({
+            id: "video-target",
+            type: CanvasNodeType.Video,
+            metadata: { prompt: "参考 @视频1 的运镜生成视频" },
+        });
+        const connections: CanvasConnection[] = [{ id: "conn-video", fromNodeId: sourceVideo.id, toNodeId: targetVideo.id }];
+
+        const context = buildNodeGenerationContext(targetVideo.id, [sourceVideo, targetVideo], connections, "参考 [reference video 1] 的运镜生成视频");
+
+        expect(context.videoCount).toBe(1);
+        expect(context.referenceVideos[0]).toMatchObject({ id: sourceVideo.id, url: sourceVideo.metadata?.content, storageKey: "video:source", duration: 8 });
+    });
+
     it("合并参考图时保留手动参考图在连接图之前并按图片去重", () => {
         const manual = { id: "manual-1", name: "手动图", type: "image/png", dataUrl: "data:image/png;base64,manual" };
         const connected = { id: "connected-1", name: "连接图", type: "image/png", dataUrl: "data:image/png;base64,connected" };

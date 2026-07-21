@@ -24,7 +24,7 @@ import { validateEffectiveImageApiProfile } from "../../../../../lib/accountApiK
 import { copyImageSourceToClipboard, getClipboardFailureMessage } from "../../../../../lib/clipboard";
 import { getImageBlobExtension, getImageSourceBlob } from "../../../../../lib/imageTransfer";
 import { storeImage } from "../../../../../lib/db";
-import { replaceAudioMentionsForApi, replaceImageMentionsForApi, stripImageMentionMarkers } from "../../../../../lib/promptImageMentions";
+import { replaceAudioMentionsForApi, replaceImageMentionsForApi, replaceVideoMentionsForApi, stripImageMentionMarkers } from "../../../../../lib/promptImageMentions";
 import { primeImageCache, useStore } from "../../../../../store";
 import AccountBalanceBar from "../../../../../components/AccountBalanceBar";
 import { cropDataUrl, cropGridDataUrl } from "../utils/canvas-image-data";
@@ -39,7 +39,7 @@ import { CanvasConfigNodePanel } from "../components/canvas-config-node-panel";
 import { CanvasNodeContextMenu } from "../components/canvas-context-menu";
 import { CanvasNodeAngleDialog, type CanvasImageAngleParams } from "../components/canvas-node-angle-dialog";
 import { CanvasNodeCropDialog, type CanvasImageCropRect } from "../components/canvas-node-crop-dialog";
-import { buildCanvasImageFailureMessage, buildConnectedPromptText, buildNodeChatMessages, buildNodeGenerationContext, buildNodeGenerationInputs, hydrateNodeGenerationContext, mergeNodeReferenceAudios, mergeNodeReferenceImages, stripConnectedPromptSuffix, type NodeGenerationInput } from "../components/canvas-node-generation";
+import { buildCanvasImageFailureMessage, buildConnectedPromptText, buildNodeChatMessages, buildNodeGenerationContext, buildNodeGenerationInputs, hydrateNodeGenerationContext, mergeNodeReferenceAudios, mergeNodeReferenceImages, mergeNodeReferenceVideos, stripConnectedPromptSuffix, type NodeGenerationInput } from "../components/canvas-node-generation";
 import { CanvasNodeHoverToolbar, CanvasNodeInfoModal } from "../components/canvas-node-hover-toolbar";
 import { InfiniteCanvas } from "../components/infinite-canvas";
 import { Minimap } from "../components/canvas-mini-map";
@@ -67,7 +67,7 @@ import {
     type SelectionBox,
     type ViewportTransform,
 } from "../types";
-import type { ReferenceAudio, ReferenceImage } from "@/types/image";
+import type { ReferenceAudio, ReferenceImage, ReferenceVideo } from "@/types/image";
 
 type CanvasClipboard = {
     nodes: CanvasNodeData[];
@@ -2384,8 +2384,9 @@ function InfiniteCanvasPage() {
                 const manualReferenceImages = await hydrateManualReferenceImages(sourceNode?.metadata?.referenceImages);
                 const connectedReferencePreview = buildNodeGenerationContext(nodeId, nodesRef.current, connectionsRef.current, "");
                 const promptReferenceCount = mergeNodeReferenceImages(manualReferenceImages, connectedReferencePreview.referenceImages).length;
+                const promptVideoCount = connectedReferencePreview.referenceVideos.length;
                 const promptAudioCount = connectedReferencePreview.referenceAudios.length;
-                const promptForApi = formatCanvasPromptForApi(prompt, promptReferenceCount, promptAudioCount);
+                const promptForApi = formatCanvasPromptForApi(prompt, promptReferenceCount, promptVideoCount, promptAudioCount);
                 const baseGenerationContext = await hydrateNodeGenerationContext(
                     buildNodeGenerationContext(nodeId, nodesRef.current, connectionsRef.current, editingTextNode ? `请根据要求修改以下文本。\n\n原文：\n${sourceTextContent}\n\n修改要求：\n${promptForApi}` : promptForApi),
                 );
@@ -2575,7 +2576,7 @@ function InfiniteCanvasPage() {
                             : [...prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_SUCCESS } } : node)), videoNode],
                     );
                     if (!isEmptyVideoNode) commitGenerationConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: videoId }]);
-                    const video = await uploadMediaFile(await requestVideoGeneration(generationConfig, effectivePrompt, generationContext.referenceImages, generationContext.referenceAudios), "video");
+                    const video = await uploadMediaFile(await requestVideoGeneration(generationConfig, effectivePrompt, generationContext.referenceImages, generationContext.referenceAudios, generationContext.referenceVideos), "video");
                     const videoSize = fitNodeSize(video.width || spec.width, video.height || spec.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
                     commitGenerationNodes((prev) => prev.map((node) => (node.id === videoId ? { ...node, ...getGeneratedMediaSizePatch(node, videoSize), metadata: { ...node.metadata, ...videoMetadata(video), prompt: sourcePrompt, generationPrompt: effectivePrompt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, references: generationContext.referenceImages.map(referenceUrl).filter((url): url is string => Boolean(url)), ...timing() } } : node)));
                     return;
@@ -2708,7 +2709,7 @@ function InfiniteCanvasPage() {
                     return;
                 }
                 if (node.type === CanvasNodeType.Video) {
-                    const video = await uploadMediaFile(await requestVideoGeneration(generationConfig, requestPrompt, retryReferenceImages || [], context?.referenceAudios || []), "video");
+                    const video = await uploadMediaFile(await requestVideoGeneration(generationConfig, requestPrompt, retryReferenceImages || [], context?.referenceAudios || [], context?.referenceVideos || []), "video");
                     const videoSize = fitNodeSize(video.width || node.width, video.height || node.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
                     commitGenerationNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, ...getGeneratedMediaSizePatch(item, videoSize), metadata: { ...item.metadata, ...videoMetadata(video), prompt: sourcePrompt, generationPrompt: requestPrompt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, ...timing() } } : item)));
                     return;
@@ -3685,9 +3686,10 @@ function getGeneratedNodeTitle(node: CanvasNodeData, generatedTitle: string) {
     return node.metadata?.manualTitle ? node.title : generatedTitle;
 }
 
-function formatCanvasPromptForApi(prompt: string, imageCount: number, audioCount = 0) {
+function formatCanvasPromptForApi(prompt: string, imageCount: number, videoCount = 0, audioCount = 0) {
     const withImages = replaceImageMentionsForApi(prompt, imageCount, (index) => `[reference image ${index + 1}]`);
-    const withAudios = replaceAudioMentionsForApi(withImages, audioCount, (index) => `[reference audio ${index + 1}]`);
+    const withVideos = replaceVideoMentionsForApi(withImages, videoCount, (index) => `[reference video ${index + 1}]`);
+    const withAudios = replaceAudioMentionsForApi(withVideos, audioCount, (index) => `[reference audio ${index + 1}]`);
     return stripImageMentionMarkers(withAudios);
 }
 
@@ -3722,10 +3724,11 @@ async function hydrateManualReferenceImages(references?: CanvasNodeMetadata["ref
     );
 }
 
-function withMergedReferenceImages<T extends { referenceImages: ReferenceImage[]; referenceAudios?: ReferenceAudio[]; imageCount?: number; audioCount?: number }>(context: T, manualReferences: ReferenceImage[]): T {
+function withMergedReferenceImages<T extends { referenceImages: ReferenceImage[]; referenceVideos?: ReferenceVideo[]; referenceAudios?: ReferenceAudio[]; imageCount?: number; videoCount?: number; audioCount?: number }>(context: T, manualReferences: ReferenceImage[]): T {
     const referenceImages = mergeNodeReferenceImages(manualReferences, context.referenceImages);
+    const referenceVideos = mergeNodeReferenceVideos(context.referenceVideos || []);
     const referenceAudios = mergeNodeReferenceAudios(context.referenceAudios || []);
-    return { ...context, referenceImages, referenceAudios, imageCount: referenceImages.length, audioCount: referenceAudios.length };
+    return { ...context, referenceImages, referenceVideos, referenceAudios, imageCount: referenceImages.length, videoCount: referenceVideos.length, audioCount: referenceAudios.length };
 }
 
 function getNodeOwnPrompt(sourceNode: CanvasNodeData, node: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
