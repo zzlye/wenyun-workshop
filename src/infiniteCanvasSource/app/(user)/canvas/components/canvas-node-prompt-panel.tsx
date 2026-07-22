@@ -19,6 +19,7 @@ import { audioMentionMatches, getAtImageQuery, getAudioMentionLabel, getImageMen
 import { storeImage } from "../../../../../lib/db";
 import { useCanvasModelOptions } from "./canvas-model-options";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
+import { getCanvasPromptDomSyncAction, isCanvasPromptImeEvent } from "./canvas-prompt-editor-state";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData, type CanvasReferenceImage } from "../types";
 import { buildConnectedPromptText, getNodeGenerationInputReferenceAudios, getNodeGenerationInputReferenceImages, hasUsableNodeGenerationPrompt, mergeNodeReferenceImages, referenceAudioIdentity, referenceImageIdentity, stripConnectedPromptSuffix, type NodeGenerationInput } from "./canvas-node-generation";
@@ -43,14 +44,18 @@ type AtMediaOption = { key: string; kind: "image"; label: string; image: InputIm
 
 const MAX_REFERENCE_IMAGES = 16;
 const referenceCategoryOptions = assetTagOptions;
+const EMPTY_REFERENCE_IMAGES: CanvasReferenceImage[] = [];
+const EMPTY_NODE_INPUTS: NodeGenerationInput[] = [];
 
-export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunning, onPromptChange, onConfigChange, onGenerate, onImageSettingsOpenChange }: CanvasNodePromptPanelProps) {
+export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_INPUTS, isRunning, onPromptChange, onConfigChange, onGenerate, onImageSettingsOpenChange }: CanvasNodePromptPanelProps) {
     const inputRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const replaceFileInputRef = useRef<HTMLInputElement>(null);
     const replaceReferenceTargetRef = useRef<{ index: number; id: string } | null>(null);
     const pendingMaskEditRef = useRef<{ index: number; id: string; startedAt: number } | null>(null);
     const isUserInputRef = useRef(false);
+    const isComposingRef = useRef(false);
+    const compositionSyncTimerRef = useRef<number | null>(null);
     const globalConfig = useEffectiveConfig();
     const modelCosts = useConfigStore((state) => state.publicSettings?.modelChannel.modelCosts);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
@@ -79,7 +84,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
     const [atImageMenuIndex, setAtImageMenuIndex] = useState(0);
     const [atImageMenuDismissed, setAtImageMenuDismissed] = useState(false);
     const [referencePickerOpen, setReferencePickerOpen] = useState(false);
-    const referenceImages = node.metadata?.referenceImages || [];
+    const referenceImages = node.metadata?.referenceImages || EMPTY_REFERENCE_IMAGES;
     const connectedReferenceImages = useMemo(() => getNodeGenerationInputReferenceImages(inputs), [inputs]);
     const connectedReferenceAudios = useMemo(() => (mode === "video" ? getNodeGenerationInputReferenceAudios(inputs) : []), [inputs, mode]);
     const connectedReferenceKeys = useMemo(() => new Set(connectedReferenceImages.map(referenceImageIdentity)), [connectedReferenceImages]);
@@ -132,6 +137,12 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
     useEffect(() => {
         const rawPrompt = node.metadata?.prompt || "";
         const displayPrompt = stripConnectedPromptSuffix(rawPrompt, connectedPromptText);
+        if (displayPrompt === promptRef.current) {
+            if (displayPrompt !== rawPrompt) onPromptChange(node.id, displayPrompt);
+            return;
+        }
+        if (isComposingRef.current) return;
+        promptRef.current = displayPrompt;
         setPrompt(displayPrompt);
         if (displayPrompt !== rawPrompt) onPromptChange(node.id, displayPrompt);
         isUserInputRef.current = false;
@@ -139,6 +150,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
 
     const updatePrompt = useCallback(
         (value: string) => {
+            promptRef.current = value;
             setPrompt(value);
             onPromptChange(node.id, value);
         },
@@ -155,14 +167,48 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
         updatePrompt(getContentEditablePlainText(el));
     }, [updatePrompt]);
 
+    const finishPromptComposition = useCallback(() => {
+        isComposingRef.current = false;
+        if (compositionSyncTimerRef.current !== null) window.clearTimeout(compositionSyncTimerRef.current);
+        // 部分浏览器会在 compositionend 之后才写入最终汉字，延后一轮再同步可避免残留拼音。
+        compositionSyncTimerRef.current = window.setTimeout(() => {
+            compositionSyncTimerRef.current = null;
+            syncPromptFromInput();
+            setAtImageMenuIndex(0);
+            setAtImageMenuDismissed(false);
+        }, 0);
+    }, [syncPromptFromInput]);
+
+    useEffect(
+        () => () => {
+            if (compositionSyncTimerRef.current !== null) window.clearTimeout(compositionSyncTimerRef.current);
+        },
+        [],
+    );
+
     useEffect(() => {
         const el = inputRef.current;
         if (!el) return;
-        if (isUserInputRef.current) {
+        const parts = getPromptMentionParts(prompt, mentionableInputImages);
+        const expectedMentions = parts
+            .filter((part) => part.type === "mention")
+            .map((part) => ({
+                text: part.text,
+                mentionText: part.mentionText ?? getSelectedImageMentionLabel(part.imageIndex ?? 0),
+            }));
+        const syncAction = getCanvasPromptDomSyncAction({
+            compositionActive: isComposingRef.current,
+            userInputPending: isUserInputRef.current,
+            currentText: getContentEditablePlainText(el),
+            prompt,
+            mentionStructureMatches: contentEditableMentionsMatch(el, expectedMentions),
+        });
+        if (syncAction === "consume-user-input") {
             isUserInputRef.current = false;
             return;
         }
-        const parts = getPromptMentionParts(prompt, mentionableInputImages);
+        if (syncAction !== "render") return;
+        const selection = document.activeElement === el ? getContentEditableSelection(el) : null;
         const html = prompt
             ? parts
                   .map((part) =>
@@ -172,7 +218,13 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
                   )
                   .join("")
             : "";
-        if (el.innerHTML !== html) el.innerHTML = html;
+        if (el.innerHTML !== html) {
+            el.innerHTML = html;
+            if (selection) {
+                if (selection.start === selection.end) setContentEditableCursor(el, selection.start);
+                else setContentEditableSelection(el, selection.start, selection.end);
+            }
+        }
     }, [prompt, mentionableInputImages]);
 
     useEffect(() => {
@@ -606,6 +658,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
 
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
         event.stopPropagation();
+        if (isCanvasPromptImeEvent(isComposingRef.current, event.nativeEvent)) return;
         if (showAtImageMenu) {
             if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                 event.preventDefault();
@@ -789,16 +842,28 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = [], isRunnin
                         data-canvas-editor
                         contentEditable
                         suppressContentEditableWarning
-                        className="thin-scrollbar col-start-1 row-start-1 max-h-44 min-h-[2rem] w-full overflow-y-auto whitespace-pre-wrap break-words rounded-lg border-0 bg-transparent px-2 py-1.5 text-sm leading-5 outline-none"
+                        spellCheck={false}
+                        className="thin-scrollbar col-start-1 row-start-1 max-h-44 min-h-[2rem] w-full select-text overflow-y-auto whitespace-pre-wrap break-words rounded-lg border-0 bg-transparent px-2 py-1.5 text-sm leading-5 outline-none"
                         style={{ color: theme.node.text }}
                         onInput={(event) => {
                             isUserInputRef.current = true;
+                            if (isCanvasPromptImeEvent(isComposingRef.current, event.nativeEvent as InputEvent)) return;
                             const range = getContentEditableSelection(event.currentTarget);
                             setCursorPos(range.start);
                             syncMentionTagSelection(event.currentTarget);
                             updatePrompt(getContentEditablePlainText(event.currentTarget));
                             setAtImageMenuIndex(0);
                             setAtImageMenuDismissed(false);
+                        }}
+                        onCompositionStart={() => {
+                            if (compositionSyncTimerRef.current !== null) window.clearTimeout(compositionSyncTimerRef.current);
+                            compositionSyncTimerRef.current = null;
+                            isComposingRef.current = true;
+                            isUserInputRef.current = true;
+                        }}
+                        onCompositionEnd={finishPromptComposition}
+                        onBlur={() => {
+                            if (isComposingRef.current) finishPromptComposition();
                         }}
                         onSelect={(event) => {
                             const range = getContentEditableSelection(event.currentTarget);
@@ -1294,6 +1359,14 @@ function getContentEditablePlainText(el: HTMLElement): string {
     };
     el.childNodes.forEach(appendNodeText);
     return text.replace(/\r\n?/g, "\n");
+}
+
+function contentEditableMentionsMatch(el: HTMLElement, expected: Array<{ text: string; mentionText: string }>) {
+    const current = Array.from(el.querySelectorAll<HTMLElement>(".mention-tag")).map((tag) => ({
+        text: tag.textContent ?? "",
+        mentionText: tag.dataset.mentionText ?? tag.textContent ?? "",
+    }));
+    return current.length === expected.length && current.every((item, index) => item.text === expected[index]?.text && item.mentionText === expected[index]?.mentionText);
 }
 
 function escapeHtml(text: string) {
