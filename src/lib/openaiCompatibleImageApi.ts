@@ -2,7 +2,6 @@ import { DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type CustomProviderDefi
 import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './canvasImage'
 import { getFixedImageRequestModel, isBananaImageModel } from './apiProfiles'
 import { buildApiUrl, isLockedApiProxyTarget, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from './devProxy'
-import { fetchImageRelay, shouldUseImageRelay } from './imageRelay'
 import { formatImageRatio, normalizeImageSize, parseRatio } from './size'
 import {
   assertImageInputPayloadSize,
@@ -607,30 +606,15 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
   const mime = MIME_MAP[params.output_format] || 'image/png'
   const proxyConfig = readClientDevProxyConfig()
   const isLockedImageApi = isLockedApiProxyTarget(profile.baseUrl)
-  const useImageRelay = shouldUseImageRelay(profile.baseUrl)
-  // 公益站继续浏览器直连；文运站图片请求改走带心跳的同源保活通道。
+  // 内置 NewAPI 已允许 CORS。图片生成直连可少过一层网站代理/CDN，
+  // 避免“后端成功扣费但前端连接被中间层切断后收不到图”。
   const useApiProxy = shouldUseApiProxyForBaseUrl(profile.apiProxy, profile.baseUrl, proxyConfig) && !isLockedImageApi
   const requestHeaders = createRequestHeaders(profile)
   const paths = createOpenAICompatiblePaths(customProvider)
   const timeoutSeconds = getImageRequestTimeoutSeconds(profile.model, params, profile.timeout)
 
   const controller = new AbortController()
-  // 中转服务先按原超时返回明确错误，浏览器多留十秒接收错误帧。
-  const browserTimeoutSeconds = useImageRelay ? timeoutSeconds + 10 : timeoutSeconds
-  const timeoutId = setTimeout(() => controller.abort(), browserTimeoutSeconds * 1000)
-
-  const requestImageEndpoint = (path: string, init: RequestInit) => {
-    if (useImageRelay) {
-      return fetchImageRelay(path, {
-        ...init,
-        headers: {
-          ...Object.fromEntries(new Headers(init.headers).entries()),
-          'X-Wenyun-Relay-Timeout-Ms': String(timeoutSeconds * 1000),
-        },
-      })
-    }
-    return fetch(buildApiUrl(profile.baseUrl, path, proxyConfig, useApiProxy), init)
-  }
+  const timeoutId = setTimeout(() => controller.abort(), timeoutSeconds * 1000)
 
   try {
     let response: Response
@@ -690,7 +674,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
         formData.append('mask', maskBlob, 'mask.png')
       }
 
-      response = await requestImageEndpoint(paths.editPath, {
+      response = await fetch(buildApiUrl(profile.baseUrl, paths.editPath, proxyConfig, useApiProxy), {
         method: 'POST',
         headers: requestHeaders,
         cache: 'no-store',
@@ -725,7 +709,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       }
       appendBananaGenerationFields(body, profile, params)
 
-      response = await requestImageEndpoint(paths.generationPath, {
+      response = await fetch(buildApiUrl(profile.baseUrl, paths.generationPath, proxyConfig, useApiProxy), {
         method: 'POST',
         headers: {
           ...requestHeaders,

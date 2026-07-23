@@ -6,15 +6,6 @@ import { useStore } from "../../../store";
 import { defaultConfig } from "../../stores/use-config-store";
 import { requestEdit, requestGeneration, requestImageQuestion } from "./image";
 
-vi.mock("../../../lib/imageRelay", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("../../../lib/imageRelay")>();
-    return {
-        ...actual,
-        // 画布单测聚焦共享请求入口，保活协议由独立协议测试覆盖。
-        fetchImageRelay: (path: string, init: RequestInit) => fetch(actual.getImageRelayRequestUrl(path), init),
-    };
-});
-
 describe("canvas image api", () => {
     const initialSettings = useStore.getState().settings;
 
@@ -24,7 +15,7 @@ describe("canvas image api", () => {
         vi.unstubAllEnvs();
     });
 
-    it("uses the same locked image relay URL as the main workshop", async () => {
+    it("uses the same locked image API direct URL as the main workshop", async () => {
         vi.stubEnv("VITE_API_PROXY_AVAILABLE", "true");
         const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
             new Response(JSON.stringify({ data: [{ b64_json: "ZmluYWw=" }] }), {
@@ -59,7 +50,7 @@ describe("canvas image api", () => {
         );
 
         expect(fetchMock).toHaveBeenCalledWith(
-            "/image-relay/images/generations",
+            "https://api.zzlye.xyz/v1/images/generations",
             expect.objectContaining({ method: "POST" }),
         );
         const [, init] = fetchMock.mock.calls[0];
@@ -237,7 +228,7 @@ describe("canvas image api", () => {
         expect(apiCall).toBeTruthy();
         const [url, init] = apiCall!;
         const formData = (init as RequestInit).body as FormData;
-        expect(String(url)).toBe("/image-relay/images/edits");
+        expect(String(url)).toBe("https://api.zzlye.xyz/v1/images/edits");
         expect(formData.get("model")).toBe(requestModel);
         expect(formData.get("prompt")).toBe("帮我美化封面");
         expect(formData.get("aspectRatio")).toBe("16:9");
