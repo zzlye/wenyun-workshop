@@ -4,6 +4,15 @@ import { DEFAULT_SETTINGS, GPT_IMAGE_2_SUPER_MODEL, LOCKED_PUBLIC_PROFILE_ID } f
 import { callImageApi } from './api'
 import { getGenericAssetProxyUrl } from './devProxy'
 
+vi.mock('./imageRelay', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./imageRelay')>()
+  return {
+    ...actual,
+    // API 单测只验证请求构造和响应解析，二进制协议由 imageRelay.test.ts 单独覆盖。
+    fetchImageRelay: (path: string, init: RequestInit) => fetch(actual.getImageRelayRequestUrl(path), init),
+  }
+})
+
 describe('callImageApi', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -476,7 +485,7 @@ describe('callImageApi', () => {
 
     const [url, init] = fetchMock.mock.calls[0]
     const body = JSON.parse(String((init as RequestInit).body))
-    expect(String(url)).toBe('https://api.zzlye.xyz/v1/images/generations')
+    expect(String(url)).toBe('/image-relay/images/generations')
     expect(body).toMatchObject({
       model: 'nano-banana-pro',
       size: DEFAULT_PARAMS.size,
@@ -614,7 +623,7 @@ describe('callImageApi', () => {
     expect(apiCall).toBeTruthy()
     const [url, init] = apiCall!
     const formData = (init as RequestInit).body as FormData
-    expect(String(url)).toBe('https://api.zzlye.xyz/v1/images/edits')
+    expect(String(url)).toBe('/image-relay/images/edits')
     expect(init).toMatchObject({ method: 'POST' })
     expect(formData.get('model')).toBe(requestModel)
     expect(formData.get('prompt')).toBe('帮我美化封面')
@@ -779,6 +788,8 @@ describe('callImageApi', () => {
     await vi.advanceTimersByTimeAsync(1000)
     expect(signal?.aborted).toBe(false)
     await vi.advanceTimersByTimeAsync(899000)
+    expect(signal?.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(10000)
     expect(signal?.aborted).toBe(true)
     await expect(handledPromise).resolves.toBeInstanceOf(Error)
   })
