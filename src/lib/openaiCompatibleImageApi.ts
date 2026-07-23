@@ -637,9 +637,8 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       if (params.n > 1) {
         formData.append('n', String(params.n))
       }
-      if (profile.responseFormatB64Json) {
-        formData.append('response_format', 'b64_json')
-      }
+      // 网站生图统一要求返回 Base64，避免结果 URL 再经过客户网络二次下载。
+      formData.append('response_format', 'b64_json')
       if (shouldStreamImages) {
         formData.append('stream', 'true')
         formData.append('partial_images', String(getStreamPartialImages(profile)))
@@ -700,9 +699,8 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       if (params.n > 1) {
         body.n = params.n
       }
-      if (profile.responseFormatB64Json) {
-        body.response_format = 'b64_json'
-      }
+      // 网站生图统一要求返回 Base64，生成结果随接口响应直接交给浏览器保存。
+      body.response_format = 'b64_json'
       if (shouldStreamImages) {
         body.stream = true
         body.partial_images = getStreamPartialImages(profile)

@@ -352,6 +352,7 @@ describe('callImageApi', () => {
         ...profile,
         apiKey: 'test-key',
         model: GPT_IMAGE_2_SUPER_MODEL,
+        responseFormatB64Json: false,
       })),
     }
 
@@ -368,6 +369,7 @@ describe('callImageApi', () => {
       model: 'gpt-image-2-4k',
       prompt: 'prompt',
       size: DEFAULT_PARAMS.size,
+      response_format: 'b64_json',
     })
   })
 
@@ -428,6 +430,7 @@ describe('callImageApi', () => {
         apiKey: 'test-key',
         model: 'gpt-image-2-4k',
         streamImages: true,
+        responseFormatB64Json: false,
       })),
     }
 
@@ -444,6 +447,7 @@ describe('callImageApi', () => {
     const formData = (init as RequestInit).body as FormData
     expect(formData.get('model')).toBe('gpt-image-2-4k')
     expect(formData.get('size')).toBe('3840x2160')
+    expect(formData.get('response_format')).toBe('b64_json')
     expect(formData.get('stream')).toBeNull()
     expect(formData.get('partial_images')).toBeNull()
   })

@@ -31,6 +31,7 @@ describe("canvas image api", () => {
                     ...profile,
                     apiKey: "test-key",
                     apiProxy: index === 0,
+                    responseFormatB64Json: false,
                 })),
             },
         });
@@ -57,6 +58,7 @@ describe("canvas image api", () => {
         const body = JSON.parse(String((init as RequestInit).body));
         expect(body.quality).toBe("auto");
         expect(body.size).toBe("1024x1024");
+        expect(body.response_format).toBe("b64_json");
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZmluYWw=" }]);
     });
 
@@ -205,6 +207,7 @@ describe("canvas image api", () => {
                     ...profile,
                     apiKey: "test-key",
                     model,
+                    responseFormatB64Json: false,
                 })),
             },
         });
@@ -234,6 +237,7 @@ describe("canvas image api", () => {
         expect(formData.get("aspectRatio")).toBe("16:9");
         expect(formData.get("imageSize")).toBe("2K");
         expect(formData.get("replyType")).toBe("json");
+        expect(formData.get("response_format")).toBe("b64_json");
         expect(formData.getAll("image[]")).toHaveLength(1);
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZWRpdGVk" }]);
     });
