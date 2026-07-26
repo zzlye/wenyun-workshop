@@ -217,6 +217,11 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
     })
   }
 
+  const getAccountKeyModePatch = (session: NewApiAccountSession): Pick<AppSettings, 'accountApiKeyMode'> => ({
+    // 登录或注册成功后优先使用账号绑定 Key；用户仍可在状态栏切回自定义 Key。
+    accountApiKeyMode: session.boundApiKey?.trim() ? 'account' : normalizedSettings.accountApiKeyMode,
+  })
+
   const handleAccountLogin = async () => {
     if (!accountUsername.trim() || !accountPassword) {
       showToast('请填写账号和密码', 'error')
@@ -228,7 +233,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
         username: accountUsername,
         password: accountPassword,
       })
-      updateAccountSession(session, { accountApiKeyMode: session.boundApiKey && !normalizedSettings.profiles.find((profile) => profile.id === LOCKED_WENYUN_PROFILE_ID)?.apiKey.trim() ? 'account' : normalizedSettings.accountApiKeyMode })
+      updateAccountSession(session, getAccountKeyModePatch(session))
       setAccountPassword('')
       showToast('登录成功', 'success')
     } catch (err) {
@@ -254,7 +259,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
         password: accountPassword,
         inviteCode: accountInviteCode,
       })
-      updateAccountSession(session, { accountApiKeyMode: session.boundApiKey && !normalizedSettings.profiles.find((profile) => profile.id === LOCKED_WENYUN_PROFILE_ID)?.apiKey.trim() ? 'account' : normalizedSettings.accountApiKeyMode })
+      updateAccountSession(session, getAccountKeyModePatch(session))
       setAccountPassword('')
       showToast('注册成功', 'success')
     } catch (err) {
