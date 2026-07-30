@@ -6,16 +6,17 @@ import { getImageModelOptionsForProfile } from "../../../../../lib/apiProfiles";
 import { buildApiUrl, type AiConfig } from "@/stores/use-config-store";
 import type { CanvasGenerationMode } from "../types";
 import { parseModelListPayload } from "../../../../../lib/modelList";
+import { CANVAS_VIDEO_MODEL } from "../../../../../lib/videoModel";
 
 type ModelOption = string | { value: string; label: string };
-type ExternalModelTarget = "text" | "video";
+type ExternalModelTarget = "text";
 
 // 缓存同一套 API 地址和 Key 的模型列表，避免每个节点重复请求 /models。
 const modelOptionsCache = new Map<string, string[]>();
 
 export function useCanvasModelOptions(config: AiConfig, mode: CanvasGenerationMode, activeProfileId: string): ModelOption[] | undefined {
     const currentModel = mode === "image" ? config.imageModel || config.model : mode === "video" ? config.videoModel || config.model : config.textModel || config.model;
-    const source = mode === "text" || mode === "video" ? getExternalModelSource(config, mode) : null;
+    const source = mode === "text" ? getExternalModelSource(config) : null;
     const [externalOptions, setExternalOptions] = useState<string[]>(() => uniqueModels([currentModel]));
 
     useEffect(() => {
@@ -49,22 +50,14 @@ export function useCanvasModelOptions(config: AiConfig, mode: CanvasGenerationMo
 
     return useMemo(() => {
         if (mode === "image") return getImageModelOptionsForProfile(activeProfileId);
+        if (mode === "video") return [CANVAS_VIDEO_MODEL];
         return externalOptions.length ? externalOptions : currentModel ? [currentModel] : undefined;
     }, [activeProfileId, currentModel, externalOptions, mode]);
 }
 
-function getExternalModelSource(config: AiConfig, mode: ExternalModelTarget) {
-    if (mode === "video") {
-        return {
-            target: mode,
-            baseUrl: config.videoBaseUrl.trim(),
-            apiKey: config.videoApiKey.trim(),
-            model: config.videoModel || config.model,
-        };
-    }
-
+function getExternalModelSource(config: AiConfig) {
     return {
-        target: mode,
+        target: "text" as ExternalModelTarget,
         baseUrl: config.textBaseUrl.trim(),
         apiKey: config.textApiKey.trim(),
         model: config.textModel || config.model,

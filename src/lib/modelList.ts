@@ -1,3 +1,5 @@
+import { CANVAS_VIDEO_MODEL } from './videoModel'
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -44,22 +46,7 @@ function collectModelIds(input: unknown, output: Set<string>, depth = 0) {
 }
 
 const VIDEO_MODEL_PRIORITY = [
-  'sora-2',
-  'sora-2-pro',
-  'sora-2-8s',
-  'sora-2-12s',
-  'sora2',
-  'sora-v3-pro',
-  'sora-v3-fast',
-  'veo_3_1',
-  'veo_3_1-fast',
-  'veo31-fast',
-  'kling-video-3.0',
-  'kling-video-o3-omni',
-  'grok-imagine-video-1.5-720p',
-  'grok-video-3',
-  'grok-video-3-max',
-  'grok-video-3-pro',
+  CANVAS_VIDEO_MODEL,
 ]
 
 function compareModelId(a: string, b: string) {

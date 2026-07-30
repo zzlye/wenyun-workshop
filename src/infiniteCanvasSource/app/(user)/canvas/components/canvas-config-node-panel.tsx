@@ -11,6 +11,7 @@ import { CreditSymbol, requestCreditCost } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { getActiveApiProfile, getApiModelUnitCostText, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
+import { CANVAS_VIDEO_MODEL } from "../../../../../lib/videoModel";
 import { useCanvasModelOptions } from "./canvas-model-options";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
@@ -330,14 +331,14 @@ function InputChip({ label, value, style }: { label: string; value: string; styl
 
 function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: CanvasGenerationMode, activeProfileId: string): AiConfig {
     const defaultModel = mode === "image" ? globalConfig.imageModel : mode === "video" ? globalConfig.videoModel : globalConfig.textModel;
-    const model = node.metadata?.model || defaultModel || globalConfig.model || defaultConfig.model;
+    const model = mode === "video" ? CANVAS_VIDEO_MODEL : node.metadata?.model || defaultModel || globalConfig.model || defaultConfig.model;
     const resolvedModel = mode === "image" ? normalizeImageModelForProfile(model, activeProfileId) : model;
     return {
         ...globalConfig,
         model: resolvedModel,
         imageModel: mode === "image" ? resolvedModel : globalConfig.imageModel,
         textModel: mode === "text" ? resolvedModel : globalConfig.textModel,
-        videoModel: mode === "video" ? resolvedModel : globalConfig.videoModel,
+        videoModel: mode === "video" ? CANVAS_VIDEO_MODEL : globalConfig.videoModel,
         quality: node.metadata?.quality || globalConfig.quality || defaultConfig.quality,
         size: normalizeImageSizeForProfile(node.metadata?.size || globalConfig.size || defaultConfig.size, activeProfileId),
         videoSeconds: node.metadata?.seconds || globalConfig.videoSeconds || defaultConfig.videoSeconds,

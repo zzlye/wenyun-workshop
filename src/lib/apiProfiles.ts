@@ -24,6 +24,7 @@ import { normalizeBaseUrl, shouldUseApiProxyForBaseUrl } from './devProxy'
 import { readRuntimeEnv } from './runtimeEnv'
 import { isImportableConfigUrl } from './customProviderConfigUrl'
 import type { SizeTier } from './size'
+import { CANVAS_VIDEO_MODEL } from './videoModel'
 import {
   DEFAULT_IMAGES_MODEL,
   FIXED_IMAGE_MODEL_OPTIONS,
@@ -867,7 +868,8 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
   const textApiProxy = typeof record.textApiProxy === 'boolean' ? record.textApiProxy : legacyTextVideoApiProxy
   const videoBaseUrl = normalizeBaseUrl(typeof record.videoBaseUrl === 'string' ? record.videoBaseUrl : legacyTextVideoBaseUrl)
   const videoApiKey = typeof record.videoApiKey === 'string' ? record.videoApiKey : legacyTextVideoApiKey
-  const videoModel = typeof record.videoModel === 'string' ? record.videoModel.trim() : legacyTextVideoModel
+  // 画布视频节点只保留 Seedance 2.0，旧配置在读取时直接迁移。
+  const videoModel = CANVAS_VIDEO_MODEL
   const videoTimeout = normalizeApiTimeout(record.videoTimeout, legacyTextVideoTimeout)
   const videoApiProxy = typeof record.videoApiProxy === 'boolean' ? record.videoApiProxy : legacyTextVideoApiProxy
 
@@ -1224,7 +1226,7 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   textApiProxy: false,
   videoBaseUrl: '',
   videoApiKey: '',
-  videoModel: '',
+  videoModel: CANVAS_VIDEO_MODEL,
   videoTimeout: DEFAULT_API_TIMEOUT,
   videoApiProxy: false,
   agentScrollToBottomAfterSubmit: true,

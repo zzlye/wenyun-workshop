@@ -35,6 +35,7 @@ import { DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type AppSettings, type 
 import { useCloseOnEscape } from '../hooks/useCloseOnEscape'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
 import { DEFAULT_DROPDOWN_MAX_HEIGHT, getDropdownMaxHeight } from '../lib/dropdown'
+import { CANVAS_VIDEO_MODEL } from '../lib/videoModel'
 import { useCanvasStore } from '../infiniteCanvasSource/app/(user)/canvas/stores/use-canvas-store'
 import { useAssetStore } from '../infiniteCanvasSource/stores/use-asset-store'
 import Select from './Select'
@@ -362,6 +363,7 @@ type ExternalApiConfigSectionProps = {
   onTimeoutCommit: (value: number) => void
   onToggleShowApiKey: () => void
   onFetchModels: () => void
+  fixedModel?: string
 }
 
 function ExternalApiConfigSection({
@@ -385,15 +387,17 @@ function ExternalApiConfigSection({
   onTimeoutCommit,
   onToggleShowApiKey,
   onFetchModels,
+  fixedModel,
 }: ExternalApiConfigSectionProps) {
   const modelInputId = `${idPrefix}-model-input`
   const modelMenuRef = useRef<HTMLDivElement>(null)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const visibleModelOptions = modelOptions
+  const displayedModel = fixedModel || model
 
   useEffect(() => {
-    if (modelOptions.length) setModelMenuOpen(true)
-  }, [modelOptions])
+    if (!fixedModel && modelOptions.length) setModelMenuOpen(true)
+  }, [fixedModel, modelOptions])
 
   useEffect(() => {
     if (!modelMenuOpen) return
@@ -457,34 +461,40 @@ function ExternalApiConfigSection({
       <div ref={modelMenuRef} className="relative block">
         <div className="mb-1.5 flex items-center justify-between gap-3">
           <span className="block text-sm text-gray-600 dark:text-gray-300">模型 ID</span>
-          <button
-            type="button"
-            onClick={onFetchModels}
-            disabled={isFetchingModels}
-            className="rounded-xl bg-blue-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isFetchingModels ? '获取中...' : '获取模型'}
-          </button>
+          {fixedModel ? (
+            <span className="rounded-xl bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 dark:bg-blue-500/10 dark:text-blue-300">固定模型</span>
+          ) : (
+            <button
+              type="button"
+              onClick={onFetchModels}
+              disabled={isFetchingModels}
+              className="rounded-xl bg-blue-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isFetchingModels ? '获取中...' : '获取模型'}
+            </button>
+          )}
         </div>
         <input
           id={modelInputId}
-          value={model}
+          value={displayedModel}
+          readOnly={Boolean(fixedModel)}
           onFocus={() => {
-            if (modelOptions.length) setModelMenuOpen(true)
+            if (!fixedModel && modelOptions.length) setModelMenuOpen(true)
           }}
           onChange={(e) => {
+            if (fixedModel) return
             onModelDraftChange(e.target.value)
             if (modelOptions.length) setModelMenuOpen(true)
           }}
-          onBlur={(e) => onModelCommit(e.target.value)}
+          onBlur={(e) => onModelCommit(fixedModel || e.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Escape') setModelMenuOpen(false)
           }}
           type="text"
           placeholder="填写模型 ID，或点击获取模型后选择"
-          className="w-full rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+          className={`w-full rounded-xl border border-gray-200/70 px-3 py-2.5 text-sm text-gray-700 outline-none transition dark:border-white/[0.08] dark:text-gray-200 ${fixedModel ? 'cursor-default bg-gray-100/80 dark:bg-white/[0.05]' : 'bg-white/60 focus:border-blue-300 dark:bg-white/[0.03] dark:focus:border-blue-500/50'}`}
         />
-        {modelMenuOpen && modelOptions.length ? (
+        {!fixedModel && modelMenuOpen && modelOptions.length ? (
           <div className="absolute left-0 right-0 top-full z-[120] mt-1 max-h-56 overflow-y-auto rounded-xl border border-gray-200/70 bg-white/95 py-1 text-sm shadow-xl ring-1 ring-black/5 backdrop-blur-xl dark:border-white/[0.08] dark:bg-gray-900/95 dark:ring-white/10 custom-scrollbar">
             {visibleModelOptions.length ? (
               visibleModelOptions.map((item) => (
@@ -2386,13 +2396,13 @@ export default function SettingsModal() {
                 <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-500/15 dark:bg-blue-500/[0.08]">
                   <h4 className="text-sm font-bold text-blue-700 dark:text-blue-300">视频 API 配置</h4>
                   <p data-selectable-text className="mt-1 text-xs leading-relaxed text-blue-600/80 dark:text-blue-200/70">
-                    用于画布工坊里的视频生成，可以单独填写 URL、Key 和视频模型。
+                    用于画布工坊里的视频生成，只需填写 URL 和 Key，模型固定为 {CANVAS_VIDEO_MODEL}。
                   </p>
                 </div>
                 <ExternalApiConfigSection
                   idPrefix="video-api"
                   title="视频 API 配置"
-                  description="用于画布工坊里的视频生成，可以单独填写 URL、Key 和视频模型。"
+                  description={`用于画布工坊里的视频生成，当前固定使用 ${CANVAS_VIDEO_MODEL}。`}
                   baseUrl={draft.videoBaseUrl}
                   apiKey={draft.videoApiKey}
                   model={draft.videoModel}
@@ -2404,12 +2414,13 @@ export default function SettingsModal() {
                   onBaseUrlCommit={(value) => commitSettings({ ...draft, videoBaseUrl: normalizeBaseUrl(value) })}
                   onApiKeyDraftChange={(value) => setDraft({ ...draft, videoApiKey: value })}
                   onApiKeyCommit={(value) => commitSettings({ ...draft, videoApiKey: value })}
-                  onModelDraftChange={(value) => setDraft({ ...draft, videoModel: value })}
-                  onModelCommit={(value) => commitSettings({ ...draft, videoModel: value.trim() })}
+                  onModelDraftChange={() => setDraft({ ...draft, videoModel: CANVAS_VIDEO_MODEL })}
+                  onModelCommit={() => commitSettings({ ...draft, videoModel: CANVAS_VIDEO_MODEL })}
                   onTimeoutDraftChange={(value) => setDraft({ ...draft, videoTimeout: value })}
                   onTimeoutCommit={(value) => commitSettings({ ...draft, videoTimeout: value })}
                   onToggleShowApiKey={() => setShowApiKey((value) => !value)}
                   onFetchModels={() => void fetchExternalApiModels('video')}
+                  fixedModel={CANVAS_VIDEO_MODEL}
                 />
               </div>
             )}

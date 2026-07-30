@@ -6,6 +6,7 @@ import { persist } from "zustand/middleware";
 
 import { apiGet } from "@/services/api/request";
 import type { AdminPublicSettings } from "@/services/api/admin";
+import { CANVAS_VIDEO_MODEL } from "../../lib/videoModel";
 
 export type AiConfig = {
     channelMode: "remote" | "local";
@@ -38,7 +39,7 @@ export type AiConfig = {
 };
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
-export const DEFAULT_VIDEO_MODEL = "sora-2";
+export const DEFAULT_VIDEO_MODEL = CANVAS_VIDEO_MODEL;
 const DEFAULT_IMAGE_TIMEOUT = 600;
 const DEFAULT_TEXT_VIDEO_TIMEOUT = 120;
 
@@ -63,7 +64,7 @@ export const defaultConfig: AiConfig = {
     imageModel: "gpt-image-2",
     videoModel: DEFAULT_VIDEO_MODEL,
     textModel: "gpt-5.5",
-    videoSeconds: "6",
+    videoSeconds: "10",
     vquality: "720",
     systemPrompt: "",
     models: [],
@@ -97,7 +98,7 @@ function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSetti
         models,
         model: models.includes(config.model) ? config.model : fallbackModel,
         imageModel: models.includes(config.imageModel) ? config.imageModel : modelChannel.defaultImageModel || fallbackModel,
-        videoModel: models.includes(config.videoModel) ? config.videoModel : modelChannel.defaultVideoModel || fallbackModel,
+        videoModel: DEFAULT_VIDEO_MODEL,
         textModel: models.includes(config.textModel) ? config.textModel : modelChannel.defaultTextModel || fallbackModel,
         systemPrompt: modelChannel.systemPrompt,
     };
@@ -189,8 +190,7 @@ export function buildApiUrl(baseUrl: string, path: string) {
 }
 
 function normalizeVideoModel(model: string) {
-    const value = model.trim();
-    // 旧版原画布项目默认模型在当前中转站不可用，迁移到真实可拉取的视频模型。
-    if (!value || /^grok-imagine-video$/i.test(value)) return DEFAULT_VIDEO_MODEL;
-    return value;
+    void model;
+    // 旧画布保存的其他视频模型统一迁移到当前唯一支持的 Seedance 2.0。
+    return DEFAULT_VIDEO_MODEL;
 }

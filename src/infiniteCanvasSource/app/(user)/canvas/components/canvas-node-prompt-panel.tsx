@@ -17,6 +17,7 @@ import type { InputImage } from "../../../../../types";
 import { getActiveApiProfile, getApiModelUnitCostText, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
 import { audioMentionMatches, getAtImageQuery, getAudioMentionLabel, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertAudioMentionAtVisibleRange, insertImageMentionAtVisibleRange, isCursorInSelectedImageMention, remapImageMentionsForOrder, stripImageMentionMarkers } from "../../../../../lib/promptImageMentions";
 import { storeImage } from "../../../../../lib/db";
+import { CANVAS_VIDEO_MODEL } from "../../../../../lib/videoModel";
 import { useCanvasModelOptions } from "./canvas-model-options";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { getCanvasPromptDomSyncAction, isCanvasPromptImeEvent } from "./canvas-prompt-editor-state";
@@ -1214,14 +1215,14 @@ function defaultMode(type: CanvasNodeData["type"]): CanvasNodeGenerationMode {
 
 function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: CanvasNodeGenerationMode, activeProfileId: string): AiConfig {
     const defaultModel = mode === "image" ? globalConfig.imageModel : mode === "video" ? globalConfig.videoModel : globalConfig.textModel;
-    const model = node.metadata?.model || defaultModel || globalConfig.model || defaultConfig.model;
+    const model = mode === "video" ? CANVAS_VIDEO_MODEL : node.metadata?.model || defaultModel || globalConfig.model || defaultConfig.model;
     const resolvedModel = mode === "image" ? normalizeImageModelForProfile(model, activeProfileId) : model;
     return {
         ...globalConfig,
         model: resolvedModel,
         imageModel: mode === "image" ? resolvedModel : globalConfig.imageModel,
         textModel: mode === "text" ? resolvedModel : globalConfig.textModel,
-        videoModel: mode === "video" ? resolvedModel : globalConfig.videoModel,
+        videoModel: mode === "video" ? CANVAS_VIDEO_MODEL : globalConfig.videoModel,
         quality: node.metadata?.quality || globalConfig.quality || defaultConfig.quality,
         size: normalizeImageSizeForProfile(node.metadata?.size || globalConfig.size || defaultConfig.size, activeProfileId),
         videoSeconds: node.metadata?.seconds || globalConfig.videoSeconds || defaultConfig.videoSeconds,

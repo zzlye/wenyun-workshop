@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseModelListPayload } from './modelList'
+import { CANVAS_VIDEO_MODEL } from './videoModel'
 
 describe('parseModelListPayload', () => {
   it('reads standard OpenAI compatible model data', () => {
@@ -21,18 +22,13 @@ describe('parseModelListPayload', () => {
     })).toEqual(['text-model-a', 'video-model-b'])
   })
 
-  it('puts currently stable video models before Grok video models', () => {
+  it('优先显示画布当前支持的 Seedance 2.0 模型', () => {
     expect(parseModelListPayload({
       data: [
         { id: 'kling-video-o3-omni' },
-        { id: 'grok-imagine-video-1.5-720p' },
-        { id: 'grok-video-3-pro' },
+        { id: CANVAS_VIDEO_MODEL },
         { id: 'sora-v3-fast' },
-        { id: 'veo_3_1-fast' },
-        { id: 'veo31-fast' },
-        { id: 'sora-2' },
-        { id: 'grok-video-3' },
       ],
-    })).toEqual(['sora-2', 'sora-v3-fast', 'veo_3_1-fast', 'veo31-fast', 'kling-video-o3-omni', 'grok-imagine-video-1.5-720p', 'grok-video-3', 'grok-video-3-pro'])
+    })).toEqual([CANVAS_VIDEO_MODEL, 'kling-video-o3-omni', 'sora-v3-fast'])
   })
 })
