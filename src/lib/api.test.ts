@@ -452,6 +452,48 @@ describe('callImageApi', () => {
     expect(formData.get('partial_images')).toBeNull()
   })
 
+  it('按公开文档提交文运站图生图且不发送 mask', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.startsWith('data:')) return new Response(new Blob(['ref'], { type: 'image/png' }))
+      return new Response(JSON.stringify({
+        data: [{ b64_json: 'ZWRpdGVk' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      apiKey: 'test-key',
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
+        ...profile,
+        apiKey: 'test-key',
+      })),
+    }
+
+    await callImageApi({
+      settings,
+      prompt: '保留主体并修改背景',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: ['data:image/png;base64,cmVm'],
+      maskDataUrl: 'data:image/png;base64,bWFzaw==',
+    } as any)
+
+    const apiCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/images/edits'))
+    expect(apiCall).toBeTruthy()
+    const [, init] = apiCall!
+    const formData = (init as RequestInit).body as FormData
+    expect(formData.getAll('image')).toHaveLength(1)
+    expect(formData.get('image[]')).toBeNull()
+    expect(formData.get('mask')).toBeNull()
+    expect(formData.get('quality')).toBeNull()
+    expect(formData.get('output_format')).toBeNull()
+    expect(formData.get('output_compression')).toBeNull()
+    expect(formData.get('moderation')).toBeNull()
+  })
+
   it('routes Banana image models through standard NewAPI image generations', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
       data: [{ b64_json: 'ZmluYWw=' }],
@@ -622,10 +664,10 @@ describe('callImageApi', () => {
     expect(init).toMatchObject({ method: 'POST' })
     expect(formData.get('model')).toBe(requestModel)
     expect(formData.get('prompt')).toBe('帮我美化封面')
-    expect(formData.get('aspectRatio')).toBe('16:9')
-    expect(formData.get('imageSize')).toBe('2K')
-    expect(formData.get('replyType')).toBe('json')
-    expect(formData.getAll('image[]')).toHaveLength(1)
+    expect(formData.get('aspectRatio')).toBeNull()
+    expect(formData.get('imageSize')).toBeNull()
+    expect(formData.get('replyType')).toBeNull()
+    expect(formData.getAll('image')).toHaveLength(1)
     expect(result.images).toEqual(['data:image/png;base64,ZWRpdGVk'])
   })
 
@@ -675,10 +717,10 @@ describe('callImageApi', () => {
     expect(init).toMatchObject({ method: 'POST' })
     expect(formData.get('model')).toBe(requestModel)
     expect(formData.get('prompt')).toBe('帮我美化封面')
-    expect(formData.get('aspectRatio')).toBe('16:9')
-    expect(formData.get('imageSize')).toBe('2K')
-    expect(formData.get('replyType')).toBe('json')
-    expect(formData.getAll('image[]')).toHaveLength(1)
+    expect(formData.get('aspectRatio')).toBeNull()
+    expect(formData.get('imageSize')).toBeNull()
+    expect(formData.get('replyType')).toBeNull()
+    expect(formData.getAll('image')).toHaveLength(1)
     expect(result.images).toEqual(['data:image/png;base64,ZWRpdGVk'])
   })
 

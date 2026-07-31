@@ -624,49 +624,54 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       formData.append('model', profile.model)
       formData.append('prompt', prompt)
       formData.append('size', params.size)
-      formData.append('output_format', params.output_format)
-      formData.append('moderation', params.moderation)
-
-      if (!profile.codexCli) {
-        formData.append('quality', params.quality)
-      }
-
-      if (params.output_format !== 'png' && params.output_compression != null) {
-        formData.append('output_compression', String(params.output_compression))
-      }
       if (params.n > 1) {
         formData.append('n', String(params.n))
       }
       // 网站生图统一要求返回 Base64，避免结果 URL 再经过客户网络二次下载。
       formData.append('response_format', 'b64_json')
-      if (shouldStreamImages) {
-        formData.append('stream', 'true')
-        formData.append('partial_images', String(getStreamPartialImages(profile)))
+
+      if (!isLockedImageApi) {
+        formData.append('output_format', params.output_format)
+        formData.append('moderation', params.moderation)
+
+        if (!profile.codexCli) {
+          formData.append('quality', params.quality)
+        }
+
+        if (params.output_format !== 'png' && params.output_compression != null) {
+          formData.append('output_compression', String(params.output_compression))
+        }
+        if (shouldStreamImages) {
+          formData.append('stream', 'true')
+          formData.append('partial_images', String(getStreamPartialImages(profile)))
+        }
+        appendBananaGenerationFormFields(formData, profile, params)
       }
-      appendBananaGenerationFormFields(formData, profile, params)
 
       const imageBlobs: Blob[] = []
       for (let i = 0; i < inputImageDataUrls.length; i++) {
         const dataUrl = inputImageDataUrls[i]
-        const blob = opts.maskDataUrl && i === 0
+        const blob = !isLockedImageApi && opts.maskDataUrl && i === 0
           ? await imageDataUrlToPngBlob(dataUrl)
           : await dataUrlToBlob(dataUrl)
         imageBlobs.push(blob)
       }
 
-      const maskBlob = opts.maskDataUrl ? await maskDataUrlToPngBlob(opts.maskDataUrl) : null
-      if (opts.maskDataUrl) {
+      // 文运与公益站的图生图按公开文档提交，不发送上游不支持的 mask 参数。
+      const maskBlob = !isLockedImageApi && opts.maskDataUrl ? await maskDataUrlToPngBlob(opts.maskDataUrl) : null
+      if (maskBlob) {
         assertMaskEditFileSize('遮罩主图文件', imageBlobs[0]?.size ?? 0)
-        assertMaskEditFileSize('遮罩文件', maskBlob?.size ?? 0)
+        assertMaskEditFileSize('遮罩文件', maskBlob.size)
       }
       assertImageInputPayloadSize(
         imageBlobs.reduce((sum, blob) => sum + blob.size, 0) + (maskBlob?.size ?? 0),
       )
 
+      const imageField = isLockedImageApi && imageBlobs.length === 1 ? 'image' : 'image[]'
       for (let i = 0; i < imageBlobs.length; i++) {
         const blob = imageBlobs[i]
         const ext = blob.type.split('/')[1] || 'png'
-        formData.append('image[]', blob, `input-${i + 1}.${ext}`)
+        formData.append(imageField, blob, `input-${i + 1}.${ext}`)
       }
 
       if (maskBlob) {

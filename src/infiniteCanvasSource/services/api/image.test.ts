@@ -234,11 +234,11 @@ describe("canvas image api", () => {
         expect(String(url)).toBe("https://api.zzlye.xyz/v1/images/edits");
         expect(formData.get("model")).toBe(requestModel);
         expect(formData.get("prompt")).toBe("帮我美化封面");
-        expect(formData.get("aspectRatio")).toBe("16:9");
-        expect(formData.get("imageSize")).toBe("2K");
-        expect(formData.get("replyType")).toBe("json");
+        expect(formData.get("aspectRatio")).toBeNull();
+        expect(formData.get("imageSize")).toBeNull();
+        expect(formData.get("replyType")).toBeNull();
         expect(formData.get("response_format")).toBe("b64_json");
-        expect(formData.getAll("image[]")).toHaveLength(1);
+        expect(formData.getAll("image")).toHaveLength(1);
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZWRpdGVk" }]);
     });
 
@@ -293,10 +293,10 @@ describe("canvas image api", () => {
         expect(String(url)).toBe("https://1520635.xyz:3901/v1/images/edits");
         expect(formData.get("model")).toBe(requestModel);
         expect(formData.get("prompt")).toBe("帮我美化封面");
-        expect(formData.get("aspectRatio")).toBe("16:9");
-        expect(formData.get("imageSize")).toBe("1K");
-        expect(formData.get("replyType")).toBe("json");
-        expect(formData.getAll("image[]")).toHaveLength(1);
+        expect(formData.get("aspectRatio")).toBeNull();
+        expect(formData.get("imageSize")).toBeNull();
+        expect(formData.get("replyType")).toBeNull();
+        expect(formData.getAll("image")).toHaveLength(1);
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZWRpdGVk" }]);
     });
 });
