@@ -10,7 +10,8 @@
     "deploy:cf": "npm run build && wrangler deploy",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "bench:canvas": "vitest bench --run"
   },
   "dependencies": {
     "@ant-design/icons": "^6.2.5",

@@ -416,7 +416,52 @@ export const CanvasNode = React.memo(function CanvasNode({
             {showPanel && renderPanel && data.type !== CanvasNodeType.Config && data.type !== CanvasNodeType.Audio ? <div className="absolute left-1/2 top-full z-[70] w-[500px] -translate-x-1/2 pt-4">{renderPanel(data)}</div> : null}
         </div>
     );
-});
+}, areCanvasNodePropsEqual);
+
+function areCanvasNodePropsEqual(previous: CanvasNodeProps, next: CanvasNodeProps) {
+    if (
+        previous.data !== next.data ||
+        previous.scale !== next.scale ||
+        previous.isSelected !== next.isSelected ||
+        previous.isRelated !== next.isRelated ||
+        previous.isFocusRelated !== next.isFocusRelated ||
+        previous.isConnectionTarget !== next.isConnectionTarget ||
+        previous.isConnecting !== next.isConnecting ||
+        previous.handlePointerY !== next.handlePointerY ||
+        previous.editRequestNonce !== next.editRequestNonce ||
+        previous.showPanel !== next.showPanel ||
+        previous.showImageInfo !== next.showImageInfo ||
+        previous.batchCount !== next.batchCount ||
+        previous.batchExpanded !== next.batchExpanded ||
+        previous.batchClosing !== next.batchClosing ||
+        previous.batchOpening !== next.batchOpening ||
+        previous.batchRecovering !== next.batchRecovering ||
+        previous.onMouseDown !== next.onMouseDown ||
+        previous.onHoverStart !== next.onHoverStart ||
+        previous.onHoverEnd !== next.onHoverEnd ||
+        previous.onConnectStart !== next.onConnectStart ||
+        previous.onResize !== next.onResize ||
+        previous.onContentChange !== next.onContentChange ||
+        previous.onToggleBatch !== next.onToggleBatch ||
+        previous.onSetBatchPrimary !== next.onSetBatchPrimary ||
+        previous.onRetry !== next.onRetry ||
+        previous.onGenerateImage !== next.onGenerateImage ||
+        previous.onUpload !== next.onUpload ||
+        previous.onRename !== next.onRename ||
+        previous.onContextMenu !== next.onContextMenu
+    ) {
+        return false;
+    }
+
+    const previousMotion = previous.batchMotion;
+    const nextMotion = next.batchMotion;
+    if (previousMotion?.x !== nextMotion?.x || previousMotion?.y !== nextMotion?.y || previousMotion?.index !== nextMotion?.index) return false;
+
+    // 面板关闭时忽略渲染函数变化，避免其他节点修改导致所有普通节点重绘。
+    if ((previous.showPanel || next.showPanel) && previous.renderPanel !== next.renderPanel) return false;
+    if ((previous.data.type === CanvasNodeType.Config || next.data.type === CanvasNodeType.Config) && previous.renderNodeContent !== next.renderNodeContent) return false;
+    return true;
+}
 
 function NodeContent(props: NodeContentRendererProps) {
     if (props.node.type === CanvasNodeType.Config && props.renderNodeContent) return props.renderNodeContent(props.node);

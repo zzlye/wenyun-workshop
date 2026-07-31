@@ -1,21 +1,25 @@
+import { memo } from "react";
+
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasConnection, CanvasNodeData, ConnectionHandle, Position } from "../types";
+import { getConnectionPathGeometry } from "../utils/canvas-viewport";
 
-export function ConnectionPath({ connection, from, to, active, onSelect }: { connection: CanvasConnection; from: CanvasNodeData; to: CanvasNodeData; active: boolean; onSelect: () => void }) {
+type ConnectionPathProps = {
+    connection: CanvasConnection;
+    from: CanvasNodeData;
+    to: CanvasNodeData;
+    active: boolean;
+    onSelect: (connectionId: string) => void;
+};
+
+export const ConnectionPath = memo(function ConnectionPath({ connection, from, to, active, onSelect }: ConnectionPathProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
-    const startX = from.position.x + from.width;
-    const startY = from.position.y + from.height / 2;
-    const endX = to.position.x;
-    const endY = to.position.y + to.height / 2;
-    const dx = Math.abs(endX - startX);
-    const curvature = Math.max(dx * 0.5, 50);
-    const pathD = `M ${startX} ${startY} C ${startX + curvature} ${startY}, ${endX - curvature} ${endY}, ${endX} ${endY}`;
+    const pathD = getConnectionPathGeometry(from, to).path;
 
     return (
-        <g>
+        <g data-connection-id={connection.id}>
             <path
-                data-connection-id={connection.id}
                 d={pathD}
                 stroke="transparent"
                 strokeWidth="30"
@@ -23,7 +27,7 @@ export function ConnectionPath({ connection, from, to, active, onSelect }: { con
                 style={{ cursor: "pointer", pointerEvents: "stroke" }}
                 onClick={(event) => {
                     event.stopPropagation();
-                    onSelect();
+                    onSelect(connection.id);
                 }}
             />
             <path
@@ -36,7 +40,7 @@ export function ConnectionPath({ connection, from, to, active, onSelect }: { con
             />
         </g>
     );
-}
+});
 
 export function ActiveConnectionPath({ node, handle, mouseWorld }: { node?: CanvasNodeData; handle: ConnectionHandle; mouseWorld: Position }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
