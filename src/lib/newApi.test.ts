@@ -275,6 +275,37 @@ describe('newApi balance', () => {
     vi.restoreAllMocks()
   })
 
+  it('shows unlimited quota instead of zero for unlimited keys', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          'general_setting.custom_currency_symbol': 'HUHN',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          total_available: 0,
+          total_granted: 0,
+          total_used: 0,
+          unlimited_quota: true,
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+
+    const result = await queryNewApiBalance({
+      ...DEFAULT_SETTINGS.profiles[0],
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'unlimited-key',
+    })
+
+    expect(result.text).toBe('无限额度')
+  })
+
   it('always sends a fresh balance request for repeated manual queries', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({

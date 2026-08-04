@@ -213,6 +213,20 @@ function readNumber(record: Record<string, unknown>, keys: string[]): number | n
   return null
 }
 
+function readBoolean(record: Record<string, unknown>, keys: string[]): boolean | null {
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'boolean') return value
+    if (typeof value === 'number' && (value === 0 || value === 1)) return value === 1
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase()
+      if (normalized === 'true' || normalized === '1') return true
+      if (normalized === 'false' || normalized === '0') return false
+    }
+  }
+  return null
+}
+
 function readString(record: Record<string, unknown>, keys: string[]): string | null {
   for (const key of keys) {
     const value = record[key]
@@ -373,6 +387,8 @@ function parseCreditGrantBalance(payload: unknown, status: NewApiStatusInfo): st
 function parseTokenUsageBalance(payload: unknown, status: NewApiStatusInfo): string | null {
   const data = getPayloadData(payload)
   if (!isRecord(data)) return null
+  // 无限 Key 的数值额度通常为 0，必须优先读取标记，避免误显示成余额为零。
+  if (readBoolean(data, ['unlimited_quota', 'unlimitedQuota']) === true) return '无限额度'
   const available = readNumber(data, ['total_available', 'available'])
   const granted = readNumber(data, ['total_granted', 'granted'])
   const used = readNumber(data, ['total_used', 'used'])
