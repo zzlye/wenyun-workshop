@@ -123,6 +123,13 @@ const AUDIO_NODE_DEFAULT_HEIGHT = 160;
 const NODE_STATUS_LOADING = "loading" as const;
 const NODE_STATUS_SUCCESS = "success" as const;
 const NODE_STATUS_ERROR = "error" as const;
+const CLEARED_IMAGE_TASK_METADATA = {
+    imageTaskId: undefined,
+    imageTaskAccessToken: undefined,
+    imageTaskIdempotencyKey: undefined,
+    imageTaskRequestFingerprint: undefined,
+    imageTaskApiProfileId: undefined,
+};
 // 资产保存弹窗和资产库筛选共用这组分类，避免两个入口展示不一致。
 const ASSET_CATEGORIES: AssetCategory[] = ["人物", "场景", "物品", "风格", "其他"];
 
@@ -291,6 +298,7 @@ function InfiniteCanvasPage() {
     const viewportSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const applyingHistoryRef = useRef(false);
     const historyPausedRef = useRef(false);
+    const recoveringImageTaskIdsRef = useRef(new Set<string>());
     const didInitialCenterRef = useRef(false);
     const rafRef = useRef<number | null>(null);
     const resizeFrameRef = useRef<number | null>(null);
@@ -464,6 +472,158 @@ function InfiniteCanvasPage() {
         useCanvasStore.getState().updateProject(projectId, { connections: next });
     }, [projectId]);
 
+    const getCanvasImageTaskReference = useCallback((nodeId: string, requestFingerprint: string) => {
+        const metadata = nodesRef.current.find((node) => node.id === nodeId)?.metadata;
+        if (metadata?.imageTaskRequestFingerprint !== requestFingerprint || !metadata.imageTaskIdempotencyKey) return undefined;
+        return {
+            taskId: metadata.imageTaskId || "",
+            accessToken: metadata.imageTaskAccessToken || "",
+            idempotencyKey: metadata.imageTaskIdempotencyKey,
+            apiProfileId: metadata.imageTaskApiProfileId,
+        };
+    }, []);
+
+    const persistCanvasImageTaskReference = useCallback(
+        (nodeId: string, requestFingerprint: string, task: { taskId: string; accessToken: string; idempotencyKey: string; apiProfileId?: string }) => {
+            // 每个画布节点只保存自己的任务凭据，乱序完成时不会覆盖其他节点。
+            commitGenerationNodes((prev) =>
+                prev.map((node) =>
+                    node.id === nodeId
+                        ? {
+                              ...node,
+                              metadata: {
+                                  ...node.metadata,
+                                  imageTaskId: task.taskId,
+                                  imageTaskAccessToken: task.accessToken,
+                                  imageTaskIdempotencyKey: task.idempotencyKey,
+                                  imageTaskRequestFingerprint: requestFingerprint,
+                                  imageTaskApiProfileId: task.apiProfileId || activeProfile.id,
+                              },
+                          }
+                        : node,
+                ),
+            );
+        },
+        [activeProfile.id, commitGenerationNodes],
+    );
+
+    const recoverCanvasImageTaskNode = useCallback(
+        async (node: CanvasNodeData) => {
+            const metadata = node.metadata;
+            const requestFingerprint = metadata?.imageTaskRequestFingerprint;
+            if (node.type !== CanvasNodeType.Image || metadata?.status !== NODE_STATUS_LOADING || !requestFingerprint) return;
+            const taskReference = getCanvasImageTaskReference(node.id, requestFingerprint);
+            if (!taskReference || recoveringImageTaskIdsRef.current.has(node.id)) return;
+
+            recoveringImageTaskIdsRef.current.add(node.id);
+            markCanvasNodeRunning(node.id);
+            const generationStartedAt = metadata.generationStartedAt || Date.now();
+            const timing = () => buildGenerationTiming(generationStartedAt);
+            try {
+                const taskProfileId = metadata.imageTaskApiProfileId || activeProfile.id;
+                const taskProfile = normalizeSettings(settings).profiles.find((profile) => profile.id === taskProfileId);
+                if (!taskProfile) throw new Error("恢复图片任务时找不到原 API 配置");
+                const model = normalizeImageModelForProfile(metadata.model || effectiveConfig.imageModel || effectiveConfig.model, taskProfileId);
+                const generationConfig = {
+                    ...effectiveConfig,
+                    baseUrl: taskProfile.baseUrl,
+                    apiKey: taskProfile.apiKey,
+                    model,
+                    imageModel: model,
+                    quality: metadata.quality || effectiveConfig.quality,
+                    size: normalizeImageSizeForProfile(metadata.size || effectiveConfig.size, taskProfileId),
+                    count: "1",
+                };
+                const requestPrompt = (metadata.generationPrompt || metadata.prompt || "").trim();
+                if (!requestPrompt) throw new Error("恢复图片任务时找不到提示词");
+                const references = metadata.generationType === "edit" ? await resolveMetadataReferences(metadata) : [];
+                if (metadata.generationType === "edit" && !references) throw new Error("恢复图片任务时参考图片已不存在");
+
+                const image = metadata.generationType === "edit"
+                    ? await requestEdit(
+                          generationConfig,
+                          requestPrompt,
+                          references || [],
+                          `recover-${node.id}`,
+                          taskReference,
+                          (task) => persistCanvasImageTaskReference(node.id, requestFingerprint, task),
+                      ).then((items) => items[0])
+                    : await requestGeneration(
+                          generationConfig,
+                          requestPrompt,
+                          `recover-${node.id}`,
+                          taskReference,
+                          (task) => persistCanvasImageTaskReference(node.id, requestFingerprint, task),
+                      ).then((items) => items[0]);
+                const uploaded = await uploadImage(image.dataUrl);
+                const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
+                const imageSize = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
+                const recoveredRootId = metadata.batchRootId || node.id;
+                const recoveredConfigNodeIds = new Set(
+                    connectionsRef.current
+                        .filter((connection) => connection.toNodeId === recoveredRootId)
+                        .map((connection) => connection.fromNodeId),
+                );
+                commitGenerationNodes((prev) =>
+                    prev.map((current) => {
+                        if (current.id === node.id && current.metadata?.imageTaskRequestFingerprint === requestFingerprint) {
+                            return {
+                                ...current,
+                                ...getGeneratedMediaSizePatch(current, imageSize),
+                                metadata: { ...current.metadata, ...imageMetadata(uploaded), ...timing(), ...CLEARED_IMAGE_TASK_METADATA },
+                            };
+                        }
+                        if (metadata.batchRootId && current.id === metadata.batchRootId && !current.metadata?.primaryImageId) {
+                            // 批量任务乱序恢复时，第一张成功子图负责恢复主节点预览。
+                            return {
+                                ...current,
+                                ...getGeneratedMediaSizePatch(current, imageSize),
+                                metadata: { ...current.metadata, ...imageMetadata(uploaded), primaryImageId: node.id, errorDetails: undefined, ...timing() },
+                            };
+                        }
+                        if (current.type === CanvasNodeType.Config && recoveredConfigNodeIds.has(current.id)) {
+                            return { ...current, metadata: { ...current.metadata, status: NODE_STATUS_SUCCESS, errorDetails: undefined, ...timing() } };
+                        }
+                        return current;
+                    }),
+                );
+            } catch (error) {
+                const errorDetails = error instanceof Error ? error.message : "恢复图片任务失败";
+                const failedRootId = metadata.batchRootId;
+                const failedConfigNodeIds = new Set(
+                    failedRootId
+                        ? connectionsRef.current.filter((connection) => connection.toNodeId === failedRootId).map((connection) => connection.fromNodeId)
+                        : [],
+                );
+                commitGenerationNodes((prev) => {
+                    const root = failedRootId ? prev.find((current) => current.id === failedRootId) : null;
+                    const childIds = root?.metadata?.batchChildIds || [];
+                    const allChildrenFinished = childIds.length > 0 && childIds.every((childId) => {
+                        if (childId === node.id) return true;
+                        return prev.find((current) => current.id === childId)?.metadata?.status !== NODE_STATUS_LOADING;
+                    });
+                    const hasSuccessfulChild = Boolean(root?.metadata?.primaryImageId) || childIds.some((childId) => childId !== node.id && prev.find((current) => current.id === childId)?.metadata?.status === NODE_STATUS_SUCCESS);
+                    return prev.map((current) => {
+                        if (current.id === node.id && current.metadata?.imageTaskRequestFingerprint === requestFingerprint) {
+                            return { ...current, metadata: { ...current.metadata, status: NODE_STATUS_ERROR, errorDetails, ...timing(), ...CLEARED_IMAGE_TASK_METADATA } };
+                        }
+                        if (allChildrenFinished && !hasSuccessfulChild && current.id === failedRootId) {
+                            return { ...current, metadata: { ...current.metadata, status: NODE_STATUS_ERROR, errorDetails, ...timing() } };
+                        }
+                        if (allChildrenFinished && current.type === CanvasNodeType.Config && failedConfigNodeIds.has(current.id)) {
+                            return { ...current, metadata: { ...current.metadata, status: hasSuccessfulChild ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR, errorDetails: hasSuccessfulChild ? undefined : errorDetails, ...timing() } };
+                        }
+                        return current;
+                    });
+                });
+            } finally {
+                recoveringImageTaskIdsRef.current.delete(node.id);
+                clearCanvasNodeRunning([node.id]);
+            }
+        },
+        [activeProfile.id, clearCanvasNodeRunning, commitGenerationNodes, effectiveConfig, getCanvasImageTaskReference, markCanvasNodeRunning, persistCanvasImageTaskReference, settings],
+    );
+
     useEffect(() => {
         pageMountedRef.current = true;
         return () => {
@@ -484,6 +644,8 @@ function InfiniteCanvasPage() {
             const activeGenerationIds = getCanvasGenerationSessionIds(projectId);
             const restoredNodes = await hydrateCanvasImages(resetInterruptedCanvasGenerations(project.nodes, activeGenerationIds));
             const restoredSessions = await hydrateAssistantImages(project.chatSessions || []);
+            nodesRef.current = restoredNodes;
+            connectionsRef.current = project.connections;
             setNodes(restoredNodes);
             runningNodeIdsRef.current = activeGenerationIds;
             setRunningNodeIds(new Set(activeGenerationIds));
@@ -515,6 +677,14 @@ function InfiniteCanvasPage() {
         };
         void restore();
     }, [hydrated, openProject, projectId, router]);
+
+    useEffect(() => {
+        if (!projectLoaded) return;
+        // 只恢复带独立任务键的图片节点，旧版普通 loading 节点仍保持可重试错误态。
+        nodesRef.current
+            .filter((node) => node.type === CanvasNodeType.Image && node.metadata?.status === NODE_STATUS_LOADING && node.metadata?.imageTaskIdempotencyKey)
+            .forEach((node) => void recoverCanvasImageTaskNode(node));
+    }, [projectLoaded, recoverCanvasImageTaskNode]);
 
     useEffect(() => {
         if (!projectLoaded) return;
@@ -2314,20 +2484,28 @@ function InfiniteCanvasPage() {
             setSelectedGroupId(null);
             setDialogNodeId(childId);
             try {
-                const image = await requestEdit(generationConfig, prompt, [{ id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, storageKey: node.metadata.storageKey }]).then(
+                const requestFingerprint = `angle:${childId}:${prompt}`;
+                const image = await requestEdit(
+                    generationConfig,
+                    prompt,
+                    [{ id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, storageKey: node.metadata.storageKey }],
+                    `angle-${childId}`,
+                    undefined,
+                    (task) => persistCanvasImageTaskReference(childId, requestFingerprint, task),
+                ).then(
                     (items) => items[0],
                 );
                 const uploaded = await uploadImage(image.dataUrl);
                 const size = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
-                commitGenerationNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, ...getGeneratedMediaSizePatch(item, size), metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata } } : item)));
+                commitGenerationNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, ...getGeneratedMediaSizePatch(item, size), metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata, ...CLEARED_IMAGE_TASK_METADATA } } : item)));
             } catch (error) {
                 const errorDetails = error instanceof Error ? error.message : "生成失败";
-                commitGenerationNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } } : item)));
+                commitGenerationNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails, ...CLEARED_IMAGE_TASK_METADATA } } : item)));
             } finally {
                 clearCanvasNodeRunning([childId]);
             }
         },
-        [activeProfile.id, clearCanvasNodeRunning, commitGenerationConnections, commitGenerationNodes, effectiveConfig, isImageConfigReady, markCanvasNodeRunning, openConfigDialog],
+        [activeProfile.id, clearCanvasNodeRunning, commitGenerationConnections, commitGenerationNodes, effectiveConfig, getCanvasImageTaskReference, isImageConfigReady, markCanvasNodeRunning, openConfigDialog, persistCanvasImageTaskReference],
     );
 
     const handleFontSizeChange = useCallback((nodeId: string, fontSize: number) => {
@@ -2554,6 +2732,7 @@ function InfiniteCanvasPage() {
                             batchUsesReferenceImages: referenceImages.length > 0,
                             ...generationMetadata,
                             imageBatchExpanded: count > 1 ? true : undefined,
+                            ...CLEARED_IMAGE_TASK_METADATA,
                         },
                     };
                     const childNodes: CanvasNodeData[] = childIds.map((id, index) => ({
@@ -2613,9 +2792,23 @@ function InfiniteCanvasPage() {
                     await Promise.all(
                         targetIds.map(async (targetId) => {
                             try {
+                                const requestFingerprint = `${generationType}:${targetId}:${effectivePrompt}:${generationConfig.model}:${generationConfig.size}:${generationConfig.quality}`;
                                 const image = referenceImages.length
-                                    ? await requestEdit({ ...generationConfig, count: "1" }, effectivePrompt, referenceImages).then((items) => items[0])
-                                    : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt).then((items) => items[0]);
+                                    ? await requestEdit(
+                                          { ...generationConfig, count: "1" },
+                                          effectivePrompt,
+                                          referenceImages,
+                                          targetId,
+                                          undefined,
+                                          (task) => persistCanvasImageTaskReference(targetId, requestFingerprint, task),
+                                      ).then((items) => items[0])
+                                    : await requestGeneration(
+                                          { ...generationConfig, count: "1" },
+                                          effectivePrompt,
+                                          targetId,
+                                          undefined,
+                                          (task) => persistCanvasImageTaskReference(targetId, requestFingerprint, task),
+                                      ).then((items) => items[0]);
                                 const uploaded = await uploadImage(image.dataUrl);
                                 const imageSize = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
                                 commitGenerationNodes((prev) => {
@@ -2626,13 +2819,13 @@ function InfiniteCanvasPage() {
                                             return {
                                                 ...node,
                                                 ...getGeneratedMediaSizePatch(node, imageSize),
-                                                metadata: { ...node.metadata, ...imageMetadata(uploaded), primaryImageId: targetId, ...timing() },
+                                                metadata: { ...node.metadata, ...imageMetadata(uploaded), primaryImageId: targetId, ...timing(), ...CLEARED_IMAGE_TASK_METADATA },
                                             };
                                         if (node.id === targetId)
                                             return {
                                                 ...node,
                                                 ...getGeneratedMediaSizePatch(node, imageSize),
-                                                metadata: { ...node.metadata, ...imageMetadata(uploaded), ...timing() },
+                                                metadata: { ...node.metadata, ...imageMetadata(uploaded), ...timing(), ...CLEARED_IMAGE_TASK_METADATA },
                                             };
                                         return node;
                                     });
@@ -2644,7 +2837,7 @@ function InfiniteCanvasPage() {
                                 const errorDetails = error instanceof Error ? error.message : "生成失败";
                                 hasFailure = true;
                                 if (!firstFailureDetails) firstFailureDetails = errorDetails;
-                                commitGenerationNodes((prev) => prev.map((node) => (node.id === targetId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails, ...timing() } } : node)));
+                                commitGenerationNodes((prev) => prev.map((node) => (node.id === targetId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails, ...timing(), ...CLEARED_IMAGE_TASK_METADATA } } : node)));
                                 return false;
                             }
                         }),
@@ -2757,7 +2950,7 @@ function InfiniteCanvasPage() {
                 clearCanvasNodeRunning([nodeId, ...pendingChildIds]);
             }
         },
-        [activeProfile.id, clearCanvasNodeRunning, commitGenerationConnections, commitGenerationNodes, effectiveConfig, isImageConfigReady, markCanvasNodeRunning, openConfigDialog],
+        [activeProfile.id, clearCanvasNodeRunning, commitGenerationConnections, commitGenerationNodes, effectiveConfig, getCanvasImageTaskReference, isImageConfigReady, markCanvasNodeRunning, openConfigDialog, persistCanvasImageTaskReference],
     );
 
     const handleRetryNode = useCallback(
@@ -2806,7 +2999,7 @@ function InfiniteCanvasPage() {
             const generationStartedAt = Date.now();
             const timing = () => buildGenerationTiming(generationStartedAt);
             markCanvasNodeRunning(node.id);
-            commitGenerationNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined, generationStartedAt, generationElapsedMs: undefined } } : item)));
+            commitGenerationNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined, generationStartedAt, generationElapsedMs: undefined, ...CLEARED_IMAGE_TASK_METADATA } } : item)));
 
             try {
                 if (node.type === CanvasNodeType.Text) {
@@ -2826,7 +3019,23 @@ function InfiniteCanvasPage() {
                     return;
                 }
 
-                const image = useReferenceImages ? await requestEdit(generationConfig, requestPrompt, retryReferenceImages).then((items) => items[0]) : await requestGeneration(generationConfig, requestPrompt).then((items) => items[0]);
+                const requestFingerprint = `retry:${node.id}:${requestPrompt}:${generationConfig.model}:${generationConfig.size}:${generationConfig.quality}`;
+                const image = useReferenceImages
+                    ? await requestEdit(
+                          generationConfig,
+                          requestPrompt,
+                          retryReferenceImages,
+                          `retry-${node.id}`,
+                          undefined,
+                          (task) => persistCanvasImageTaskReference(node.id, requestFingerprint, task),
+                      ).then((items) => items[0])
+                    : await requestGeneration(
+                          generationConfig,
+                          requestPrompt,
+                          `retry-${node.id}`,
+                          undefined,
+                          (task) => persistCanvasImageTaskReference(node.id, requestFingerprint, task),
+                      ).then((items) => items[0]);
                 const uploadedImage = await uploadImage(image.dataUrl);
                 const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
                 const imageSize = fitNodeSize(uploadedImage.width, uploadedImage.height, imageConfig.width, imageConfig.height);
@@ -2840,7 +3049,7 @@ function InfiniteCanvasPage() {
                                   ...item,
                                   type: CanvasNodeType.Image,
                                   ...getGeneratedMediaSizePatch(item, imageSize),
-                                  metadata: { ...item.metadata, ...imageMetadata(uploadedImage), prompt: sourcePrompt, generationPrompt: requestPrompt, ...generationMetadata, ...timing() },
+                                  metadata: { ...item.metadata, ...imageMetadata(uploadedImage), prompt: sourcePrompt, generationPrompt: requestPrompt, ...generationMetadata, ...timing(), ...CLEARED_IMAGE_TASK_METADATA },
                               }
                             : item,
                     ),
@@ -2848,12 +3057,12 @@ function InfiniteCanvasPage() {
             } catch (error) {
                 const errorDetails = error instanceof Error ? error.message : "生成失败";
                 message.error(errorDetails);
-                commitGenerationNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails, ...timing() } } : item)));
+                commitGenerationNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails, ...timing(), ...CLEARED_IMAGE_TASK_METADATA } } : item)));
             } finally {
                 clearCanvasNodeRunning([node.id]);
             }
         },
-        [activeProfile.id, clearCanvasNodeRunning, commitGenerationNodes, effectiveConfig, isImageConfigReady, markCanvasNodeRunning, message, openConfigDialog],
+        [activeProfile.id, clearCanvasNodeRunning, commitGenerationNodes, effectiveConfig, getCanvasImageTaskReference, isImageConfigReady, markCanvasNodeRunning, message, openConfigDialog, persistCanvasImageTaskReference],
     );
 
     const generateImageFromTextNode = useCallback(

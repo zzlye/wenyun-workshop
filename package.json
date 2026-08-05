@@ -5,13 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "tasks": "node server/image-tasks.mjs",
     "mock:api": "node scripts/mock-image-api.mjs",
     "build": "tsc -b && vite build",
     "deploy:cf": "npm run build && wrangler deploy",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "bench:canvas": "vitest bench --run"
+    "bench:canvas": "vitest bench --run",
+    "test:tasks": "node --test server/image-tasks.node-test.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.2.5",

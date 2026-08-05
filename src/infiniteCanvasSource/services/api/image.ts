@@ -10,7 +10,10 @@ import { getEffectiveImageApiProfile } from "../../../lib/accountApiKey";
 import { normalizeSettings } from "../../../lib/apiProfiles";
 import { buildApiUrl as buildDevApiUrl, readClientDevProxyConfig } from "../../../lib/devProxy";
 import { sanitizeApiErrorMessage } from "../../../lib/imageApiShared";
+import { createImageTaskIdempotencyKey, shouldUseImageTasks } from "../../../lib/imageTasks";
+import type { ImageTaskReference } from "../../../lib/imageTasks";
 import { useStore } from "../../../store";
+import { flushCanvasStorePersistence } from "../../app/(user)/canvas/stores/use-canvas-store";
 import { DEFAULT_PARAMS, type AppSettings, type TaskParams } from "../../../types";
 
 export type ChatCompletionMessage = {
@@ -93,10 +96,10 @@ function buildTaskParams(config: AiConfig): TaskParams {
     };
 }
 
-function buildCanvasImageSettings(config: AiConfig): AppSettings {
+function buildCanvasImageSettings(config: AiConfig, apiProfileId?: string): AppSettings {
     const current = normalizeSettings(useStore.getState().settings);
     const model = config.imageModel || config.model || current.model;
-    const activeProfile = current.profiles.find((profile) => profile.id === current.activeProfileId);
+    const activeProfile = current.profiles.find((profile) => profile.id === (apiProfileId || current.activeProfileId));
     const effectiveProfile = activeProfile ? getEffectiveImageApiProfile(current, activeProfile) : null;
     const requestApiKey = effectiveProfile?.apiKey || config.apiKey || current.apiKey;
     const requestTimeout = config.timeout || effectiveProfile?.timeout || activeProfile?.timeout || current.timeout;
@@ -106,8 +109,9 @@ function buildCanvasImageSettings(config: AiConfig): AppSettings {
         apiKey: requestApiKey,
         model,
         timeout: requestTimeout,
+        activeProfileId: activeProfile?.id || current.activeProfileId,
         profiles: current.profiles.map((profile) =>
-            profile.id === current.activeProfileId
+            profile.id === activeProfile?.id
                 ? {
                       ...profile,
                       // 画布本地配置可能残留切站前的 key，生成时必须优先使用设置里当前站点的 key。
@@ -231,13 +235,35 @@ function withSystemMessage(config: AiConfig, messages: ChatCompletionMessage[]) 
     return systemPrompt ? [{ role: "system" as const, content: systemPrompt }, ...messages] : messages;
 }
 
-export async function requestGeneration(config: AiConfig, prompt: string) {
+export async function requestGeneration(
+    config: AiConfig,
+    prompt: string,
+    taskScope?: string,
+    taskReference?: ImageTaskReference,
+    onTaskCreated?: (task: ImageTaskReference) => void,
+) {
     try {
+        const settings = buildCanvasImageSettings(config, taskReference?.apiProfileId);
+        const profile = getEffectiveImageApiProfile(settings);
+        const useImageTasks = shouldUseImageTasks(profile.baseUrl);
+        const imageTask = useImageTasks ? taskReference ?? {
+            taskId: "",
+            accessToken: "",
+            idempotencyKey: createImageTaskIdempotencyKey(taskScope ? `canvas-${taskScope}` : "canvas-generation"),
+            apiProfileId: profile.id,
+        } : undefined;
+        // 网络请求前先保存幂等键，页面刷新后仍可认领同一个服务端任务。
+        if (imageTask) {
+            onTaskCreated?.(imageTask);
+            await flushCanvasStorePersistence();
+        }
         const result = await callImageApi({
-            settings: buildCanvasImageSettings(config),
+            settings,
             prompt: withSystemPrompt(config, prompt),
             params: buildTaskParams(config),
             inputImageDataUrls: [],
+            imageTask,
+            onImageTaskCreated: onTaskCreated,
         });
         refreshRemoteUser(config);
         return toCanvasImages(result.images);
@@ -246,8 +272,29 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
     }
 }
 
-export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[]) {
+export async function requestEdit(
+    config: AiConfig,
+    prompt: string,
+    references: ReferenceImage[],
+    taskScope?: string,
+    taskReference?: ImageTaskReference,
+    onTaskCreated?: (task: ImageTaskReference) => void,
+) {
     try {
+        const settings = buildCanvasImageSettings(config, taskReference?.apiProfileId);
+        const profile = getEffectiveImageApiProfile(settings);
+        const useImageTasks = shouldUseImageTasks(profile.baseUrl);
+        const imageTask = useImageTasks ? taskReference ?? {
+            taskId: "",
+            accessToken: "",
+            idempotencyKey: createImageTaskIdempotencyKey(taskScope ? `canvas-${taskScope}` : "canvas-edit"),
+            apiProfileId: profile.id,
+        } : undefined;
+        // 图生图也必须在上传大请求体前固定任务键，避免断网重传造成重复扣费。
+        if (imageTask) {
+            onTaskCreated?.(imageTask);
+            await flushCanvasStorePersistence();
+        }
         const inputImageDataUrls = (
             await Promise.all(
                 references.map(async (image) => {
@@ -258,11 +305,13 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         ).filter((dataUrl): dataUrl is string => Boolean(dataUrl));
         const maskDataUrl = references.find((image) => image.isMaskTarget && image.maskDataUrl)?.maskDataUrl;
         const result = await callImageApi({
-            settings: buildCanvasImageSettings(config),
+            settings,
             prompt: withSystemPrompt(config, prompt),
             params: buildTaskParams(config),
             inputImageDataUrls,
             maskDataUrl,
+            imageTask,
+            onImageTaskCreated: onTaskCreated,
         });
         refreshRemoteUser(config);
         return toCanvasImages(result.images);

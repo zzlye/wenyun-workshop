@@ -281,6 +281,7 @@ function normalizeAssetProxyTarget(target: string): string | null {
 
 export default defineConfig(({ command }) => {
   const devProxyConfig = command === 'serve' ? loadDevProxyConfig() : null
+  const imageTaskDevTarget = process.env.IMAGE_TASK_DEV_TARGET?.trim() || 'http://127.0.0.1:8787'
   const publicProxy = {
     '/wy-public/mukyu': {
       target: 'https://i.mukyu.ru',
@@ -310,6 +311,12 @@ export default defineConfig(({ command }) => {
       host: true,
       proxy: {
         ...publicProxy,
+        '/image-tasks': {
+          target: imageTaskDevTarget,
+          changeOrigin: true,
+          timeout: 900_000,
+          proxyTimeout: 900_000,
+        },
         ...(devProxyConfig?.enabled
           ? {
               [devProxyConfig.prefix]: {

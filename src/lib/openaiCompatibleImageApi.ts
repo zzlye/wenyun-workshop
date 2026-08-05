@@ -2,6 +2,7 @@ import { DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type CustomProviderDefi
 import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './canvasImage'
 import { getFixedImageRequestModel, isBananaImageModel } from './apiProfiles'
 import { buildApiUrl, isLockedApiProxyTarget, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from './devProxy'
+import { fetchImageTask, shouldUseImageTasks } from './imageTasks'
 import { formatImageRatio, normalizeImageSize, parseRatio } from './size'
 import {
   assertImageInputPayloadSize,
@@ -606,8 +607,8 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
   const mime = MIME_MAP[params.output_format] || 'image/png'
   const proxyConfig = readClientDevProxyConfig()
   const isLockedImageApi = isLockedApiProxyTarget(profile.baseUrl)
-  // 内置 NewAPI 已允许 CORS。图片生成直连可少过一层网站代理/CDN，
-  // 避免“后端成功扣费但前端连接被中间层切断后收不到图”。
+  const useImageTasks = Boolean(opts.imageTask) && shouldUseImageTasks(profile.baseUrl)
+  // 文运站使用短轮询异步任务；其他内置站点和自定义接口继续保持原路径。
   const useApiProxy = shouldUseApiProxyForBaseUrl(profile.apiProxy, profile.baseUrl, proxyConfig) && !isLockedImageApi
   const requestHeaders = createRequestHeaders(profile)
   const paths = createOpenAICompatiblePaths(customProvider)
@@ -615,6 +616,17 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
 
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutSeconds * 1000)
+
+  const requestImageEndpoint = (path: string, init: RequestInit) => {
+    if (useImageTasks) {
+      return fetchImageTask(path, init, {
+        timeoutMs: timeoutSeconds * 1000,
+        reference: opts.imageTask,
+        onCreated: opts.onImageTaskCreated,
+      })
+    }
+    return fetch(buildApiUrl(profile.baseUrl, path, proxyConfig, useApiProxy), init)
+  }
 
   try {
     let response: Response
@@ -678,7 +690,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
         formData.append('mask', maskBlob, 'mask.png')
       }
 
-      response = await fetch(buildApiUrl(profile.baseUrl, paths.editPath, proxyConfig, useApiProxy), {
+      response = await requestImageEndpoint(paths.editPath, {
         method: 'POST',
         headers: requestHeaders,
         cache: 'no-store',
@@ -712,7 +724,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       }
       appendBananaGenerationFields(body, profile, params)
 
-      response = await fetch(buildApiUrl(profile.baseUrl, paths.generationPath, proxyConfig, useApiProxy), {
+      response = await requestImageEndpoint(paths.generationPath, {
         method: 'POST',
         headers: {
           ...requestHeaders,

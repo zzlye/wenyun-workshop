@@ -335,6 +335,12 @@ export interface TaskRecord {
   customTaskId?: string
   /** 自定义异步任务是否等待自动恢复 */
   customRecoverable?: boolean
+  /** 文运站异步图片任务 ID，用于刷新后继续查询 */
+  imageTaskId?: string
+  /** 文运站异步图片任务访问令牌，仅用于读取当前任务 */
+  imageTaskAccessToken?: string
+  /** 文运站异步图片任务幂等键，防止重复提交和重复扣费 */
+  imageTaskIdempotencyKey?: string
   /** API 返回的实际生效参数，用于标记与请求值不一致的情况 */
   actualParams?: Partial<TaskParams>
   /** 输出图片对应的实际生效参数，key 为 outputImages 中的图片 id */

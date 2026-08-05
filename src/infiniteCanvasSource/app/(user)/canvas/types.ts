@@ -55,6 +55,11 @@ export type CanvasNodeMetadata = {
     generationStartedAt?: number;
     generationElapsedMs?: number;
     generationPrompt?: string;
+    imageTaskId?: string;
+    imageTaskAccessToken?: string;
+    imageTaskIdempotencyKey?: string;
+    imageTaskRequestFingerprint?: string;
+    imageTaskApiProfileId?: string;
     naturalWidth?: number;
     naturalHeight?: number;
     manualSize?: boolean;

@@ -13,6 +13,7 @@ describe("canvas image api", () => {
         useStore.setState({ settings: initialSettings });
         vi.restoreAllMocks();
         vi.unstubAllEnvs();
+        vi.stubEnv("VITE_IMAGE_TASKS_AVAILABLE", "disabled");
     });
 
     it("uses the same locked image API direct URL as the main workshop", async () => {

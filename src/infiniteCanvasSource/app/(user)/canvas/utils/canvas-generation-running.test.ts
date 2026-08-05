@@ -31,6 +31,19 @@ describe("canvas generation running session", () => {
         clearCanvasGenerationSession("project-1", ["image-1"]);
     });
 
+    it("keeps recoverable image tasks loading after a real page refresh", () => {
+        const recoverable = node("image-1", "loading");
+        recoverable.metadata = {
+            ...recoverable.metadata,
+            imageTaskIdempotencyKey: "canvas-task-key",
+        };
+
+        const result = resetInterruptedCanvasGenerations([recoverable], new Set());
+
+        expect(result[0].metadata?.status).toBe("loading");
+        expect(result[0].metadata?.errorDetails).toBeUndefined();
+    });
+
     it("marks stale loading nodes as retryable after session state is gone", () => {
         const result = resetInterruptedCanvasGenerations([node("image-1", "loading")], getCanvasGenerationSessionIds("project-2"));
 

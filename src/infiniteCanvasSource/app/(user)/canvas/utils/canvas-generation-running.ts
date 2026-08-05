@@ -46,6 +46,7 @@ export function getCanvasGenerationSessionIds(projectId: string) {
 export function resetInterruptedCanvasGenerations(nodes: CanvasNodeData[], activeNodeIds: ReadonlySet<string>) {
     return nodes.map((node) => {
         if (node.metadata?.status !== LOADING_STATUS || activeNodeIds.has(node.id)) return node;
+        if (node.metadata?.imageTaskIdempotencyKey) return node;
         // 真正刷新会清空会话级运行集合，这时 loading 节点才需要改成可重试的错误态。
         return { ...node, metadata: { ...node.metadata, status: "error" as const, errorDetails: INTERRUPTED_ERROR } };
     });

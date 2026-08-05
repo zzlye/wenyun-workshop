@@ -53,6 +53,7 @@ import { collectAgentRoundOutputImageSlots, extractAgentReferenceIds, getAgentCu
 import { getImageRequestTimeoutSeconds, IMAGE_FETCH_CORS_HINT } from './lib/imageApiShared'
 import { getFalErrorMessage, getFalQueuedImageResult } from './lib/falAiImageApi'
 import { getCustomQueuedImageResult } from './lib/openaiCompatibleImageApi'
+import { createImageTaskIdempotencyKey, shouldUseImageTasks, type ImageTaskReference } from './lib/imageTasks'
 import { validateMaskMatchesImage } from './lib/canvasImage'
 import { orderInputImagesForMask } from './lib/mask'
 import { getChangedParams, normalizeParamsForSettings } from './lib/paramCompatibility'
@@ -78,6 +79,8 @@ const AGENT_ROUND_IMAGE_MENTION_RE = /@(?:第)?(\d+)轮图(\d+)/g
 const falRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const customRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const openAIWatchdogTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const imageTaskRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const activeImageTaskExecutions = new Set<string>()
 const agentRoundControllers = new Map<string, AbortController>()
 let agentConversationPersistenceReady = false
 let agentConversationMigrationPending = false
@@ -1575,6 +1578,15 @@ function isRunningOpenAITask(task: TaskRecord) {
   return task.status === 'running' && isOpenAITask(task)
 }
 
+function getStoredImageTaskReference(task: TaskRecord): ImageTaskReference | null {
+  if (!task.imageTaskIdempotencyKey) return null
+  return {
+    taskId: task.imageTaskId || '',
+    accessToken: task.imageTaskAccessToken || '',
+    idempotencyKey: task.imageTaskIdempotencyKey,
+  }
+}
+
 function isAsyncCustomProviderTask(settings: AppSettings, provider: string, hasInputImages: boolean) {
   const customProvider = getCustomProviderDefinition(settings, provider)
   if (!customProvider?.poll) return false
@@ -1585,7 +1597,7 @@ function isAsyncCustomProviderTask(settings: AppSettings, provider: string, hasI
 export function markInterruptedOpenAIRunningTasks(tasks: TaskRecord[], now = Date.now()) {
   const interruptedTasks: TaskRecord[] = []
   const updatedTasks = tasks.map((task) => {
-    if (!isRunningOpenAITask(task) || task.customTaskId) return task
+    if (!isRunningOpenAITask(task) || task.customTaskId || getStoredImageTaskReference(task)) return task
 
     const updated: TaskRecord = {
       ...task,
@@ -1841,6 +1853,98 @@ async function resolveImageSizeParamsList(
   return images.map((_, index) => hasActualParams(preferred?.[index]) ? preferred?.[index] : fallback[index])
 }
 
+async function completeRecoveredImageTask(task: TaskRecord, result: Awaited<ReturnType<typeof callImageApi>>) {
+  const latest = useStore.getState().tasks.find((item) => item.id === task.id)
+  if (!latest || latest.status === 'done') return
+
+  const outputIds = result.images.map((dataUrl) => createCachedImageId(dataUrl, 'generated', '恢复文运异步任务时保存输出图'))
+  const actualParamsByImage = mapActualParamsByImage(outputIds, result.actualParamsList)
+  const revisedPromptByImage = result.revisedPrompts?.reduce<Record<string, string>>((acc, revisedPrompt, index) => {
+    const imageId = outputIds[index]
+    if (imageId && revisedPrompt?.trim()) acc[imageId] = revisedPrompt
+    return acc
+  }, {})
+
+  updateTaskInStore(task.id, {
+    outputImages: outputIds,
+    rawImageUrls: result.rawImageUrls?.length ? result.rawImageUrls : undefined,
+    actualParams: result.actualParams ? { ...result.actualParams, n: outputIds.length } : { n: outputIds.length },
+    actualParamsByImage,
+    revisedPromptByImage: revisedPromptByImage && Object.keys(revisedPromptByImage).length ? revisedPromptByImage : undefined,
+    status: 'done',
+    error: null,
+    finishedAt: Date.now(),
+    elapsed: Date.now() - task.createdAt,
+  })
+  useStore.getState().showToast(`图片任务已恢复，共 ${outputIds.length} 张图片`, 'success')
+}
+
+async function recoverImageTask(taskId: string) {
+  if (activeImageTaskExecutions.has(taskId)) {
+    scheduleImageTaskRecovery(taskId, CUSTOM_RECOVERY_POLL_MS)
+    return
+  }
+  const { settings, tasks } = useStore.getState()
+  const task = tasks.find((item) => item.id === taskId)
+  const reference = task ? getStoredImageTaskReference(task) : null
+  if (!task || !reference || task.status === 'done') return
+
+  const taskProfile = getTaskApiProfile(settings, task)
+  if (!taskProfile) {
+    scheduleImageTaskRecovery(taskId, CUSTOM_RECOVERY_POLL_MS)
+    return
+  }
+
+  activeImageTaskExecutions.add(taskId)
+  try {
+    const activeProfile = getEffectiveImageApiProfile(settings, taskProfile)
+    const requestSettings = createSettingsForApiProfile(settings, activeProfile)
+    const inputDataUrls: string[] = []
+    for (const imageId of task.inputImageIds) {
+      const dataUrl = await ensureImageCached(imageId)
+      if (!dataUrl) throw new Error('输入图片已不存在')
+      inputDataUrls.push(dataUrl)
+    }
+    let maskDataUrl: string | undefined
+    if (task.maskImageId) {
+      maskDataUrl = await ensureImageCached(task.maskImageId)
+      if (!maskDataUrl) throw new Error('遮罩图片已不存在')
+    }
+
+    const result = await callImageApi({
+      settings: requestSettings,
+      prompt: replaceImageMentionsForApi(task.prompt, inputDataUrls.length),
+      params: task.params,
+      inputImageDataUrls: inputDataUrls,
+      maskDataUrl,
+      imageTask: reference,
+      onImageTaskCreated: (request) => {
+        updateTaskInStore(taskId, {
+          imageTaskId: request.taskId,
+          imageTaskAccessToken: request.accessToken,
+          imageTaskIdempotencyKey: request.idempotencyKey,
+        })
+      },
+    })
+    clearImageTaskRecoveryTimer(taskId)
+    await completeRecoveredImageTask(task, result)
+  } catch (error) {
+    if (isFalConnectionRecoverableError(error)) {
+      scheduleImageTaskRecovery(taskId, CUSTOM_RECOVERY_POLL_MS)
+      return
+    }
+    clearImageTaskRecoveryTimer(taskId)
+    updateTaskInStore(taskId, {
+      status: 'error',
+      error: error instanceof Error ? error.message : String(error),
+      finishedAt: Date.now(),
+      elapsed: Date.now() - task.createdAt,
+    })
+  } finally {
+    activeImageTaskExecutions.delete(taskId)
+  }
+}
+
 async function completeRecoveredFalTask(task: TaskRecord, result: Awaited<ReturnType<typeof getFalQueuedImageResult>>) {
   const latest = useStore.getState().tasks.find((item) => item.id === task.id)
   if (!latest || latest.status === 'done') return
@@ -1946,6 +2050,10 @@ export async function initStore() {
   useStore.getState().setTasks(tasks)
   showSupportPromptForExistingLocalData(tasks)
   for (const task of tasks) {
+    if (getStoredImageTaskReference(task) && task.status !== 'done') {
+      scheduleImageTaskRecovery(task.id, 0)
+      continue
+    }
     if (
       task.apiProvider === 'fal' &&
       task.falRequestId &&
@@ -2188,29 +2296,41 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
   const singleTaskParams: TaskParams = { ...normalizedParams, n: 1 }
   const submittedAt = Date.now()
   // 数量代表独立任务数，每个任务只请求一张图，让先完成的结果可以立即展示。
-  const submittedTasks: TaskRecord[] = Array.from({ length: taskCount }, () => ({
-    id: genId(),
-    prompt: prompt.trim(),
-    params: { ...singleTaskParams },
-    apiProvider: activeProfile.provider,
-    apiProfileId: activeProfile.id,
-    apiProfileName: activeProfile.name,
-    apiMode: activeProfile.apiMode,
-    apiModel: activeProfile.model,
-    inputImageIds: orderedInputImages.map((i) => i.id),
-    maskTargetImageId,
-    maskImageId,
-    outputImages: [],
-    status: 'running',
-    error: null,
-    createdAt: submittedAt,
-    finishedAt: null,
-    elapsed: null,
-  }))
+  const submittedTasks: TaskRecord[] = Array.from({ length: taskCount }, () => {
+    const id = genId()
+    return {
+      id,
+      prompt: prompt.trim(),
+      params: { ...singleTaskParams },
+      apiProvider: activeProfile.provider,
+      apiProfileId: activeProfile.id,
+      apiProfileName: activeProfile.name,
+      apiMode: activeProfile.apiMode,
+      apiModel: activeProfile.model,
+      inputImageIds: orderedInputImages.map((i) => i.id),
+      maskTargetImageId,
+      maskImageId,
+      outputImages: [],
+      status: 'running',
+      error: null,
+      createdAt: submittedAt,
+      finishedAt: null,
+      elapsed: null,
+      // 先保存幂等键再发网络请求，刷新或短暂断网后仍只会认领同一个服务端任务。
+      imageTaskIdempotencyKey: shouldUseImageTasks(activeProfile.baseUrl)
+        ? createImageTaskIdempotencyKey(`home-${id}`)
+        : undefined,
+    }
+  })
 
   const latestTasks = useStore.getState().tasks
   useStore.getState().setTasks([...submittedTasks, ...latestTasks])
-  submittedTasks.forEach((task) => persistTaskInBackground(task, '提交独立任务时保存任务'))
+  try {
+    // 任务记录很小，先确认写入再发请求；图片数据仍在后台保存，不拖慢大图上传。
+    await Promise.all(submittedTasks.map((task) => putTask(task)))
+  } catch (error) {
+    console.warn('[task-persist] 提交前保存任务失败，仍使用同一内存幂等键继续请求', error)
+  }
   useStore.getState().showToast(taskCount > 1 ? `已提交 ${taskCount} 个独立任务` : '任务已提交', 'success')
 
   if (settings.clearInputAfterSubmit) {
@@ -2221,6 +2341,21 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
 
   // 所有任务并行启动，接口返回一张就立即完成对应卡片。
   submittedTasks.forEach((task) => void executeTask(task.id))
+}
+
+function clearImageTaskRecoveryTimer(taskId: string) {
+  const timer = imageTaskRecoveryTimers.get(taskId)
+  if (timer) clearTimeout(timer)
+  imageTaskRecoveryTimers.delete(taskId)
+}
+
+function scheduleImageTaskRecovery(taskId: string, delayMs = 0) {
+  if (imageTaskRecoveryTimers.has(taskId)) return
+  const timer = setTimeout(() => {
+    imageTaskRecoveryTimers.delete(taskId)
+    void recoverImageTask(taskId)
+  }, delayMs)
+  imageTaskRecoveryTimers.set(taskId, timer)
 }
 
 function getActiveAgentConversation(): AgentConversation {
@@ -3821,10 +3956,22 @@ async function executeTask(taskId: string) {
     ? { taskId: task.customTaskId }
     : null
 
-  if (taskProvider !== 'fal' && !isAsyncCustomProviderTask(requestSettings, taskProvider, task.inputImageIds.length > 0)) {
+  let storedImageTask = getStoredImageTaskReference(task)
+  if (!storedImageTask && shouldUseImageTasks(activeProfile.baseUrl)) {
+    storedImageTask = {
+      taskId: '',
+      accessToken: '',
+      idempotencyKey: createImageTaskIdempotencyKey(`home-${task.id}`),
+    }
+    updateTaskInStore(taskId, { imageTaskIdempotencyKey: storedImageTask.idempotencyKey })
+  }
+  if (taskProvider !== 'fal' && !storedImageTask && !shouldUseImageTasks(activeProfile.baseUrl) && !isAsyncCustomProviderTask(requestSettings, taskProvider, task.inputImageIds.length > 0)) {
     scheduleOpenAIWatchdog(taskId, getImageRequestTimeoutSeconds(activeProfile.model, task.params, activeProfile.timeout), activeProfile)
   }
 
+  // 同一任务只保留一个执行器，避免初始化恢复与用户操作同时触发造成重复提交。
+  if (activeImageTaskExecutions.has(taskId)) return
+  activeImageTaskExecutions.add(taskId)
   try {
     // 获取输入图片 data URLs
     const inputDataUrls: string[] = []
@@ -3845,6 +3992,14 @@ async function executeTask(taskId: string) {
       params: task.params,
       inputImageDataUrls: inputDataUrls,
       maskDataUrl,
+      imageTask: storedImageTask ?? undefined,
+      onImageTaskCreated: (request) => {
+        updateTaskInStore(taskId, {
+          imageTaskId: request.taskId,
+          imageTaskAccessToken: request.accessToken,
+          imageTaskIdempotencyKey: request.idempotencyKey,
+        })
+      },
       onFalRequestEnqueued: (request) => {
         falRequestInfo = request
         updateTaskInStore(taskId, {
@@ -3866,7 +4021,11 @@ async function executeTask(taskId: string) {
       },
     })
 
-    const latestBeforeSuccess = useStore.getState().tasks.find((t) => t.id === taskId)
+    let latestBeforeSuccess = useStore.getState().tasks.find((t) => t.id === taskId)
+    if (latestBeforeSuccess?.status === 'error' && getStoredImageTaskReference(latestBeforeSuccess)) {
+      updateTaskInStore(taskId, { status: 'running', error: null, finishedAt: null, elapsed: null })
+      latestBeforeSuccess = useStore.getState().tasks.find((t) => t.id === taskId)
+    }
     if (!latestBeforeSuccess || latestBeforeSuccess.status !== 'running') {
       useStore.getState().setTaskStreamPreview(taskId)
       return
@@ -3916,6 +4075,7 @@ async function executeTask(taskId: string) {
     }
     const partialImageIdsToClean = latestBeforeUpdate.streamPartialImageIds || []
     clearOpenAIWatchdogTimer(taskId)
+    clearImageTaskRecoveryTimer(taskId)
     useStore.getState().setTaskStreamPreview(taskId)
     updateTaskInStore(taskId, {
       outputImages: outputIds,
@@ -3951,7 +4111,16 @@ async function executeTask(taskId: string) {
       ? { requestId: latestTask.falRequestId, endpoint: latestTask.falEndpoint }
       : null)
     const latestCustomTaskInfo = customTaskInfo ?? (latestTask.customTaskId ? { taskId: latestTask.customTaskId } : null)
-    if (latestTask.apiProvider === 'fal' && latestFalRequestInfo && isFalConnectionRecoverableError(err)) {
+    const latestImageTask = getStoredImageTaskReference(latestTask)
+    if (latestImageTask && isFalConnectionRecoverableError(err)) {
+      updateTaskInStore(taskId, {
+        status: 'running',
+        error: '图片任务连接暂时中断，正在继续查询同一任务结果。',
+        finishedAt: null,
+        elapsed: null,
+      })
+      scheduleImageTaskRecovery(taskId, CUSTOM_RECOVERY_POLL_MS)
+    } else if (latestTask.apiProvider === 'fal' && latestFalRequestInfo && isFalConnectionRecoverableError(err)) {
       updateTaskInStore(taskId, {
         status: 'error',
         error: '与 fal.ai 的连接已断开，之后会继续查询任务结果。',
@@ -4000,6 +4169,7 @@ async function executeTask(taskId: string) {
       useStore.getState().setDetailTaskId(taskId)
     }
   } finally {
+    activeImageTaskExecutions.delete(taskId)
     // 释放输入图片的内存缓存（已持久化到 IndexedDB，后续按需从 DB 加载）
     for (const imgId of task.inputImageIds) {
       imageCache.delete(imgId)
@@ -4042,6 +4212,10 @@ export async function retryTask(task: TaskRecord) {
     createdAt: Date.now(),
     finishedAt: null,
     elapsed: null,
+    // 用户主动重试必须使用新键，旧任务即使稍后返回也不会覆盖这次结果。
+    imageTaskIdempotencyKey: shouldUseImageTasks(activeProfile.baseUrl)
+      ? createImageTaskIdempotencyKey(`home-${taskId}`)
+      : undefined,
   }
 
   const latestTasks = useStore.getState().tasks

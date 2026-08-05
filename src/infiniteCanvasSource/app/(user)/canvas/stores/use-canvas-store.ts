@@ -37,6 +37,23 @@ const CANVAS_STORE_KEY = "infinite-canvas:canvas_store";
 type PersistedCanvasState = Pick<CanvasStore, "projects">;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let queuedPersistState: PersistedCanvasState | null = null;
+let queuedPersistName = CANVAS_STORE_KEY;
+let queuedPersistValue: StorageValue<CanvasStore> | null = null;
+
+async function flushQueuedCanvasStore() {
+    if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+    }
+    const value = queuedPersistValue;
+    if (!value) return;
+    await localForageStorage.setItem(queuedPersistName, JSON.stringify(value));
+}
+
+// 图片任务提交前强制保存画布状态，避免用户立即刷新时丢失幂等键。
+export async function flushCanvasStorePersistence() {
+    await flushQueuedCanvasStore();
+}
 
 const canvasStorage: PersistStorage<CanvasStore> = {
     getItem: async (name) => {
@@ -50,10 +67,11 @@ const canvasStorage: PersistStorage<CanvasStore> = {
         const nextState = value.state as PersistedCanvasState;
         if (queuedPersistState && queuedPersistState.projects === nextState.projects) return;
         queuedPersistState = nextState;
+        queuedPersistName = name;
+        queuedPersistValue = value;
         if (saveTimer) clearTimeout(saveTimer);
         saveTimer = setTimeout(() => {
-            saveTimer = null;
-            void localForageStorage.setItem(name, JSON.stringify(value));
+            void flushQueuedCanvasStore();
         }, 400);
     },
     removeItem: (name) => localForageStorage.removeItem(name),

@@ -8,6 +8,7 @@ describe('callImageApi', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllEnvs()
+    vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'disabled')
     vi.useRealTimers()
   })
 
@@ -450,6 +451,50 @@ describe('callImageApi', () => {
     expect(formData.get('response_format')).toBe('b64_json')
     expect(formData.get('stream')).toBeNull()
     expect(formData.get('partial_images')).toBeNull()
+  })
+
+  it('文运站通过异步任务短轮询获取图片结果', async () => {
+    vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'enabled')
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        taskId: 'task-1',
+        accessToken: 'token-1',
+        status: 'running',
+      }), { status: 202, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-1', status: 'succeeded' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ b64_json: 'ZmluYWw=' }] }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Wenyun-Upstream-Status': '200',
+        },
+      }))
+    const onImageTaskCreated = vi.fn()
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      apiKey: 'test-key',
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({ ...profile, apiKey: 'test-key' })),
+    }
+    const result = await callImageApi({
+      settings,
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+      imageTask: { taskId: '', accessToken: '', idempotencyKey: 'home-task-1' },
+      onImageTaskCreated,
+    })
+
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      '/image-tasks?endpoint=%2Fimages%2Fgenerations',
+      '/image-tasks/task-1',
+      '/image-tasks/task-1/result',
+    ])
+    expect(onImageTaskCreated).toHaveBeenCalledWith({ taskId: 'task-1', accessToken: 'token-1', idempotencyKey: 'home-task-1' })
+    expect(result.images).toEqual(['data:image/png;base64,ZmluYWw='])
   })
 
   it('按公开文档提交文运站图生图且不发送 mask', async () => {
