@@ -52,6 +52,8 @@ function createUpstreamHeaders(requestHeaders) {
       headers.set(name, rawValue)
     }
   }
+  // Base64 图片本身压缩收益很低，明确关闭压缩可避开大响应解压流被代理提前截断。
+  headers.set('accept-encoding', 'identity')
   return headers
 }
 
@@ -88,14 +90,36 @@ async function readResponseBody(response, maxBytes) {
 
   const chunks = []
   let totalBytes = 0
-  for await (const chunk of response.body) {
-    totalBytes += chunk.byteLength
-    if (totalBytes > maxBytes) {
-      throw new Error('图片任务响应体过大')
+  try {
+    for await (const chunk of response.body) {
+      totalBytes += chunk.byteLength
+      if (totalBytes > maxBytes) {
+        throw new Error('图片任务响应体过大')
+      }
+      chunks.push(chunk)
     }
-    chunks.push(chunk)
+  } catch (error) {
+    // 将断流前已读取的字节数附加到错误，便于区分空响应与大图片传输中断。
+    if (error && typeof error === 'object') error.responseBytesRead = totalBytes
+    throw error
   }
   return Buffer.concat(chunks, totalBytes)
+}
+
+function getErrorDetail(error) {
+  const cause = error && typeof error === 'object' ? error.cause : null
+  const errorCode = error && typeof error === 'object' && typeof error.code === 'string' ? error.code : ''
+  const causeCode = cause && typeof cause === 'object' && typeof cause.code === 'string' ? cause.code : ''
+  const causeMessage = cause instanceof Error ? cause.message : ''
+  const responseBytesRead = error && typeof error === 'object' && Number.isFinite(error.responseBytesRead)
+    ? error.responseBytesRead
+    : 0
+  return {
+    errorName: error instanceof Error ? error.name : typeof error,
+    errorCode: errorCode || causeCode || undefined,
+    cause: causeMessage ? causeMessage.slice(0, 160) : undefined,
+    responseBytesRead,
+  }
 }
 
 function sendJson(response, statusCode, payload, headers = {}) {
@@ -218,6 +242,9 @@ export function createImageTaskServer(options = {}) {
 
   const runTask = async (task) => {
     const startedAt = performance.now()
+    let upstreamStatus
+    let upstreamContentLength
+    let upstreamContentEncoding
     task.status = 'running'
     task.startedAt = Date.now()
     const abortController = new AbortController()
@@ -237,6 +264,9 @@ export function createImageTaskServer(options = {}) {
         cache: 'no-store',
         signal: abortController.signal,
       })
+      upstreamStatus = upstreamResponse.status
+      upstreamContentLength = upstreamResponse.headers.get('content-length') || undefined
+      upstreamContentEncoding = upstreamResponse.headers.get('content-encoding') || 'identity'
       const upstreamMetadata = createResponseMetadata(upstreamResponse)
       const responseBody = await readResponseBody(upstreamResponse, maxResponseBodyBytes)
       task.upstreamMetadata = upstreamMetadata
@@ -247,7 +277,12 @@ export function createImageTaskServer(options = {}) {
       // 请求数据在上游接收后不再需要，及时释放参考图和提示词占用的内存。
       task.requestBody = null
       task.headers = null
-      log('upstream_completed', { upstreamStatus: upstreamResponse.status, bytes: responseBody.byteLength })
+      log('upstream_completed', {
+        upstreamStatus,
+        upstreamContentLength,
+        upstreamContentEncoding,
+        bytes: responseBody.byteLength,
+      })
     } catch (error) {
       const timedOut = abortController.signal.aborted
       const message = timedOut
@@ -264,7 +299,13 @@ export function createImageTaskServer(options = {}) {
       task.expiresAt = task.finishedAt + taskTtlMs
       task.requestBody = null
       task.headers = null
-      log(timedOut ? 'upstream_timeout' : 'upstream_failed', { error: message.slice(0, 160) })
+      log(timedOut ? 'upstream_timeout' : 'upstream_failed', {
+        error: message.slice(0, 160),
+        upstreamStatus,
+        upstreamContentLength,
+        upstreamContentEncoding,
+        ...getErrorDetail(error),
+      })
     } finally {
       clearTimeout(timeoutTimer)
     }

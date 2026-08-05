@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
 import { afterEach, test } from 'node:test'
+import { gzipSync } from 'node:zlib'
 import { createImageTaskServer } from './image-tasks.mjs'
 
 // 该文件使用 Node 原生测试器，专门验证服务端任务隔离、幂等与结果复取。
@@ -240,4 +241,48 @@ test('错误访问令牌不能读取其他并发任务', async () => {
     headers: { Authorization: `Bearer ${second.accessToken}` },
   })
   assert.equal(response.status, 404)
+})
+
+test('大型图片结果明确请求未压缩响应，避免压缩流中断', async () => {
+  const base64 = Buffer.alloc(8 * 1024 * 1024, 7).toString('base64')
+  const responseText = JSON.stringify({ data: [{ b64_json: base64 }] })
+  let receivedAcceptEncoding = ''
+  const upstreamUrl = await listen(createServer(async (request, response) => {
+    receivedAcceptEncoding = request.headers['accept-encoding'] || ''
+    for await (const _chunk of request) {
+      // 消费请求正文。
+    }
+    if (receivedAcceptEncoding !== 'identity') {
+      const compressed = gzipSync(responseText)
+      response.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Content-Encoding': 'gzip',
+        'Content-Length': compressed.byteLength,
+      })
+      response.write(compressed.subarray(0, Math.floor(compressed.byteLength / 2)))
+      response.destroy()
+      return
+    }
+    response.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(responseText),
+    })
+    response.end(responseText)
+  }))
+  const taskUrl = await listen(createImageTaskServer({
+    upstreamBaseUrl: `${upstreamUrl}/v1`,
+    logger: () => {},
+    cleanupIntervalMs: 10_000,
+  }))
+
+  const task = await createTask(taskUrl, 'large-uncompressed-result', 'prompt')
+  const completed = await waitForCompletion(taskUrl, task)
+
+  assert.equal(receivedAcceptEncoding, 'identity')
+  assert.equal(completed.status, 'succeeded')
+  const result = await fetch(`${taskUrl}/image-tasks/${task.taskId}/result`, {
+    headers: { Authorization: `Bearer ${task.accessToken}` },
+  })
+  assert.equal(result.status, 200)
+  assert.deepEqual(await result.json(), { data: [{ b64_json: base64 }] })
 })
