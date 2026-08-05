@@ -5,7 +5,8 @@ set -eu
 node /opt/wenyun/image-tasks.mjs &
 task_pid=$!
 
-nginx -g 'daemon off;' &
+# 通过官方入口启动 Nginx，确保环境变量替换和反代配置在每次重建容器时都会执行。
+/docker-entrypoint.sh nginx -g 'daemon off;' &
 nginx_pid=$!
 
 shutdown_services() {
