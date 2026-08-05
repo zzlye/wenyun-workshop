@@ -16,6 +16,7 @@ const BLOCKED_REQUEST_HEADERS = new Set([
   'transfer-encoding',
   'upgrade',
   'x-wenyun-idempotency-key',
+  'x-wenyun-task-client-version',
   'x-wenyun-task-timeout-ms',
 ])
 const FORWARDED_RESPONSE_HEADERS = [
@@ -32,6 +33,7 @@ const DEFAULT_RESULT_READ_TTL_MS = 2 * 60 * 1000
 const DEFAULT_IDEMPOTENCY_TTL_MS = 30 * 60 * 1000
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000
 const DEFAULT_CLEANUP_INTERVAL_MS = 60 * 1000
+const REQUIRED_CLIENT_VERSION = '2'
 
 function normalizeUpstreamBaseUrl(value) {
   const parsed = new URL(value)
@@ -326,6 +328,13 @@ export function createImageTaskServer(options = {}) {
     }
 
     if (request.method === 'POST' && requestUrl.pathname === '/image-tasks') {
+      if (request.headers['x-wenyun-task-client-version'] !== REQUIRED_CLIENT_VERSION) {
+        request.resume()
+        // 拦住仍开着的旧页面，避免它把历史失败记录重新提交成新的付费任务。
+        sendJson(response, 409, { error: { message: '页面版本已更新，请刷新页面后重新生成' } })
+        return
+      }
+
       const endpoint = requestUrl.searchParams.get('endpoint') || ''
       if (!ALLOWED_ENDPOINTS.has(endpoint)) {
         sendJson(response, 400, { error: { message: '图片任务接口不支持该上游路径' } })

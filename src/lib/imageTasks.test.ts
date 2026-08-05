@@ -53,7 +53,9 @@ describe('image task client', () => {
     })
 
     expect(fetchMock.mock.calls[0][0]).toBe('/image-tasks?endpoint=%2Fimages%2Fgenerations')
-    expect(new Headers((fetchMock.mock.calls[0][1] as RequestInit).headers).get('x-wenyun-idempotency-key')).toBe('home-task-1')
+    const createHeaders = new Headers((fetchMock.mock.calls[0][1] as RequestInit).headers)
+    expect(createHeaders.get('x-wenyun-idempotency-key')).toBe('home-task-1')
+    expect(createHeaders.get('x-wenyun-task-client-version')).toBe('2')
     expect(created).toHaveBeenCalledWith({ taskId: 'task-1', accessToken: 'token-1', idempotencyKey: 'home-task-1' })
     expect(response.status).toBe(201)
     await expect(response.json()).resolves.toEqual({ data: [{ b64_json: 'ZmluYWw=' }] })
@@ -84,6 +86,18 @@ describe('image task client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(fetchMock.mock.calls[0][0]).toBe('/image-tasks/existing-task')
     expect(fetchMock.mock.calls[1][0]).toBe('/image-tasks/existing-task/result')
+  })
+
+  it('创建请求网络失败时不自动补发', async () => {
+    vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'enabled')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new TypeError('Failed to fetch'))
+
+    await expect(fetchImageTask('images/generations', { method: 'POST', body: '{}' }, {
+      timeoutMs: 900_000,
+      reference: { taskId: '', accessToken: '', idempotencyKey: 'single-submit-task' },
+    })).rejects.toThrow('Failed to fetch')
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('并发任务生成不同幂等键', () => {

@@ -26,8 +26,8 @@ interface CreateImageTaskPayload extends ImageTaskSnapshot {
 
 const TASK_POLL_INTERVAL_MS = 2_000
 const RECOVERABLE_POLL_RETRY_MS = 3_000
-const CREATE_RETRY_COUNT = 3
 const RESULT_RETRY_COUNT = 5
+const IMAGE_TASK_CLIENT_VERSION = '2'
 
 function createRandomKey(prefix: string): string {
   const uuid = globalThis.crypto?.randomUUID?.()
@@ -81,29 +81,18 @@ export async function createImageTask(
   if (reference?.taskId && reference.accessToken) return reference
 
   const idempotencyKey = reference?.idempotencyKey || createImageTaskIdempotencyKey()
-  let response: Response | null = null
-  let lastError: unknown
-  for (let attempt = 0; attempt < CREATE_RETRY_COUNT; attempt += 1) {
-    try {
-      response = await fetch(`/image-tasks?endpoint=${encodeURIComponent(`/${endpoint.replace(/^\/+/, '')}`)}`, {
-        ...init,
-        headers: {
-          ...Object.fromEntries(new Headers(init.headers).entries()),
-          'X-Wenyun-Idempotency-Key': idempotencyKey,
-          'X-Wenyun-Task-Timeout-Ms': String(timeoutMs),
-        },
-        cache: 'no-store',
-      })
-      break
-    } catch (error) {
-      lastError = error
-      if (!isRecoverableNetworkError(error) || attempt === CREATE_RETRY_COUNT - 1) throw error
-      // 这里只重试同一个幂等任务，不会再次调用上游或重复扣费。
-      await wait(500 * (attempt + 1))
-    }
-  }
+  // 创建请求只发送一次；响应丢失时保留失败记录，由用户确认后手动重试，避免后台重复扣费。
+  const response = await fetch(`/image-tasks?endpoint=${encodeURIComponent(`/${endpoint.replace(/^\/+/, '')}`)}`, {
+    ...init,
+    headers: {
+      ...Object.fromEntries(new Headers(init.headers).entries()),
+      'X-Wenyun-Idempotency-Key': idempotencyKey,
+      'X-Wenyun-Task-Timeout-Ms': String(timeoutMs),
+      'X-Wenyun-Task-Client-Version': IMAGE_TASK_CLIENT_VERSION,
+    },
+    cache: 'no-store',
+  })
 
-  if (!response) throw lastError instanceof Error ? lastError : new Error('创建图片任务失败')
   if (!response.ok) throw await readTaskError(response, `创建图片任务失败（HTTP ${response.status}）`)
   const payload = await response.json() as CreateImageTaskPayload
   if (!payload.taskId || !payload.accessToken) throw new Error('图片任务服务没有返回有效任务凭据')

@@ -35,13 +35,32 @@ describe("canvas generation running session", () => {
         const recoverable = node("image-1", "loading");
         recoverable.metadata = {
             ...recoverable.metadata,
+            imageTaskId: "server-task-1",
+            imageTaskAccessToken: "server-token-1",
             imageTaskIdempotencyKey: "canvas-task-key",
+            imageTaskRequestFingerprint: "request-1",
         };
 
         const result = resetInterruptedCanvasGenerations([recoverable], new Set());
 
         expect(result[0].metadata?.status).toBe("loading");
         expect(result[0].metadata?.errorDetails).toBeUndefined();
+    });
+
+    it("marks idempotency-only legacy tasks as retryable instead of resubmitting", () => {
+        const incomplete = node("image-1", "loading");
+        incomplete.metadata = {
+            ...incomplete.metadata,
+            imageTaskIdempotencyKey: "legacy-task-key",
+            imageTaskRequestFingerprint: "request-1",
+        };
+
+        const result = resetInterruptedCanvasGenerations([incomplete], new Set());
+
+        expect(result[0].metadata).toMatchObject({
+            status: "error",
+            errorDetails: expect.stringContaining("无法自动取回"),
+        });
     });
 
     it("marks stale loading nodes as retryable after session state is gone", () => {

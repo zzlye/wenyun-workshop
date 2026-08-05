@@ -28,6 +28,7 @@ async function createTask(baseUrl, key, prompt) {
       Authorization: 'Bearer test-key',
       'Content-Type': 'application/json',
       'X-Wenyun-Idempotency-Key': key,
+      'X-Wenyun-Task-Client-Version': '2',
     },
     body: JSON.stringify({ model: 'gpt-image-test', prompt }),
   })
@@ -73,6 +74,34 @@ test('同一个幂等键只提交一次上游请求', async () => {
   assert.equal(second.reused, true)
   await waitForCompletion(taskUrl, first)
   assert.equal(upstreamCalls, 1)
+})
+
+test('旧页面不能把历史失败记录重新提交', async () => {
+  let upstreamCalls = 0
+  const upstreamUrl = await listen(createServer((_request, response) => {
+    upstreamCalls += 1
+    response.writeHead(200, { 'Content-Type': 'application/json' })
+    response.end('{}')
+  }))
+  const taskUrl = await listen(createImageTaskServer({
+    upstreamBaseUrl: `${upstreamUrl}/v1`,
+    logger: () => {},
+    cleanupIntervalMs: 10_000,
+  }))
+
+  const response = await fetch(`${taskUrl}/image-tasks?endpoint=/images/generations`, {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer test-key',
+      'Content-Type': 'application/json',
+      'X-Wenyun-Idempotency-Key': 'legacy-task-key',
+    },
+    body: '{"prompt":"legacy"}',
+  })
+
+  assert.equal(response.status, 409)
+  assert.match((await response.json()).error.message, /刷新页面/)
+  assert.equal(upstreamCalls, 0)
 })
 
 test('相同幂等键并发提交时也只创建一个上游请求', async () => {
@@ -125,6 +154,7 @@ test('不同用户 Key 的相同幂等键互不复用', async () => {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
       'X-Wenyun-Idempotency-Key': 'shared-client-key',
+      'X-Wenyun-Task-Client-Version': '2',
     },
     body: '{"prompt":"same"}',
   }).then((response) => response.json())

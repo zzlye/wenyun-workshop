@@ -1579,10 +1579,11 @@ function isRunningOpenAITask(task: TaskRecord) {
 }
 
 function getStoredImageTaskReference(task: TaskRecord): ImageTaskReference | null {
-  if (!task.imageTaskIdempotencyKey) return null
+  // 自动恢复只能查询已经创建成功的服务端任务，缺少任务凭据时绝不能重新提交生成请求。
+  if (!task.imageTaskId || !task.imageTaskAccessToken || !task.imageTaskIdempotencyKey) return null
   return {
-    taskId: task.imageTaskId || '',
-    accessToken: task.imageTaskAccessToken || '',
+    taskId: task.imageTaskId,
+    accessToken: task.imageTaskAccessToken,
     idempotencyKey: task.imageTaskIdempotencyKey,
   }
 }

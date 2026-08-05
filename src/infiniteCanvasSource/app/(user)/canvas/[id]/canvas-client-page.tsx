@@ -31,7 +31,7 @@ import { primeImageCache, useStore } from "../../../../../store";
 import AccountBalanceBar from "../../../../../components/AccountBalanceBar";
 import { cropDataUrl, cropGridDataUrl } from "../utils/canvas-image-data";
 import { isCanvasEditableTarget } from "../utils/canvas-dom-events";
-import { clearCanvasGenerationSession, getCanvasGenerationSessionIds, isCanvasNodeGenerationLocked, markCanvasGenerationSession, resetInterruptedCanvasGenerations, withRunningCanvasNode, withoutRunningCanvasNodes } from "../utils/canvas-generation-running";
+import { clearCanvasGenerationSession, getCanvasGenerationSessionIds, hasRecoverableCanvasImageTask, isCanvasNodeGenerationLocked, markCanvasGenerationSession, resetInterruptedCanvasGenerations, withRunningCanvasNode, withoutRunningCanvasNodes } from "../utils/canvas-generation-running";
 import { cloneNodeMetadataForDuplicate } from "../utils/canvas-node-copy";
 import { fitNodeSize, nodeSizeFromRatio } from "../utils/canvas-node-size";
 import { getCanvasViewportBounds, getConnectionPathGeometry, getVisibleCanvasConnections, getVisibleCanvasNodes } from "../utils/canvas-viewport";
@@ -475,11 +475,12 @@ function InfiniteCanvasPage() {
     }, [projectId]);
 
     const getCanvasImageTaskReference = useCallback((nodeId: string, requestFingerprint: string) => {
-        const metadata = nodesRef.current.find((node) => node.id === nodeId)?.metadata;
-        if (metadata?.imageTaskRequestFingerprint !== requestFingerprint || !metadata.imageTaskIdempotencyKey) return undefined;
+        const node = nodesRef.current.find((item) => item.id === nodeId);
+        const metadata = node?.metadata;
+        if (metadata?.imageTaskRequestFingerprint !== requestFingerprint || !hasRecoverableCanvasImageTask(node)) return undefined;
         return {
-            taskId: metadata.imageTaskId || "",
-            accessToken: metadata.imageTaskAccessToken || "",
+            taskId: metadata.imageTaskId,
+            accessToken: metadata.imageTaskAccessToken,
             idempotencyKey: metadata.imageTaskIdempotencyKey,
             apiProfileId: metadata.imageTaskApiProfileId,
         };
@@ -688,9 +689,9 @@ function InfiniteCanvasPage() {
 
     useEffect(() => {
         if (!projectLoaded) return;
-        // 只恢复带独立任务键的图片节点，旧版普通 loading 节点仍保持可重试错误态。
+        // 只续查已取得完整服务端凭据的任务，旧失败节点绝不重新提交生成请求。
         nodesRef.current
-            .filter((node) => node.type === CanvasNodeType.Image && node.metadata?.status === NODE_STATUS_LOADING && node.metadata?.imageTaskIdempotencyKey)
+            .filter((node) => node.type === CanvasNodeType.Image && node.metadata?.status === NODE_STATUS_LOADING && hasRecoverableCanvasImageTask(node))
             .forEach((node) => void recoverCanvasImageTaskNode(node));
     }, [projectLoaded, recoverCanvasImageTaskNode]);
 

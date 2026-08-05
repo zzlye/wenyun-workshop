@@ -43,10 +43,21 @@ export function getCanvasGenerationSessionIds(projectId: string) {
     return new Set(activeGenerationIdsByProject.get(projectId) || []);
 }
 
+export function hasRecoverableCanvasImageTask(node: Pick<CanvasNodeData, "metadata"> | null | undefined) {
+    const metadata = node?.metadata;
+    // 自动恢复必须具备完整服务端任务凭据，只保存了幂等键的旧失败节点不能重新提交。
+    return Boolean(
+        metadata?.imageTaskId &&
+        metadata.imageTaskAccessToken &&
+        metadata.imageTaskIdempotencyKey &&
+        metadata.imageTaskRequestFingerprint,
+    );
+}
+
 export function resetInterruptedCanvasGenerations(nodes: CanvasNodeData[], activeNodeIds: ReadonlySet<string>) {
     return nodes.map((node) => {
         if (node.metadata?.status !== LOADING_STATUS || activeNodeIds.has(node.id)) return node;
-        if (node.metadata?.imageTaskIdempotencyKey) return node;
+        if (hasRecoverableCanvasImageTask(node)) return node;
         // 真正刷新会清空会话级运行集合，这时 loading 节点才需要改成可重试的错误态。
         return { ...node, metadata: { ...node.metadata, status: "error" as const, errorDetails: INTERRUPTED_ERROR } };
     });
