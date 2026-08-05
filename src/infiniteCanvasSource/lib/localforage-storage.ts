@@ -18,8 +18,10 @@ function writeLocalStorageBackup(name: string, value: string) {
     try {
         // 画布和素材的结构数据同步写一份到 localStorage，避免 IndexedDB 被浏览器清理后列表直接变空。
         window.localStorage.setItem(name, value);
+        return true;
     } catch {
         // localStorage 空间不足时保留 IndexedDB 主存储，不影响用户继续使用。
+        return false;
     }
 }
 
@@ -42,11 +44,11 @@ export const localForageStorage: StateStorage = {
     },
     setItem: async (name, value) => {
         if (typeof window === "undefined") return;
-        writeLocalStorageBackup(name, value);
+        const backupWritten = writeLocalStorageBackup(name, value);
         try {
             await localforage.setItem(name, value);
-        } catch {
-            writeLocalStorageBackup(name, value);
+        } catch (error) {
+            if (!backupWritten) throw error;
         }
     },
     removeItem: async (name) => {

@@ -348,6 +348,8 @@ function InfiniteCanvasPage() {
     const addAsset = useAssetStore((state) => state.addAsset);
     const cleanupAssetImages = useAssetStore((state) => state.cleanupImages);
     const hydrated = useCanvasStore((state) => state.hydrated);
+    const persistenceError = useCanvasStore((state) => state.persistenceError);
+    const clearPersistenceError = useCanvasStore((state) => state.clearPersistenceError);
     const createProject = useCanvasStore((state) => state.createProject);
     const openProject = useCanvasStore((state) => state.openProject);
     const updateProject = useCanvasStore((state) => state.updateProject);
@@ -630,6 +632,12 @@ function InfiniteCanvasPage() {
             pageMountedRef.current = false;
         };
     }, []);
+
+    useEffect(() => {
+        if (!persistenceError) return;
+        message.error({ content: persistenceError, duration: 8 });
+        clearPersistenceError();
+    }, [clearPersistenceError, message, persistenceError]);
 
     useEffect(() => {
         if (!hydrated) return;
@@ -4049,16 +4057,21 @@ function referenceUrl(image: ReferenceImage) {
 
 async function hydrateManualReferenceImages(references?: CanvasNodeMetadata["referenceImages"]): Promise<ReferenceImage[]> {
     return Promise.all(
-        (references || []).map(async (image) => ({
-            id: image.id,
-            name: image.name,
-            type: image.mimeType || image.type || "image/png",
-            dataUrl: await imageToDataUrl(image),
-            url: image.url,
-            storageKey: image.storageKey,
-            maskDataUrl: image.maskDataUrl,
-            isMaskTarget: image.isMaskTarget,
-        })),
+        (references || []).map(async (image) => {
+            const dataUrl = image.storageKey ? await resolveImageUrl(image.storageKey, image.dataUrl || image.url) : image.dataUrl;
+            const maskDataUrl = image.maskStorageKey ? await resolveImageUrl(image.maskStorageKey, image.maskDataUrl) : image.maskDataUrl;
+            return {
+                id: image.id,
+                name: image.name,
+                type: image.mimeType || image.type || "image/png",
+                dataUrl,
+                url: image.url,
+                storageKey: image.storageKey,
+                maskDataUrl,
+                maskStorageKey: image.maskStorageKey,
+                isMaskTarget: image.isMaskTarget,
+            };
+        }),
     );
 }
 
@@ -4090,11 +4103,31 @@ async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
     return Promise.all(
         nodes.map(async (node) => {
             const content = node.metadata?.content;
-            if ((node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) && node.metadata?.storageKey) return { ...node, metadata: { ...node.metadata, content: await resolveMediaUrl(node.metadata.storageKey, content) } };
-            if (node.type !== CanvasNodeType.Image || !content) return node;
-            if (node.metadata?.storageKey) return { ...node, metadata: { ...node.metadata, content: await resolveImageUrl(node.metadata.storageKey, content) } };
-            if (!content.startsWith("data:image/")) return node;
-            return { ...node, metadata: { ...node.metadata, ...imageMetadata(await uploadImage(content)) } };
+            if (!node.metadata) return node;
+            if ((node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) && node.metadata.storageKey) {
+                return { ...node, metadata: { ...node.metadata, content: await resolveMediaUrl(node.metadata.storageKey, content) } };
+            }
+
+            let metadata = node.metadata;
+            if (node.type === CanvasNodeType.Image && node.metadata.storageKey) {
+                metadata = { ...metadata, content: await resolveImageUrl(node.metadata.storageKey, content) };
+            } else if (node.type === CanvasNodeType.Image && content?.startsWith("data:image/")) {
+                metadata = { ...metadata, ...imageMetadata(await uploadImage(content)) };
+            }
+
+            if (metadata.referenceImages?.length) {
+                metadata = {
+                    ...metadata,
+                    referenceImages: await Promise.all(
+                        metadata.referenceImages.map(async (image) => ({
+                            ...image,
+                            dataUrl: image.storageKey ? await resolveImageUrl(image.storageKey, image.dataUrl || image.url) : image.dataUrl,
+                            maskDataUrl: image.maskStorageKey ? await resolveImageUrl(image.maskStorageKey, image.maskDataUrl) : image.maskDataUrl,
+                        })),
+                    ),
+                };
+            }
+            return metadata === node.metadata ? node : { ...node, metadata };
         }),
     );
 }

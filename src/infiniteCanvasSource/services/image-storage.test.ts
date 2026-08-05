@@ -23,7 +23,7 @@ vi.mock("@/lib/image-utils", async (importOriginal) => {
     };
 });
 
-import { uploadImage } from "./image-storage";
+import { collectImageStorageKeys, imageToDataUrl, uploadImage } from "./image-storage";
 
 describe("canvas image storage", () => {
     beforeEach(() => {
@@ -67,5 +67,36 @@ describe("canvas image storage", () => {
         expect(fetchMock).toHaveBeenCalledWith("https://images.example.com/result.webp");
         expect(uploaded.bytes).toBe(3);
         expect(uploaded.mimeType).toBe("image/webp");
+    });
+
+    it("图片清理会保留参考图遮罩的独立存储键", () => {
+        const keys = collectImageStorageKeys({
+            storageKey: "image:source",
+            maskStorageKey: "image:mask",
+        });
+
+        expect([...keys]).toEqual(["image:source", "image:mask"]);
+    });
+
+    it("请求前可以通过遮罩存储键恢复 Data URL", async () => {
+        storageMocks.getItem.mockResolvedValue(new Blob([new Uint8Array([109, 97, 115, 107])], { type: "image/png" }));
+        vi.stubGlobal(
+            "FileReader",
+            class {
+                result: string | null = null;
+                onload: (() => void) | null = null;
+                onerror: (() => void) | null = null;
+
+                readAsDataURL() {
+                    this.result = "data:image/png;base64,bWFzaw==";
+                    this.onload?.();
+                }
+            },
+        );
+
+        const dataUrl = await imageToDataUrl({ dataUrl: "blob:mask-preview", storageKey: "image:mask" });
+
+        expect(storageMocks.getItem).toHaveBeenCalledWith("image:mask");
+        expect(dataUrl).toBe("data:image/png;base64,bWFzaw==");
     });
 });

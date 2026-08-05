@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { App, Button } from "antd";
 import { Download, FileUp, Plus } from "lucide-react";
@@ -20,11 +20,19 @@ export default function CanvasPage() {
     const router = useRouter();
     const inputRef = useRef<HTMLInputElement>(null);
     const hydrated = useCanvasStore((state) => state.hydrated);
+    const persistenceError = useCanvasStore((state) => state.persistenceError);
+    const clearPersistenceError = useCanvasStore((state) => state.clearPersistenceError);
     const projects = useCanvasStore((state) => state.projects);
     const createProject = useCanvasStore((state) => state.createProject);
     const importProject = useCanvasStore((state) => state.importProject);
     const selectedIds = useCanvasUiStore((state) => state.selectedProjectIds);
     const setDeleteIds = useCanvasUiStore((state) => state.setDeleteProjectIds);
+
+    useEffect(() => {
+        if (!persistenceError) return;
+        message.error({ content: persistenceError, duration: 8 });
+        clearPersistenceError();
+    }, [clearPersistenceError, message, persistenceError]);
 
     const enterProject = (id: string) => {
         router.push(`/canvas/${id}`);

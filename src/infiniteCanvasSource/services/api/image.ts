@@ -303,7 +303,10 @@ export async function requestEdit(
                 }),
             )
         ).filter((dataUrl): dataUrl is string => Boolean(dataUrl));
-        const maskDataUrl = references.find((image) => image.isMaskTarget && image.maskDataUrl)?.maskDataUrl;
+        const maskImage = references.find((image) => image.isMaskTarget && (image.maskDataUrl || image.maskStorageKey));
+        const maskDataUrl = maskImage
+            ? await imageToDataUrl({ dataUrl: maskImage.maskDataUrl, storageKey: maskImage.maskStorageKey })
+            : undefined;
         const result = await callImageApi({
             settings,
             prompt: withSystemPrompt(config, prompt),

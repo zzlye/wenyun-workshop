@@ -6,6 +6,7 @@ export type ReferenceImage = {
     url?: string;
     storageKey?: string;
     maskDataUrl?: string;
+    maskStorageKey?: string;
     isMaskTarget?: boolean;
 };
 

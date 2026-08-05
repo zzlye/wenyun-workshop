@@ -4,15 +4,17 @@ import { createZip } from "@/lib/zip";
 import { getMediaBlob } from "@/services/file-storage";
 import { getImageBlob } from "@/services/image-storage";
 import type { CanvasExportAsset, CanvasExportFile } from "../export-types";
+import { prepareCanvasProjectForPersistence } from "../stores/canvas-project-persistence";
 import type { CanvasProject } from "../stores/use-canvas-store";
 
 export async function exportCanvasProjects(projects: CanvasProject[], fileName = "画布工坊") {
     const zipFiles: { name: string; data: BlobPart }[] = [];
     const exportedProjects = await Promise.all(
         projects.map(async (project) => {
+            const preparedProject = await prepareCanvasProjectForPersistence(project);
             const files: CanvasExportAsset[] = [];
             await Promise.all(
-                collectStorageKeys(project).map(async (storageKey) => {
+                collectStorageKeys(preparedProject).map(async (storageKey) => {
                     const blob = storageKey.startsWith("image:") ? await getImageBlob(storageKey) : await getMediaBlob(storageKey);
                     if (!blob) return;
                     const path = `projects/${project.id}/files/${safeFileName(storageKey)}.${fileExtension(blob.type, storageKey)}`;
@@ -20,7 +22,7 @@ export async function exportCanvasProjects(projects: CanvasProject[], fileName =
                     zipFiles.push({ name: path, data: blob });
                 }),
             );
-            return { project, files };
+            return { project: preparedProject, files };
         }),
     );
 
@@ -32,6 +34,7 @@ export async function exportCanvasProjects(projects: CanvasProject[], fileName =
 function collectStorageKeys(value: unknown, keys = new Set<string>()) {
     if (!value || typeof value !== "object") return [...keys];
     if ("storageKey" in value && typeof value.storageKey === "string" && value.storageKey.includes(":")) keys.add(value.storageKey);
+    if ("maskStorageKey" in value && typeof value.maskStorageKey === "string" && value.maskStorageKey.startsWith("image:")) keys.add(value.maskStorageKey);
     Object.values(value).forEach((item) => (Array.isArray(item) ? item.forEach((child) => collectStorageKeys(child, keys)) : collectStorageKeys(item, keys)));
     return [...keys];
 }

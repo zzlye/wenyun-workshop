@@ -29,6 +29,7 @@ export type CanvasReferenceImage = {
     url?: string;
     storageKey?: string;
     maskDataUrl?: string;
+    maskStorageKey?: string;
     isMaskTarget?: boolean;
     width?: number;
     height?: number;

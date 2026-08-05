@@ -629,26 +629,30 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
         const targetIndex = currentIndex >= 0 ? currentIndex : pending.index;
         const previous = previousReferences[targetIndex];
         if (!previous || !sharedImage) return;
-
-        const nextReference: CanvasReferenceImage = {
-            ...previous,
-            id: sharedImage.id,
-            dataUrl: sharedImage.dataUrl,
-            type: previous.type || "image/png",
-            mimeType: previous.mimeType || "image/png",
-            maskDataUrl: maskDraft.maskDataUrl,
-            isMaskTarget: true,
-        };
-        const nextReferences = [nextReference, ...previousReferences.filter((_, index) => index !== targetIndex).map((image) => ({ ...image, isMaskTarget: false, maskDataUrl: undefined }))];
-        const nextPrompt = remapImageMentionsForOrder(
-            promptRef.current,
-            mentionableInputImages,
-            mergeNodeReferenceImages(nextReferences, connectedReferenceImages).map(referenceToInputImage),
-            { [previous.id]: nextReference.id },
-        );
         pendingMaskEditRef.current = null;
-        commitReferenceImages(nextReferences, nextPrompt);
-    }, [commitReferenceImages, connectedReferenceImages, maskDraft, maskEditorImageId, mentionableInputImages, sharedInputImages]);
+        void uploadImage(maskDraft.maskDataUrl)
+            .then((storedMask) => {
+                const nextReference: CanvasReferenceImage = {
+                    ...previous,
+                    id: sharedImage.id,
+                    dataUrl: sharedImage.dataUrl,
+                    type: previous.type || "image/png",
+                    mimeType: previous.mimeType || "image/png",
+                    maskDataUrl: storedMask.url,
+                    maskStorageKey: storedMask.storageKey,
+                    isMaskTarget: true,
+                };
+                const nextReferences = [nextReference, ...previousReferences.filter((_, index) => index !== targetIndex).map((image) => ({ ...image, isMaskTarget: false, maskDataUrl: undefined, maskStorageKey: undefined }))];
+                const nextPrompt = remapImageMentionsForOrder(
+                    promptRef.current,
+                    mentionableInputImages,
+                    mergeNodeReferenceImages(nextReferences, connectedReferenceImages).map(referenceToInputImage),
+                    { [previous.id]: nextReference.id },
+                );
+                commitReferenceImages(nextReferences, nextPrompt);
+            })
+            .catch((error) => showToast(error instanceof Error ? error.message : "保存遮罩失败", "error"));
+    }, [commitReferenceImages, connectedReferenceImages, maskDraft, maskEditorImageId, mentionableInputImages, sharedInputImages, showToast]);
 
     const submit = useCallback(() => {
         const text = prompt.trim();
