@@ -171,6 +171,11 @@ export function readAccessToken(payload: unknown): string {
   return ''
 }
 
+function isJwtLikeToken(value: string): boolean {
+  const parts = value.trim().split('.')
+  return parts.length === 3 && parts.every(Boolean)
+}
+
 function hasConfirmedInviter(session: Pick<NewApiAccountSession, 'inviter' | 'inviterId'>): boolean {
   if (typeof session.inviterId === 'number') return session.inviterId > 0
   if (typeof session.inviterId === 'string') {
@@ -297,9 +302,13 @@ function makeBoundTokenName() {
 export async function fetchNewApiUserAccessToken(
   profile: Pick<ApiProfile, 'baseUrl'>,
   userId: number | string | undefined,
+  loginAccessToken?: string,
 ): Promise<string> {
   if (userId === undefined || userId === '') throw new Error('登录成功，但没有返回用户 ID')
-  const result = await newApiRequest<unknown>(profile, '/api/user/token', { userId })
+  const result = await newApiRequest<unknown>(profile, '/api/user/token', {
+    accessToken: loginAccessToken,
+    userId,
+  })
   const accessToken = readAccessToken(result)
   if (!accessToken) throw new Error('登录成功，但没有获取到账号管理 Token')
   return accessToken
@@ -314,7 +323,9 @@ async function loginNewApiAccountSession(profile: ApiProfile, payload: NewApiLog
     },
   })
   const userId = readUserId(result)
-  const accessToken = readAccessToken(result) || await fetchNewApiUserAccessToken(profile, userId)
+  const loginAccessToken = readAccessToken(result)
+  // 新版 NewAPI 登录令牌仅短期有效，登录后立即换成长期账号管理 Token。
+  const accessToken = await fetchNewApiUserAccessToken(profile, userId, loginAccessToken || undefined)
 
   const session: NewApiAccountSession = {
     siteProfileId: profile.id,
@@ -366,13 +377,27 @@ export async function fetchNewApiAccountBalance(profile: ApiProfile, session: Ne
     userId: session.userId,
   })
   let accessToken = session.accessToken
+  let tokenExchangeAttempted = false
+  const exchangeAccessToken = async () => {
+    tokenExchangeAttempted = true
+    accessToken = await fetchNewApiUserAccessToken(profile, session.userId, accessToken)
+  }
+  if (isJwtLikeToken(accessToken)) {
+    try {
+      // 旧页面可能已经保存短期 JWT，仍有效时直接迁移，避免稍后突然掉登录。
+      await exchangeAccessToken()
+    } catch {
+      // 迁移失败后仍尝试原令牌，兼容使用 JWT 格式长期令牌的其他站点。
+    }
+  }
   let payload: unknown
   try {
     payload = await fetchSelf(accessToken)
   } catch (err) {
     try {
       // 迁移域名或重复登录后，本地保存的账号管理 Token 可能过期；优先用当前登录态静默刷新一次。
-      accessToken = await fetchNewApiUserAccessToken(profile, session.userId)
+      if (tokenExchangeAttempted) throw err
+      await exchangeAccessToken()
       payload = await fetchSelf(accessToken)
     } catch {
       throw err

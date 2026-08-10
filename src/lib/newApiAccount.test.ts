@@ -124,6 +124,78 @@ describe('readAccessToken', () => {
     )
   })
 
+  it('exchanges the short-lived login token for a persistent account token', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const headers = init?.headers as Record<string, string> | undefined
+      if (url.includes('/api/user/login')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            access_token: 'short-lived-login-token',
+            user: {
+              id: 22,
+              username: 'new-auth-user',
+            },
+          },
+        }), { status: 200 })
+      }
+      if (url.includes('/api/user/token')) {
+        if (headers?.Authorization !== 'Bearer short-lived-login-token') {
+          return new Response(JSON.stringify({ success: false, message: 'access token 无效' }), { status: 401 })
+        }
+        return new Response(JSON.stringify({
+          success: true,
+          data: 'persistent-account-token',
+        }), { status: 200 })
+      }
+      if (url.includes('/api/token/?')) {
+        if (headers?.Authorization !== 'Bearer persistent-account-token') {
+          return new Response(JSON.stringify({ success: false, message: 'access token 无效' }), { status: 401 })
+        }
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            items: [{
+              id: 18,
+              name: 'wy-bound-existing',
+              key: 'persistent-bound-api-key',
+            }],
+          },
+        }), { status: 200 })
+      }
+      if (url.includes('/api/user/self')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            quota: 4_500_000,
+            used_quota: 500_000,
+          },
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ success: false, message: 'unexpected request' }), { status: 500 })
+    })
+
+    await expect(loginNewApiAccount(DEFAULT_SETTINGS.profiles[0], {
+      username: 'new-auth-user',
+      password: 'secret',
+    })).resolves.toMatchObject({
+      accessToken: 'persistent-account-token',
+      boundApiKey: 'persistent-bound-api-key',
+      balanceText: '可用 HUHN 9 / 已用 HUHN 1',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/user/token'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer short-lived-login-token',
+          'New-Api-User': '22',
+        }),
+      }),
+    )
+  })
+
   it('uses a short bound key name for long account names', async () => {
     let requestedName = ''
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -195,6 +267,46 @@ describe('readAccessToken', () => {
         }),
       }),
     )
+  })
+
+  it('migrates a stored login JWT to a persistent token before querying balance', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const headers = init?.headers as Record<string, string> | undefined
+      if (url.includes('/api/user/token')) {
+        if (headers?.Authorization !== 'Bearer header.payload.signature') {
+          return new Response(JSON.stringify({ success: false, message: 'access token 无效' }), { status: 401 })
+        }
+        return new Response(JSON.stringify({ success: true, data: 'persistent-migrated-token' }), { status: 200 })
+      }
+      if (url.includes('/api/user/self')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            quota: 2_500_000,
+            used_quota: 500_000,
+          },
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ success: false, message: 'unexpected request' }), { status: 500 })
+    })
+
+    await expect(fetchNewApiAccountBalance(DEFAULT_SETTINGS.profiles[0], {
+      siteProfileId: DEFAULT_SETTINGS.profiles[0].id,
+      username: 'jwt-user',
+      accessToken: 'header.payload.signature',
+      userId: 36,
+    })).resolves.toMatchObject({
+      accessToken: 'persistent-migrated-token',
+      balanceText: '可用 HUHN 5 / 已用 HUHN 1',
+    })
+
+    const selfRequest = fetchMock.mock.calls.find(([input]) => String(input).includes('/api/user/self'))
+    expect(selfRequest?.[1]).toEqual(expect.objectContaining({
+      headers: expect.objectContaining({
+        Authorization: 'Bearer persistent-migrated-token',
+      }),
+    }))
   })
 
   it('turns NewAPI validation messages into clear register errors', () => {
