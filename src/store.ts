@@ -81,6 +81,7 @@ const customRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const openAIWatchdogTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const imageTaskRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const activeImageTaskExecutions = new Set<string>()
+const taskPersistenceQueues = new Map<string, Promise<void>>()
 const agentRoundControllers = new Map<string, AbortController>()
 let agentConversationPersistenceReady = false
 let agentConversationMigrationPending = false
@@ -89,6 +90,7 @@ const AGENT_STOPPED_MESSAGE = '已停止生成。'
 const AGENT_CONVERSATION_TITLE_MAX_LENGTH = 28
 const ERROR_TOAST_MAX_LENGTH = 80
 const SUPPORT_PROMPT_VERSION = 'qq-free-quota-20260605'
+const INITIAL_TASK_PERSIST_WAIT_MS = 250
 type ToastType = 'info' | 'success' | 'error'
 type AgentInputDraft = {
   prompt: string
@@ -1546,10 +1548,30 @@ function buildStoredImageRecord(id: string, dataUrl: string, source: NonNullable
   }
 }
 
-function persistTaskInBackground(task: TaskRecord, reason: string) {
-  void putTask(task).catch((error) => {
-    console.warn(`[task-persist] ${reason} 失败`, task.id, error)
+function persistTaskInBackground(task: TaskRecord, reason: string): Promise<void> {
+  const previous = taskPersistenceQueues.get(task.id) ?? Promise.resolve()
+  // 同一任务的状态必须按产生顺序落盘，防止旧 running 快照晚到后覆盖 done。
+  const operation = previous.then(async () => {
+    try {
+      await putTask(task)
+    } catch (error) {
+      console.warn(`[task-persist] ${reason} 失败`, task.id, error)
+    }
   })
+  taskPersistenceQueues.set(task.id, operation)
+  void operation.then(() => {
+    if (taskPersistenceQueues.get(task.id) === operation) taskPersistenceQueues.delete(task.id)
+  })
+  return operation
+}
+
+async function waitForInitialTaskPersistence(operations: Promise<void>[]) {
+  if (!operations.length) return
+  // 浏览器存储异常时仍要发出接口请求，后续状态继续排在同一写入队列中。
+  await Promise.race([
+    Promise.all(operations),
+    new Promise<void>((resolve) => setTimeout(resolve, INITIAL_TASK_PERSIST_WAIT_MS)),
+  ])
 }
 
 function persistImageInBackground(id: string, dataUrl: string, source: NonNullable<StoredImage['source']>, reason: string) {
@@ -1586,6 +1608,11 @@ function getStoredImageTaskReference(task: TaskRecord): ImageTaskReference | nul
     accessToken: task.imageTaskAccessToken,
     idempotencyKey: task.imageTaskIdempotencyKey,
   }
+}
+
+export function shouldRecoverImageTask(task: TaskRecord): boolean {
+  // 失败和完成任务都是终态，刷新页面时只续查仍在运行且凭据完整的任务。
+  return task.status === 'running' && getStoredImageTaskReference(task) !== null
 }
 
 function isAsyncCustomProviderTask(settings: AppSettings, provider: string, hasInputImages: boolean) {
@@ -1856,7 +1883,7 @@ async function resolveImageSizeParamsList(
 
 async function completeRecoveredImageTask(task: TaskRecord, result: Awaited<ReturnType<typeof callImageApi>>) {
   const latest = useStore.getState().tasks.find((item) => item.id === task.id)
-  if (!latest || latest.status === 'done') return
+  if (!latest || latest.status !== 'running') return
 
   const outputIds = result.images.map((dataUrl) => createCachedImageId(dataUrl, 'generated', '恢复文运异步任务时保存输出图'))
   const actualParamsByImage = mapActualParamsByImage(outputIds, result.actualParamsList)
@@ -1866,7 +1893,7 @@ async function completeRecoveredImageTask(task: TaskRecord, result: Awaited<Retu
     return acc
   }, {})
 
-  updateTaskInStore(task.id, {
+  await updateTaskInStore(task.id, {
     outputImages: outputIds,
     rawImageUrls: result.rawImageUrls?.length ? result.rawImageUrls : undefined,
     actualParams: result.actualParams ? { ...result.actualParams, n: outputIds.length } : { n: outputIds.length },
@@ -1888,7 +1915,7 @@ async function recoverImageTask(taskId: string) {
   const { settings, tasks } = useStore.getState()
   const task = tasks.find((item) => item.id === taskId)
   const reference = task ? getStoredImageTaskReference(task) : null
-  if (!task || !reference || task.status === 'done') return
+  if (!task || !reference || !shouldRecoverImageTask(task)) return
 
   const taskProfile = getTaskApiProfile(settings, task)
   if (!taskProfile) {
@@ -1935,7 +1962,7 @@ async function recoverImageTask(taskId: string) {
       return
     }
     clearImageTaskRecoveryTimer(taskId)
-    updateTaskInStore(taskId, {
+    await updateTaskInStore(taskId, {
       status: 'error',
       error: error instanceof Error ? error.message : String(error),
       finishedAt: Date.now(),
@@ -2051,7 +2078,7 @@ export async function initStore() {
   useStore.getState().setTasks(tasks)
   showSupportPromptForExistingLocalData(tasks)
   for (const task of tasks) {
-    if (getStoredImageTaskReference(task) && task.status !== 'done') {
+    if (shouldRecoverImageTask(task)) {
       scheduleImageTaskRecovery(task.id, 0)
       continue
     }
@@ -2326,12 +2353,8 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
 
   const latestTasks = useStore.getState().tasks
   useStore.getState().setTasks([...submittedTasks, ...latestTasks])
-  try {
-    // 任务记录很小，先确认写入再发请求；图片数据仍在后台保存，不拖慢大图上传。
-    await Promise.all(submittedTasks.map((task) => putTask(task)))
-  } catch (error) {
-    console.warn('[task-persist] 提交前保存任务失败，仍使用同一内存幂等键继续请求', error)
-  }
+  // 先尝试保存任务；存储卡住时短暂等待后继续请求，后续快照仍保持有序。
+  await waitForInitialTaskPersistence(submittedTasks.map((task) => persistTaskInBackground(task, '提交前保存任务')))
   useStore.getState().showToast(taskCount > 1 ? `已提交 ${taskCount} 个独立任务` : '任务已提交', 'success')
 
   if (settings.clearInputAfterSubmit) {
@@ -4078,7 +4101,7 @@ async function executeTask(taskId: string) {
     clearOpenAIWatchdogTimer(taskId)
     clearImageTaskRecoveryTimer(taskId)
     useStore.getState().setTaskStreamPreview(taskId)
-    updateTaskInStore(taskId, {
+    await updateTaskInStore(taskId, {
       outputImages: outputIds,
       streamPartialImageIds: undefined,
       rawImageUrls: result.rawImageUrls?.length ? result.rawImageUrls : undefined,
@@ -4178,7 +4201,7 @@ async function executeTask(taskId: string) {
   }
 }
 
-export function updateTaskInStore(taskId: string, patch: Partial<TaskRecord>) {
+export function updateTaskInStore(taskId: string, patch: Partial<TaskRecord>): Promise<void> {
   const { tasks, setTasks } = useStore.getState()
   const updated = tasks.map((t) =>
     t.id === taskId ? { ...t, ...patch } : t,
@@ -4186,7 +4209,7 @@ export function updateTaskInStore(taskId: string, patch: Partial<TaskRecord>) {
   setTasks(updated)
   maybeOpenSupportPrompt(tasks, updated, taskId)
   const task = updated.find((t) => t.id === taskId)
-  if (task) persistTaskInBackground(task, '更新任务时保存任务')
+  return task ? persistTaskInBackground(task, '更新任务时保存任务') : Promise.resolve()
 }
 
 /** 重试失败的任务：创建新任务并执行 */

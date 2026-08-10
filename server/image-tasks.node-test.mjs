@@ -220,7 +220,7 @@ test('成功结果可重复读取且不会再次请求上游', async () => {
   assert.equal(upstreamCalls, 1)
 })
 
-test('结果完整读取后缩短内存保留时间', async () => {
+test('结果完整读取后仍按原任务期限保留', async () => {
   const upstreamUrl = await listen(createServer(async (request, response) => {
     for await (const _chunk of request) {
       // 消费请求正文。
@@ -231,8 +231,7 @@ test('结果完整读取后缩短内存保留时间', async () => {
   const taskUrl = await listen(createImageTaskServer({
     upstreamBaseUrl: `${upstreamUrl}/v1`,
     logger: () => {},
-    taskTtlMs: 10_000,
-    resultReadTtlMs: 25,
+    taskTtlMs: 500,
     cleanupIntervalMs: 10,
   }))
   const task = await createTask(taskUrl, 'release-result', 'prompt')
@@ -245,6 +244,12 @@ test('结果完整读取后缩短内存保留时间', async () => {
   await result.arrayBuffer()
   await new Promise((resolve) => setTimeout(resolve, 80))
 
+  const retained = await fetch(`${taskUrl}/image-tasks/${task.taskId}`, {
+    headers: { Authorization: `Bearer ${task.accessToken}` },
+  })
+  assert.equal(retained.status, 200)
+
+  await new Promise((resolve) => setTimeout(resolve, 500))
   const expired = await fetch(`${taskUrl}/image-tasks/${task.taskId}`, {
     headers: { Authorization: `Bearer ${task.accessToken}` },
   })

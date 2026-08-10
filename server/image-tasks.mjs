@@ -29,7 +29,6 @@ const FORWARDED_RESPONSE_HEADERS = [
 const DEFAULT_MAX_REQUEST_BODY_BYTES = 600 * 1024 * 1024
 const DEFAULT_MAX_RESPONSE_BODY_BYTES = 600 * 1024 * 1024
 const DEFAULT_TASK_TTL_MS = 30 * 60 * 1000
-const DEFAULT_RESULT_READ_TTL_MS = 2 * 60 * 1000
 const DEFAULT_IDEMPOTENCY_TTL_MS = 30 * 60 * 1000
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000
 const DEFAULT_CLEANUP_INTERVAL_MS = 60 * 1000
@@ -217,7 +216,6 @@ export function createImageTaskServer(options = {}) {
   const maxRequestBodyBytes = options.maxRequestBodyBytes ?? Number(process.env.IMAGE_TASK_MAX_REQUEST_BYTES || DEFAULT_MAX_REQUEST_BODY_BYTES)
   const maxResponseBodyBytes = options.maxResponseBodyBytes ?? Number(process.env.IMAGE_TASK_MAX_RESPONSE_BYTES || DEFAULT_MAX_RESPONSE_BODY_BYTES)
   const taskTtlMs = options.taskTtlMs ?? Number(process.env.IMAGE_TASK_TTL_MS || DEFAULT_TASK_TTL_MS)
-  const resultReadTtlMs = options.resultReadTtlMs ?? Number(process.env.IMAGE_TASK_RESULT_READ_TTL_MS || DEFAULT_RESULT_READ_TTL_MS)
   const idempotencyTtlMs = options.idempotencyTtlMs ?? Number(process.env.IMAGE_TASK_IDEMPOTENCY_TTL_MS || DEFAULT_IDEMPOTENCY_TTL_MS)
   const timeoutMs = options.timeoutMs ?? Number(process.env.IMAGE_TASK_TIMEOUT_MS || DEFAULT_TIMEOUT_MS)
   const cleanupIntervalMs = options.cleanupIntervalMs ?? Number(process.env.IMAGE_TASK_CLEANUP_INTERVAL_MS || DEFAULT_CLEANUP_INTERVAL_MS)
@@ -444,9 +442,8 @@ export function createImageTaskServer(options = {}) {
       }
       response.writeHead(200, headers)
       response.end(task.responseBody, () => {
-        // 浏览器完整收到结果后只短暂保留复取窗口，降低多张 4K 并发完成时的内存占用。
+        // 记录完整读取时间，但继续遵循任务原有保留期，给刷新恢复留足窗口。
         task.resultReadAt = Date.now()
-        task.expiresAt = Math.min(task.expiresAt, task.resultReadAt + resultReadTtlMs)
       })
       return
     }

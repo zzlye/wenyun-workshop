@@ -101,7 +101,7 @@ vi.mock('./lib/agentApi', () => ({
 import { clearAgentConversations, clearImages, getAllAgentConversations, getAllTasks, putAgentConversation, putImage, putTask as putDbTask } from './lib/db'
 import { callAgentResponsesApi, callBatchImageSingle } from './lib/agentApi'
 import { callImageApi, type CallApiResult } from './lib/api'
-import { cleanStaleAgentInputDrafts, deleteAgentRoundFromConversation, editOutputs, getActiveAgentRounds, getErrorToastMessage, getPersistedState, getTaskApiProfile, importData, initStore, markInterruptedOpenAIRunningTasks, migratePersistedState, regenerateAgentAssistantMessage, remapAgentRoundMentionsForPathChange, removeTask, reuseConfig, submitAgentMessage, submitTask, useStore } from './store'
+import { cleanStaleAgentInputDrafts, deleteAgentRoundFromConversation, editOutputs, getActiveAgentRounds, getErrorToastMessage, getPersistedState, getTaskApiProfile, importData, initStore, markInterruptedOpenAIRunningTasks, migratePersistedState, regenerateAgentAssistantMessage, remapAgentRoundMentionsForPathChange, removeTask, reuseConfig, shouldRecoverImageTask, submitAgentMessage, submitTask, updateTaskInStore, useStore } from './store'
 import { useCanvasStore } from './infiniteCanvasSource/app/(user)/canvas/stores/use-canvas-store'
 
 const imageA = { id: 'image-a', dataUrl: 'data:image/png;base64,a' }
@@ -359,6 +359,46 @@ describe('interrupted OpenAI running tasks', () => {
     expect(result.tasks.find((item) => item.id === 'custom-running')).toEqual(customAsyncRunning)
     expect(result.tasks.find((item) => item.id === 'image-task-running')).toEqual(imageTaskRunning)
     expect(result.tasks.find((item) => item.id === 'done-task')).toEqual(doneTask)
+  })
+
+  it('only restores running image tasks with complete server credentials', () => {
+    const credentials = {
+      apiProvider: 'openai' as const,
+      imageTaskId: 'server-task-1',
+      imageTaskAccessToken: 'server-token-1',
+      imageTaskIdempotencyKey: 'home-task-key',
+    }
+
+    expect(shouldRecoverImageTask(task({ ...credentials, status: 'running' }))).toBe(true)
+    expect(shouldRecoverImageTask(task({ ...credentials, status: 'error' }))).toBe(false)
+    expect(shouldRecoverImageTask(task({ ...credentials, status: 'done' }))).toBe(false)
+    expect(shouldRecoverImageTask(task({ ...credentials, status: 'running', imageTaskAccessToken: undefined }))).toBe(false)
+  })
+})
+
+describe('task status persistence ordering', () => {
+  it('writes the final state only after the earlier running state finishes writing', async () => {
+    let finishFirstWrite: (() => void) | undefined
+    vi.mocked(putDbTask).mockClear()
+    vi.mocked(putDbTask).mockImplementationOnce((record) => new Promise((resolve) => {
+      finishFirstWrite = () => resolve(record.id)
+    }))
+    useStore.setState({
+      tasks: [task({ id: 'persist-order', status: 'running', finishedAt: null, elapsed: null })],
+    })
+
+    const runningWrite = updateTaskInStore('persist-order', { imageTaskId: 'server-task-1' })
+    const doneWrite = updateTaskInStore('persist-order', { status: 'done', finishedAt: 10, elapsed: 9 })
+    await Promise.resolve()
+
+    expect(putDbTask).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(putDbTask).mock.calls[0]?.[0]).toMatchObject({ status: 'running' })
+
+    finishFirstWrite?.()
+    await Promise.all([runningWrite, doneWrite])
+
+    expect(putDbTask).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(putDbTask).mock.calls[1]?.[0]).toMatchObject({ status: 'done' })
   })
 })
 
