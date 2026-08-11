@@ -309,6 +309,55 @@ describe('readAccessToken', () => {
     }))
   })
 
+  it('uses the bound API key when the stored account token can no longer be refreshed', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/self')) {
+        return new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 })
+      }
+      if (url.includes('/api/user/token')) {
+        return new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 })
+      }
+      if (url.includes('/api/usage/token/')) {
+        return new Response(JSON.stringify({
+          code: true,
+          message: 'ok',
+          data: {
+            unlimited_quota: true,
+            account: {
+              quota: 3_420_000,
+              used_quota: 1_580_000,
+            },
+          },
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ success: false, message: 'unexpected request' }), { status: 500 })
+    })
+
+    await expect(fetchNewApiAccountBalance(DEFAULT_SETTINGS.profiles[0], {
+      siteProfileId: DEFAULT_SETTINGS.profiles[0].id,
+      username: 'expired-user',
+      accessToken: 'expired-account-token',
+      userId: 37,
+      boundApiKey: 'still-valid-bound-key',
+    })).resolves.toMatchObject({
+      accessToken: 'expired-account-token',
+      balanceText: '可用 HUHN 6.84 / 已用 HUHN 3.16',
+      balanceSource: 'user',
+    })
+
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/user/self'))).toHaveLength(1)
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/user/token'))).toHaveLength(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/usage/token/'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer still-valid-bound-key',
+        }),
+      }),
+    )
+  })
+
   it('turns NewAPI validation messages into clear register errors', () => {
     expect(normalizeNewApiAccountErrorMessage("Key: 'User.Password' Error:Field validation for 'Password' failed on the 'min' tag")).toBe('密码至少 8 位')
     expect(normalizeNewApiAccountErrorMessage("Key: 'User.Username' Error:Field validation for 'Username' failed on the 'max' tag")).toBe('账号太长，请换短一点的账号')

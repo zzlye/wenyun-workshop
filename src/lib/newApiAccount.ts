@@ -400,7 +400,20 @@ export async function fetchNewApiAccountBalance(profile: ApiProfile, session: Ne
       await exchangeAccessToken()
       payload = await fetchSelf(accessToken)
     } catch {
-      throw err
+      const boundApiKey = session.boundApiKey?.trim()
+      if (!boundApiKey) throw err
+      // 旧登录状态彻底失效时，只用绑定 Key 查询所属账号余额，不扩大账号操作权限。
+      const usage = await newApiRequest<unknown>(profile, '/api/usage/token/', { accessToken: boundApiKey })
+      const usageRecord = getRecord(usage)
+      const account = usageRecord ? getRecord(usageRecord.account) : null
+      const text = parseNewApiUserBalance(account, ACCOUNT_DEFAULT_STATUS)
+      if (!text) throw new Error('绑定 Key 未返回账号余额，请先更新 NewAPI')
+      return {
+        ...session,
+        balanceText: text,
+        balanceSource: 'user',
+        balanceUpdatedAt: Date.now(),
+      }
     }
   }
   const text = parseNewApiUserBalance(payload, ACCOUNT_DEFAULT_STATUS)
