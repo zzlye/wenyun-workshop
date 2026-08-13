@@ -34,6 +34,12 @@ type LockedFetchProxyRoute = {
 
 const lockedFetchProxyRoutes: LockedFetchProxyRoute[] = [
   {
+    prefix: '/api/user/auth/refresh',
+    target: 'https://api.zzlye.xyz',
+    rewrite: (path) => path,
+    exact: true,
+  },
+  {
     prefix: '/model-performance-proxy/wenyun/api/perf-metrics/summary',
     target: 'https://api.zzlye.xyz',
     rewrite: (path) => path.replace(/^\/model-performance-proxy\/wenyun/, ''),
@@ -218,6 +224,11 @@ function lockedFetchProxyPlugin() {
           const hasBody = method !== 'GET' && method !== 'HEAD'
           const body = hasBody ? await readRequestBody(req) : undefined
           const headers = toFetchHeaders(req.headers)
+          if (route.prefix === '/api/user/auth/refresh') {
+            // 本地开发与 Docker 保持一致，让 NewAPI 的来源校验看到自己的站点地址。
+            headers.set('Origin', route.target)
+            headers.set('Referer', `${route.target}/`)
+          }
           if (route.auth) {
             // 本地开发代理只给成功率接口注入 NewAPI 前台 Access Token，不把凭证写入浏览器代码。
             headers.set('Authorization', `Bearer ${accessToken}`)

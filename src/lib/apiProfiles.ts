@@ -475,6 +475,8 @@ function normalizeNewApiAccountSession(value: unknown, siteProfileId: string): N
     siteProfileId,
     username,
     accessToken,
+    authSessionId: typeof value.authSessionId === 'string' && value.authSessionId.trim() ? value.authSessionId.trim() : undefined,
+    accessTokenExpiresAt: normalizeApiBalanceUpdatedAt(value.accessTokenExpiresAt),
     userId: typeof value.userId === 'string' || typeof value.userId === 'number' ? value.userId : undefined,
     email: typeof value.email === 'string' && value.email.trim() ? value.email.trim() : undefined,
     displayName: typeof value.displayName === 'string' && value.displayName.trim() ? value.displayName.trim() : undefined,

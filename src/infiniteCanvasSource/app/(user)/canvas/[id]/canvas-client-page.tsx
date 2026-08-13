@@ -33,6 +33,7 @@ import { cropDataUrl, cropGridDataUrl } from "../utils/canvas-image-data";
 import { isCanvasEditableTarget } from "../utils/canvas-dom-events";
 import { clearCanvasGenerationSession, getCanvasGenerationSessionIds, hasRecoverableCanvasImageTask, isCanvasNodeGenerationLocked, markCanvasGenerationSession, resetInterruptedCanvasGenerations, withRunningCanvasNode, withoutRunningCanvasNodes } from "../utils/canvas-generation-running";
 import { cloneNodeMetadataForDuplicate } from "../utils/canvas-node-copy";
+import { layoutDroppedCanvasNodes } from "../utils/canvas-file-drop";
 import { fitNodeSize, nodeSizeFromRatio } from "../utils/canvas-node-size";
 import { getCanvasViewportBounds, getConnectionPathGeometry, getVisibleCanvasConnections, getVisibleCanvasNodes } from "../utils/canvas-viewport";
 import { App, Button, Dropdown, Input, Modal } from "antd";
@@ -132,6 +133,7 @@ const CLEARED_IMAGE_TASK_METADATA = {
 };
 // 资产保存弹窗和资产库筛选共用这组分类，避免两个入口展示不一致。
 const ASSET_CATEGORIES: AssetCategory[] = ["人物", "场景", "物品", "风格", "其他"];
+const CANVAS_FILE_UPLOAD_CONCURRENCY = 3;
 
 function createCanvasNode(type: CanvasNodeType, position: Position, metadata?: CanvasNodeMetadata): CanvasNodeData {
     const spec = getNodeSpec(type);
@@ -2532,11 +2534,54 @@ function InfiniteCanvasPage() {
         setQuickNodeCreateMenu(null);
     }, [handleUploadRequest, quickNodeCreateMenu]);
 
+    const createDroppedFileNodes = useCallback(
+        async (files: File[], anchor: Position) => {
+            const results: Array<CanvasNodeData | null> = Array.from({ length: files.length }, () => null);
+            const failures: string[] = [];
+            let nextIndex = 0;
+
+            // 控制并发读取数量，避免大量高分辨率图片同时解码造成页面卡死。
+            const worker = async () => {
+                while (nextIndex < files.length) {
+                    const index = nextIndex;
+                    nextIndex += 1;
+                    const file = files[index];
+                    try {
+                        results[index] = await buildUploadedCanvasFileNode(file);
+                    } catch {
+                        failures.push(file.name);
+                    }
+                }
+            };
+            await Promise.all(Array.from(
+                { length: Math.min(CANVAS_FILE_UPLOAD_CONCURRENCY, files.length) },
+                () => worker(),
+            ));
+
+            const uploadedNodes = results.filter((node): node is CanvasNodeData => Boolean(node));
+            if (uploadedNodes.length) {
+                const positions = layoutDroppedCanvasNodes(anchor, uploadedNodes.map((node) => ({ width: node.width, height: node.height })));
+                const positionedNodes = uploadedNodes.map((node, index) => ({ ...node, position: positions[index] }));
+                const ids = new Set(positionedNodes.map((node) => node.id));
+                // 批量完成后只写一次画布状态，避免上传完成顺序不同造成节点覆盖或频繁自动保存。
+                setNodes((prev) => [...prev, ...positionedNodes]);
+                setSelectedNodeIds(ids);
+                setSelectedGroupId(null);
+                setSelectedConnectionId(null);
+                setDialogNodeId(positionedNodes.length === 1 && positionedNodes[0].type !== CanvasNodeType.Audio ? positionedNodes[0].id : null);
+                message.success(`已添加 ${positionedNodes.length} 个文件`);
+            }
+            if (failures.length) message.error(`${failures.length} 个文件读取失败`);
+        },
+        [message],
+    );
+
     const handleImageInputChange = useCallback(
         async (event: ReactChangeEvent<HTMLInputElement>) => {
-            const file = event.target.files?.[0];
+            const files = Array.from(event.target.files || []).filter((file) => file.type.startsWith("image/") || file.type.startsWith("video/") || file.type.startsWith("audio/"));
+            const file = files[0];
             const target = uploadTargetRef.current;
-            if (!file || (!file.type.startsWith("image/") && !file.type.startsWith("video/") && !file.type.startsWith("audio/"))) return;
+            if (!file) return;
 
             if (target?.nodeId) {
                 if (file.type.startsWith("audio/")) {
@@ -2601,25 +2646,25 @@ function InfiniteCanvasPage() {
                 setDialogNodeId(target.nodeId);
             } else {
                 const position = target?.position || screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
-                void (file.type.startsWith("audio/") ? createAudioFileNode(file, position) : file.type.startsWith("video/") ? createVideoFileNode(file, position) : createImageFileNode(file, position));
+                await createDroppedFileNodes(files, position);
             }
 
             uploadTargetRef.current = null;
             event.target.value = "";
         },
-        [createAudioFileNode, createImageFileNode, createVideoFileNode, screenToCanvas, size.height, size.width],
+        [createDroppedFileNodes, screenToCanvas, size.height, size.width],
     );
 
     const handleDrop = useCallback(
         (event: ReactDragEvent<HTMLDivElement>) => {
             event.preventDefault();
-            const file = Array.from(event.dataTransfer.files).find((item) => item.type.startsWith("image/") || item.type.startsWith("video/") || item.type.startsWith("audio/"));
-            if (!file) return;
+            const files = Array.from(event.dataTransfer.files).filter((item) => item.type.startsWith("image/") || item.type.startsWith("video/") || item.type.startsWith("audio/"));
+            if (!files.length) return;
 
             const pos = screenToCanvas(event.clientX, event.clientY);
-            void (file.type.startsWith("audio/") ? createAudioFileNode(file, pos) : file.type.startsWith("video/") ? createVideoFileNode(file, pos) : createImageFileNode(file, pos));
+            void createDroppedFileNodes(files, pos);
         },
-        [createAudioFileNode, createImageFileNode, createVideoFileNode, screenToCanvas],
+        [createDroppedFileNodes, screenToCanvas],
     );
 
     const pasteAssistantImage = useCallback(
@@ -3632,7 +3677,7 @@ function InfiniteCanvasPage() {
 
                 <CanvasZoomControls scale={viewport.k} onScaleChange={setZoomScale} onReset={resetViewport} isMiniMapOpen={isMiniMapOpen} onToggleMiniMap={() => setIsMiniMapOpen((value) => !value)} />
 
-                <input ref={imageInputRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={handleImageInputChange} />
+                <input ref={imageInputRef} type="file" accept="image/*,video/*,audio/*" multiple className="hidden" onChange={handleImageInputChange} />
 
                 <CanvasNodeInfoModal node={infoNode} inputs={infoNode ? buildNodeGenerationInputs(infoNode.id, nodes, connections) : []} open={Boolean(infoNode)} onClose={() => setInfoNodeId(null)} />
 
@@ -4074,6 +4119,47 @@ async function hydrateManualReferenceImages(references?: CanvasNodeMetadata["ref
             };
         }),
     );
+}
+
+async function buildUploadedCanvasFileNode(file: File): Promise<CanvasNodeData> {
+    const idSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    if (file.type.startsWith("audio/")) {
+        const audio = await uploadMediaFile(file, "audio");
+        return {
+            id: `audio-${idSuffix}`,
+            type: CanvasNodeType.Audio,
+            title: file.name,
+            position: { x: 0, y: 0 },
+            width: AUDIO_NODE_DEFAULT_WIDTH,
+            height: AUDIO_NODE_DEFAULT_HEIGHT,
+            metadata: audioMetadata(audio),
+        };
+    }
+    if (file.type.startsWith("video/")) {
+        const video = await uploadMediaFile(file, "video");
+        const size = fitNodeSize(video.width || 1280, video.height || 720, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
+        return {
+            id: `video-${idSuffix}`,
+            type: CanvasNodeType.Video,
+            title: file.name,
+            position: { x: 0, y: 0 },
+            width: size.width,
+            height: size.height,
+            metadata: videoMetadata(video),
+        };
+    }
+
+    const image = await uploadImage(file);
+    const size = fitNodeSize(image.width, image.height);
+    return {
+        id: `image-${idSuffix}`,
+        type: CanvasNodeType.Image,
+        title: file.name,
+        position: { x: 0, y: 0 },
+        width: size.width,
+        height: size.height,
+        metadata: imageMetadata(image),
+    };
 }
 
 function withMergedReferenceImages<T extends { referenceImages: ReferenceImage[]; referenceAudios?: ReferenceAudio[]; imageCount?: number; audioCount?: number }>(context: T, manualReferences: ReferenceImage[]): T {

@@ -63,6 +63,12 @@ describe('buildApiUrl', () => {
     )
   })
 
+  it('keeps the Wenyun account refresh endpoint on its cookie path', () => {
+    expect(getLockedNewApiProxyUrl('https://api.zzlye.xyz/api/user/auth/refresh')).toBe(
+      '/api/user/auth/refresh',
+    )
+  })
+
   it('routes only locked NewAPI performance summary through the credentialed proxy', () => {
     expect(getLockedNewApiPerformanceProxyUrl('https://api.zzlye.xyz/api/perf-metrics/summary?hours=24')).toBe(
       '/model-performance-proxy/wenyun/api/perf-metrics/summary?hours=24',

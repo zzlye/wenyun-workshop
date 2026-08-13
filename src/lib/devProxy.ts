@@ -99,6 +99,10 @@ export function getLockedNewApiProxyUrl(url: string): string | null {
       return item.newApiPrefix === '/newapi-proxy/wenyun' && parsed.origin.toLowerCase() === 'https://zzlye.xyz'
     })
     if (!target) return null
+    // NewAPI 的刷新 Cookie 固定在 /api/user/auth，文运同源暴露该精确路径才能让浏览器自动携带 Cookie。
+    if (target.newApiPrefix === '/newapi-proxy/wenyun' && parsed.pathname === '/api/user/auth/refresh') {
+      return `${parsed.pathname}${parsed.search}`
+    }
     return `${target.newApiPrefix}${parsed.pathname}${parsed.search}`
   } catch {
     return null

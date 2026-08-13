@@ -119,6 +119,10 @@ export interface NewApiAccountSession {
   siteProfileId: string
   username: string
   accessToken: string
+  /** 当前设备在 NewAPI 中的登录会话 ID，用于刷新短期访问令牌。 */
+  authSessionId?: string
+  /** 当前访问令牌的到期时间，Unix 秒。 */
+  accessTokenExpiresAt?: number
   userId?: number | string
   email?: string
   displayName?: string

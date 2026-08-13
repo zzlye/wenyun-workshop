@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { LOCKED_WENYUN_PROFILE_ID, getActiveApiProfile, normalizeSettings, setApiBalanceSnapshot } from '../lib/apiProfiles'
 import {
@@ -128,6 +128,32 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
   const accountSession = normalizedSettings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] ?? null
   const accountKeyCooldownRemainingMs = Math.max(0, ACCOUNT_KEY_REFRESH_COOLDOWN_MS - (Date.now() - (accountSession?.lastKeyRefreshAt ?? 0)))
 
+  const updateAccountSession = useCallback((session: NewApiAccountSession | null, patch: Partial<AppSettings> = {}) => {
+    const current = normalizeSettings(useStore.getState().settings)
+    const nextSessions = { ...current.newApiAccountSessions }
+    const previousSession = current.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]
+    if (session) {
+      nextSessions[LOCKED_WENYUN_PROFILE_ID] = {
+        ...session,
+        siteProfileId: LOCKED_WENYUN_PROFILE_ID,
+        lastKeyRefreshAt: session.lastKeyRefreshAt ?? previousSession?.lastKeyRefreshAt,
+        registrationInviteCode: session.registrationInviteCode ?? previousSession?.registrationInviteCode,
+        balanceText: session.balanceText ?? (previousSession?.balanceSource === 'user' ? previousSession.balanceText : undefined),
+        balanceSource: session.balanceSource ?? (previousSession?.balanceSource === 'user' ? previousSession.balanceSource : undefined),
+        balanceUpdatedAt: session.balanceUpdatedAt ?? previousSession?.balanceUpdatedAt,
+      }
+    }
+    else delete nextSessions[LOCKED_WENYUN_PROFILE_ID]
+    setSettings({
+      ...patch,
+      newApiAccountSessions: nextSessions,
+    })
+  }, [setSettings])
+
+  const persistRefreshedSession = useCallback((session: NewApiAccountSession) => {
+    updateAccountSession(session)
+  }, [updateAccountSession])
+
   useEffect(() => {
     let cancelled = false
     if (!open || !accountSession) {
@@ -138,7 +164,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
 
     setIsLoadingTopupInfo(true)
     setTopupError('')
-    void fetchNewApiTopupInfo(wenyunProfile, accountSession)
+    void fetchNewApiTopupInfo(wenyunProfile, accountSession, persistRefreshedSession)
       .then((info) => {
         if (cancelled) return
         setTopupInfo(info)
@@ -160,7 +186,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
     return () => {
       cancelled = true
     }
-  }, [open, accountSession?.accessToken, accountSession?.userId, topupReloadKey, wenyunProfile.baseUrl])
+  }, [open, accountSession?.accessToken, accountSession?.userId, persistRefreshedSession, topupReloadKey, wenyunProfile.baseUrl])
 
   useEffect(() => {
     let cancelled = false
@@ -175,7 +201,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
 
     setIsCalculatingTopup(true)
     const timer = window.setTimeout(() => {
-      void calculateNewApiTopupAmount(wenyunProfile, accountSession, amount, method.type)
+      void calculateNewApiTopupAmount(wenyunProfile, accountSession, amount, method.type, persistRefreshedSession)
         .then((value) => {
           if (!cancelled) setCalculatedPaymentAmount(value)
         })
@@ -191,31 +217,9 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [open, accountSession?.accessToken, accountSession?.userId, topupAmount, topupInfo, topupPaymentMethod, wenyunProfile.baseUrl])
+  }, [open, accountSession?.accessToken, accountSession?.userId, persistRefreshedSession, topupAmount, topupInfo, topupPaymentMethod, wenyunProfile.baseUrl])
 
   if (!open || typeof document === 'undefined') return null
-
-  const updateAccountSession = (session: NewApiAccountSession | null, patch: Partial<AppSettings> = {}) => {
-    const current = normalizeSettings(useStore.getState().settings)
-    const nextSessions = { ...current.newApiAccountSessions }
-    const previousSession = current.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]
-    if (session) {
-      nextSessions[LOCKED_WENYUN_PROFILE_ID] = {
-        ...session,
-        siteProfileId: LOCKED_WENYUN_PROFILE_ID,
-        lastKeyRefreshAt: session.lastKeyRefreshAt ?? previousSession?.lastKeyRefreshAt,
-        registrationInviteCode: session.registrationInviteCode ?? previousSession?.registrationInviteCode,
-        balanceText: session.balanceText ?? (previousSession?.balanceSource === 'user' ? previousSession.balanceText : undefined),
-        balanceSource: session.balanceSource ?? (previousSession?.balanceSource === 'user' ? previousSession.balanceSource : undefined),
-        balanceUpdatedAt: session.balanceUpdatedAt ?? previousSession?.balanceUpdatedAt,
-      }
-    }
-    else delete nextSessions[LOCKED_WENYUN_PROFILE_ID]
-    setSettings({
-      ...patch,
-      newApiAccountSessions: nextSessions,
-    })
-  }
 
   const getAccountKeyModePatch = (session: NewApiAccountSession): Pick<AppSettings, 'accountApiKeyMode'> => ({
     // 登录或注册成功后优先使用账号绑定 Key；用户仍可在状态栏切回自定义 Key。
@@ -273,7 +277,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
     if (!accountSession) return
     setIsQueryingBalance(true)
     try {
-      const session = await fetchNewApiAccountBalance(wenyunProfile, accountSession)
+      const session = await fetchNewApiAccountBalance(wenyunProfile, accountSession, persistRefreshedSession)
       updateAccountSession(session, {
         ...setApiBalanceSnapshot(normalizeSettings(useStore.getState().settings), LOCKED_WENYUN_PROFILE_ID, {
           text: session.balanceText ?? '',
@@ -293,7 +297,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
     if (!accountSession) return
     setIsRefreshingAccountKey(true)
     try {
-      const session = await refreshNewApiBoundKey(wenyunProfile, accountSession)
+      const session = await refreshNewApiBoundKey(wenyunProfile, accountSession, persistRefreshedSession)
       updateAccountSession(session)
       showToast('账号 Key 已刷新', 'success')
     } catch (err) {
@@ -314,7 +318,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
     }
     setIsRedeemingCode(true)
     try {
-      const session = await redeemNewApiCode(wenyunProfile, accountSession, accountRedeemCode)
+      const session = await redeemNewApiCode(wenyunProfile, accountSession, accountRedeemCode, persistRefreshedSession)
       updateAccountSession(session)
       setAccountRedeemCode('')
       showToast('兑换成功', 'success')
@@ -350,7 +354,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
 
     setIsCreatingTopupOrder(true)
     try {
-      const order = await createNewApiTopupOrder(wenyunProfile, accountSession, amount, method.type)
+      const order = await createNewApiTopupOrder(wenyunProfile, accountSession, amount, method.type, persistRefreshedSession)
       submitPaymentOrder(order, popup)
       showToast('支付页面已打开，完成后请查询账号余额', 'success')
     } catch (err) {

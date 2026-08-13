@@ -124,7 +124,7 @@ describe('readAccessToken', () => {
     )
   })
 
-  it('exchanges the short-lived login token for a persistent account token', async () => {
+  it('keeps the device login token instead of resetting the account management token', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       const headers = init?.headers as Record<string, string> | undefined
@@ -133,6 +133,8 @@ describe('readAccessToken', () => {
           success: true,
           data: {
             access_token: 'short-lived-login-token',
+            access_expires_at: 1_800_000_000,
+            session: { sid: 'device-session-22' },
             user: {
               id: 22,
               username: 'new-auth-user',
@@ -140,17 +142,8 @@ describe('readAccessToken', () => {
           },
         }), { status: 200 })
       }
-      if (url.includes('/api/user/token')) {
-        if (headers?.Authorization !== 'Bearer short-lived-login-token') {
-          return new Response(JSON.stringify({ success: false, message: 'access token 无效' }), { status: 401 })
-        }
-        return new Response(JSON.stringify({
-          success: true,
-          data: 'persistent-account-token',
-        }), { status: 200 })
-      }
       if (url.includes('/api/token/?')) {
-        if (headers?.Authorization !== 'Bearer persistent-account-token') {
+        if (headers?.Authorization !== 'Bearer short-lived-login-token') {
           return new Response(JSON.stringify({ success: false, message: 'access token 无效' }), { status: 401 })
         }
         return new Response(JSON.stringify({
@@ -180,20 +173,14 @@ describe('readAccessToken', () => {
       username: 'new-auth-user',
       password: 'secret',
     })).resolves.toMatchObject({
-      accessToken: 'persistent-account-token',
+      accessToken: 'short-lived-login-token',
+      authSessionId: 'device-session-22',
+      accessTokenExpiresAt: 1_800_000_000,
       boundApiKey: 'persistent-bound-api-key',
       balanceText: '可用 HUHN 9 / 已用 HUHN 1',
     })
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/api/user/token'),
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: 'Bearer short-lived-login-token',
-          'New-Api-User': '22',
-        }),
-      }),
-    )
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/user/token'))).toBe(false)
   })
 
   it('uses a short bound key name for long account names', async () => {
@@ -226,15 +213,18 @@ describe('readAccessToken', () => {
     expect(new TextEncoder().encode(requestedName).length).toBeLessThanOrEqual(50)
   })
 
-  it('refreshes a stale account access token before querying account balance', async () => {
+  it('refreshes a stale device session before querying account balance', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       const headers = init?.headers as Record<string, string> | undefined
       if (url.includes('/api/user/self') && headers?.Authorization === 'Bearer old-access-token') {
         return new Response(JSON.stringify({ success: false, message: 'Access token invalid' }), { status: 200 })
       }
-      if (url.includes('/api/user/token')) {
-        return new Response(JSON.stringify({ success: true, data: 'new-access-token' }), { status: 200 })
+      if (url.includes('/api/user/auth/refresh')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: { access_token: 'new-access-token', session: { sid: 'session-35' } },
+        }), { status: 200 })
       }
       if (url.includes('/api/user/self') && headers?.Authorization === 'Bearer new-access-token') {
         return new Response(JSON.stringify({
@@ -252,6 +242,7 @@ describe('readAccessToken', () => {
       siteProfileId: DEFAULT_SETTINGS.profiles[0].id,
       username: '1',
       accessToken: 'old-access-token',
+      authSessionId: 'session-35',
       userId: 35,
     })).resolves.toMatchObject({
       accessToken: 'new-access-token',
@@ -260,26 +251,30 @@ describe('readAccessToken', () => {
     })
 
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/api/user/token'),
+      expect.stringContaining('/api/user/auth/refresh'),
       expect.objectContaining({
+        method: 'POST',
         headers: expect.objectContaining({
-          'New-Api-User': '35',
+          'X-Auth-Session': 'session-35',
         }),
       }),
     )
   })
 
-  it('migrates a stored login JWT to a persistent token before querying balance', async () => {
+  it('refreshes an expired stored login JWT before querying balance', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       const headers = init?.headers as Record<string, string> | undefined
-      if (url.includes('/api/user/token')) {
-        if (headers?.Authorization !== 'Bearer header.payload.signature') {
-          return new Response(JSON.stringify({ success: false, message: 'access token 无效' }), { status: 401 })
-        }
-        return new Response(JSON.stringify({ success: true, data: 'persistent-migrated-token' }), { status: 200 })
+      if (url.includes('/api/user/auth/refresh')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: { access_token: 'refreshed-jwt-token', session: { sid: 'jwt-session' } },
+        }), { status: 200 })
       }
       if (url.includes('/api/user/self')) {
+        if (headers?.Authorization === 'Bearer header.payload.signature') {
+          return new Response(JSON.stringify({ success: false, message: 'access token 无效' }), { status: 401 })
+        }
         return new Response(JSON.stringify({
           success: true,
           data: {
@@ -295,18 +290,95 @@ describe('readAccessToken', () => {
       siteProfileId: DEFAULT_SETTINGS.profiles[0].id,
       username: 'jwt-user',
       accessToken: 'header.payload.signature',
+      authSessionId: 'jwt-session',
       userId: 36,
     })).resolves.toMatchObject({
-      accessToken: 'persistent-migrated-token',
+      accessToken: 'refreshed-jwt-token',
       balanceText: '可用 HUHN 5 / 已用 HUHN 1',
     })
 
-    const selfRequest = fetchMock.mock.calls.find(([input]) => String(input).includes('/api/user/self'))
+    const selfRequest = fetchMock.mock.calls.find(([input, init]) =>
+      String(input).includes('/api/user/self')
+      && (init?.headers as Record<string, string> | undefined)?.Authorization === 'Bearer refreshed-jwt-token')
     expect(selfRequest?.[1]).toEqual(expect.objectContaining({
       headers: expect.objectContaining({
-        Authorization: 'Bearer persistent-migrated-token',
+        Authorization: 'Bearer refreshed-jwt-token',
       }),
     }))
+  })
+
+  it('自动迁移属于同一账号的历史登录记录', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const headers = init?.headers as Record<string, string> | undefined
+      if (url.includes('/api/user/self') && headers?.Authorization === 'Bearer legacy-token') {
+        return new Response(JSON.stringify({ success: false, message: 'access token 无效' }), { status: 401 })
+      }
+      if (url.includes('/api/user/auth/refresh')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            access_token: 'migrated-token',
+            session: { sid: 'migrated-session' },
+            user: { id: 37, username: 'legacy-user', display_name: '历史用户' },
+          },
+        }), { status: 200 })
+      }
+      if (url.includes('/api/user/self') && headers?.Authorization === 'Bearer migrated-token') {
+        return new Response(JSON.stringify({
+          success: true,
+          data: { quota: 2_500_000, used_quota: 500_000 },
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ success: false, message: 'unexpected request' }), { status: 500 })
+    })
+
+    await expect(fetchNewApiAccountBalance(DEFAULT_SETTINGS.profiles[0], {
+      siteProfileId: DEFAULT_SETTINGS.profiles[0].id,
+      username: 'legacy-user',
+      accessToken: 'legacy-token',
+      userId: 37,
+    })).resolves.toMatchObject({
+      accessToken: 'migrated-token',
+      authSessionId: 'migrated-session',
+      displayName: '历史用户',
+      balanceText: '可用 HUHN 5 / 已用 HUHN 1',
+    })
+
+    const refreshRequest = fetchMock.mock.calls.find(([input]) => String(input).includes('/api/user/auth/refresh'))
+    expect(refreshRequest?.[1]).toEqual(expect.objectContaining({ headers: {} }))
+  })
+
+  it('拒绝使用属于其他账号的刷新 Cookie', async () => {
+    let topupRequests = 0
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/topup/info')) {
+        topupRequests += 1
+        return new Response(JSON.stringify({ success: false, message: 'access token 无效' }), { status: 401 })
+      }
+      if (url.includes('/api/user/auth/refresh')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            access_token: 'other-account-token',
+            session: { sid: 'other-account-session' },
+            user: { id: 99, username: 'other-user' },
+          },
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ success: false, message: 'unexpected request' }), { status: 500 })
+    })
+
+    await expect(fetchNewApiTopupInfo(DEFAULT_SETTINGS.profiles[0], {
+      siteProfileId: DEFAULT_SETTINGS.profiles[0].id,
+      username: 'legacy-user',
+      accessToken: 'legacy-token',
+      userId: 37,
+    })).rejects.toThrow('登录状态已过期，请退出账号后重新登录')
+
+    expect(topupRequests).toBe(1)
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/user/auth/refresh'))).toHaveLength(1)
   })
 
   it('uses the bound API key when the stored account token can no longer be refreshed', async () => {
@@ -315,7 +387,7 @@ describe('readAccessToken', () => {
       if (url.includes('/api/user/self')) {
         return new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 })
       }
-      if (url.includes('/api/user/token')) {
+      if (url.includes('/api/user/auth/refresh')) {
         return new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 })
       }
       if (url.includes('/api/usage/token/')) {
@@ -347,7 +419,7 @@ describe('readAccessToken', () => {
     })
 
     expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/user/self'))).toHaveLength(1)
-    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/user/token'))).toHaveLength(1)
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/user/auth/refresh'))).toHaveLength(1)
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/usage/token/'),
       expect.objectContaining({
@@ -573,5 +645,89 @@ describe('NewAPI 在线支付', () => {
         }),
       }),
     )
+  })
+
+  it('充值配置令牌过期时刷新会话后只重试一次', async () => {
+    const refreshedSessions: string[] = []
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const headers = init?.headers as Record<string, string> | undefined
+      if (url.includes('/api/user/topup/info')) {
+        if (headers?.Authorization !== 'Bearer refreshed-session-token') {
+          return new Response(JSON.stringify({ success: false, message: 'access token 无效' }), { status: 401 })
+        }
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            enable_online_topup: true,
+            min_topup: 10,
+            pay_methods: JSON.stringify([{ name: '支付宝', type: 'alipay', min_topup: 10 }]),
+          },
+        }), { status: 200 })
+      }
+      if (url.includes('/api/user/auth/refresh')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            access_token: 'refreshed-session-token',
+            access_expires_at: 1_800_000_000,
+            session: { sid: 'session-42' },
+          },
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ success: false, message: 'unexpected request' }), { status: 500 })
+    })
+
+    await expect(fetchNewApiTopupInfo(
+      DEFAULT_SETTINGS.profiles[0],
+      { ...session, accessToken: 'expired-session-token', authSessionId: 'session-42' },
+      (nextSession) => refreshedSessions.push(nextSession.accessToken),
+    )).resolves.toMatchObject({ enabled: true, minTopup: 10 })
+
+    expect(refreshedSessions).toEqual(['refreshed-session-token'])
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/user/topup/info'))).toHaveLength(2)
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/user/auth/refresh'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'X-Auth-Session': 'session-42' }),
+      }),
+    )
+  })
+
+  it('创建订单仅在明确鉴权失败时刷新并重放一次', async () => {
+    let orderRequests = 0
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const headers = init?.headers as Record<string, string> | undefined
+      if (url.includes('/api/user/pay')) {
+        orderRequests += 1
+        if (headers?.Authorization !== 'Bearer refreshed-order-token') {
+          return new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 })
+        }
+        return new Response(JSON.stringify({
+          message: 'success',
+          url: 'https://pay.example.com/submit.php',
+          data: { money: '10.00' },
+        }), { status: 200 })
+      }
+      if (url.includes('/api/user/auth/refresh')) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: { access_token: 'refreshed-order-token', session: { sid: 'session-42' } },
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ success: false, message: 'unexpected request' }), { status: 500 })
+    })
+
+    await expect(createNewApiTopupOrder(
+      DEFAULT_SETTINGS.profiles[0],
+      { ...session, accessToken: 'expired-order-token', authSessionId: 'session-42' },
+      10,
+      'alipay',
+    )).resolves.toMatchObject({ kind: 'form', url: 'https://pay.example.com/submit.php' })
+
+    expect(orderRequests).toBe(2)
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/user/auth/refresh'))).toHaveLength(1)
   })
 })
