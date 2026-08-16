@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { defaultConfig, useConfigStore } from '../infiniteCanvasSource/stores/use-config-store'
 import { DEFAULT_SETTINGS, LOCKED_WENYUN_PROFILE_ID } from './apiProfiles'
 import { syncInfiniteCanvasConfigFromSettings } from './syncInfiniteCanvasConfig'
-import { CANVAS_VIDEO_MODEL } from './videoModel'
+import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_MODEL, CANVAS_VIDEO_TIMEOUT } from './videoModel'
 
 afterEach(() => {
   useConfigStore.setState({
@@ -44,9 +44,10 @@ describe('syncInfiniteCanvasConfigFromSettings', () => {
     const state = useConfigStore.getState()
     expect(state.publicSettings).toBeNull()
     expect(state.config.channelMode).toBe('local')
-    expect(state.config.videoBaseUrl).toBe('https://api.geeknow.ai/v1')
+    expect(state.config.videoBaseUrl).toBe(CANVAS_VIDEO_BASE_URL)
     expect(state.config.videoApiKey).toBe('video-key')
     expect(state.config.videoModel).toBe(CANVAS_VIDEO_MODEL)
+    expect(state.config.videoTimeout).toBe(CANVAS_VIDEO_TIMEOUT)
   })
 
   it('syncs the logged-in account key to canvas when account key mode is selected', () => {

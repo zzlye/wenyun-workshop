@@ -6,7 +6,7 @@ import { getImageModelOptionsForProfile } from "../../../../../lib/apiProfiles";
 import { buildApiUrl, type AiConfig } from "@/stores/use-config-store";
 import type { CanvasGenerationMode } from "../types";
 import { parseModelListPayload } from "../../../../../lib/modelList";
-import { CANVAS_VIDEO_MODEL } from "../../../../../lib/videoModel";
+import { CANVAS_VIDEO_MODELS, normalizeCanvasVideoModel } from "../../../../../lib/videoModel";
 
 type ModelOption = string | { value: string; label: string };
 type ExternalModelTarget = "text";
@@ -15,7 +15,7 @@ type ExternalModelTarget = "text";
 const modelOptionsCache = new Map<string, string[]>();
 
 export function useCanvasModelOptions(config: AiConfig, mode: CanvasGenerationMode, activeProfileId: string): ModelOption[] | undefined {
-    const currentModel = mode === "image" ? config.imageModel || config.model : mode === "video" ? config.videoModel || config.model : config.textModel || config.model;
+    const currentModel = mode === "image" ? config.imageModel || config.model : mode === "video" ? normalizeCanvasVideoModel(config.videoModel || config.model) : config.textModel || config.model;
     const source = mode === "text" ? getExternalModelSource(config) : null;
     const [externalOptions, setExternalOptions] = useState<string[]>(() => uniqueModels([currentModel]));
 
@@ -50,7 +50,7 @@ export function useCanvasModelOptions(config: AiConfig, mode: CanvasGenerationMo
 
     return useMemo(() => {
         if (mode === "image") return getImageModelOptionsForProfile(activeProfileId);
-        if (mode === "video") return [CANVAS_VIDEO_MODEL];
+        if (mode === "video") return [...CANVAS_VIDEO_MODELS];
         return externalOptions.length ? externalOptions : currentModel ? [currentModel] : undefined;
     }, [activeProfileId, currentModel, externalOptions, mode]);
 }

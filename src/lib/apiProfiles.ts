@@ -24,7 +24,7 @@ import { normalizeBaseUrl, shouldUseApiProxyForBaseUrl } from './devProxy'
 import { readRuntimeEnv } from './runtimeEnv'
 import { isImportableConfigUrl } from './customProviderConfigUrl'
 import type { SizeTier } from './size'
-import { CANVAS_VIDEO_MODEL } from './videoModel'
+import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_MODEL, CANVAS_VIDEO_TIMEOUT, normalizeCanvasVideoModel } from './videoModel'
 import {
   DEFAULT_IMAGES_MODEL,
   FIXED_IMAGE_MODEL_OPTIONS,
@@ -868,11 +868,11 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
   const textModel = typeof record.textModel === 'string' ? record.textModel.trim() : legacyTextVideoModel
   const textTimeout = normalizeApiTimeout(record.textTimeout, legacyTextVideoTimeout)
   const textApiProxy = typeof record.textApiProxy === 'boolean' ? record.textApiProxy : legacyTextVideoApiProxy
-  const videoBaseUrl = normalizeBaseUrl(typeof record.videoBaseUrl === 'string' ? record.videoBaseUrl : legacyTextVideoBaseUrl)
+  // 视频接口地址和超时固定，历史配置中的旧地址只保留 Key，不再参与请求。
+  const videoBaseUrl = CANVAS_VIDEO_BASE_URL
   const videoApiKey = typeof record.videoApiKey === 'string' ? record.videoApiKey : legacyTextVideoApiKey
-  // 画布视频节点只保留 Seedance 2.0，旧配置在读取时直接迁移。
-  const videoModel = CANVAS_VIDEO_MODEL
-  const videoTimeout = normalizeApiTimeout(record.videoTimeout, legacyTextVideoTimeout)
+  const videoModel = normalizeCanvasVideoModel(typeof record.videoModel === 'string' ? record.videoModel : CANVAS_VIDEO_MODEL)
+  const videoTimeout = CANVAS_VIDEO_TIMEOUT
   const videoApiProxy = typeof record.videoApiProxy === 'boolean' ? record.videoApiProxy : legacyTextVideoApiProxy
 
   return {
@@ -1226,10 +1226,10 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   textModel: '',
   textTimeout: DEFAULT_API_TIMEOUT,
   textApiProxy: false,
-  videoBaseUrl: '',
+  videoBaseUrl: CANVAS_VIDEO_BASE_URL,
   videoApiKey: '',
   videoModel: CANVAS_VIDEO_MODEL,
-  videoTimeout: DEFAULT_API_TIMEOUT,
+  videoTimeout: CANVAS_VIDEO_TIMEOUT,
   videoApiProxy: false,
   agentScrollToBottomAfterSubmit: true,
   agentMaxToolRounds: DEFAULT_AGENT_MAX_TOOL_ROUNDS,

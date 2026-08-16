@@ -5,9 +5,7 @@ import { useEffect, type ReactNode } from "react";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import type { AiConfig } from "@/stores/use-config-store";
-import { CANVAS_VIDEO_MODEL, CANVAS_VIDEO_SECONDS } from "../../lib/videoModel";
-
-const VIDEO_RESOLUTION = "720";
+import { CANVAS_VIDEO_25_SECONDS, CANVAS_VIDEO_SECONDS, getCanvasVideoResolution, isCanvasVideo25Model, normalizeCanvasVideoModel } from "../../lib/videoModel";
 
 const VIDEO_SIZE_OPTIONS = [
     { value: "1280x720", label: "16:9 横屏", width: 1280, height: 720 },
@@ -27,9 +25,12 @@ type VideoSettingsPanelProps = {
 };
 
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
-    const seconds = normalizeVideoSecondsForModel(config.videoSeconds);
-    const size = normalizeVideoSizeValue(config.size);
-    const resolution = normalizeVideoResolutionValue(config.vquality);
+    const videoModel = normalizeCanvasVideoModel(config.videoModel || config.model);
+    const seconds = normalizeVideoSecondsForModel(config.videoSeconds, videoModel);
+    const size = normalizeVideoSizeValue(config.size, videoModel);
+    const resolution = normalizeVideoResolutionValue(config.vquality, videoModel);
+    const sizeOptions = getVideoSizeOptions(videoModel);
+    const secondsOptions = isCanvasVideo25Model(videoModel) ? CANVAS_VIDEO_25_SECONDS : CANVAS_VIDEO_SECONDS;
 
     useEffect(() => {
         if ((config.videoSeconds || "") === seconds) return;
@@ -52,17 +53,19 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 {showTitle ? (
                     <div>
                         <div className="text-lg font-semibold">视频设置</div>
-                        <div className="mt-1 text-xs" style={{ color: theme.node.muted }}>{CANVAS_VIDEO_MODEL}</div>
+                        <div className="mt-1 text-xs" style={{ color: theme.node.muted }}>{videoModel}</div>
                     </div>
                 ) : null}
                 <SettingGroup title="清晰度" color={theme.node.muted}>
                     <div className="grid grid-cols-1 gap-2.5">
-                        <OptionPill selected theme={theme} onClick={() => onConfigChange("vquality", VIDEO_RESOLUTION)}>720p</OptionPill>
+                        <div className="flex h-9 items-center justify-center rounded-full border px-2 text-sm" style={{ borderColor: theme.node.text, color: theme.node.text }}>
+                            {resolution}p
+                        </div>
                     </div>
                 </SettingGroup>
                 <SettingGroup title="画面比例" color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
-                        {VIDEO_SIZE_OPTIONS.map((item) => (
+                        {sizeOptions.map((item) => (
                             <button
                                 key={item.value}
                                 type="button"
@@ -79,7 +82,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 </SettingGroup>
                 <SettingGroup title="秒数" color={theme.node.muted}>
                     <div className="grid grid-cols-2 gap-2.5">
-                        {CANVAS_VIDEO_SECONDS.map((value) => (
+                        {secondsOptions.map((value) => (
                             <OptionPill key={value} selected={seconds === value} theme={theme} onClick={() => onConfigChange("videoSeconds", value)}>
                                 {value}s
                             </OptionPill>
@@ -91,21 +94,24 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     );
 }
 
-export function videoResolutionLabel(_value: string, _model = "") {
-    return "720p";
+export function videoResolutionLabel(_value: string, model?: string) {
+    return `${normalizeVideoResolutionValue(_value, model)}p`;
 }
 
-export function videoSizeLabel(value: string, _model = "") {
-    const size = normalizeVideoSizeValue(value);
-    return VIDEO_SIZE_OPTIONS.find((item) => item.value === size)?.label || "16:9 横屏";
+export function videoSizeLabel(value: string, model?: string) {
+    const normalizedModel = normalizeCanvasVideoModel(model);
+    const size = normalizeVideoSizeValue(value, normalizedModel);
+    return getVideoSizeOptions(normalizedModel).find((item) => item.value === size)?.label || "16:9 横屏";
 }
 
-export function videoSecondsLabel(value: string, _model = "") {
-    return `${normalizeVideoSecondsForModel(value)}s`;
+export function videoSecondsLabel(value: string, model?: string) {
+    return `${normalizeVideoSecondsForModel(value, model)}s`;
 }
 
-export function normalizeVideoSizeValue(value: string, _model = "") {
+export function normalizeVideoSizeValue(value: string, model?: string) {
+    const normalizedModel = normalizeCanvasVideoModel(model);
     const ratio = readAspectRatio(value);
+    if (isCanvasVideo25Model(normalizedModel) && !["16:9", "9:16", "1:1"].includes(ratio)) return "1280x720";
     if (ratio === "9:16") return "720x1280";
     if (ratio === "4:3") return "1024x768";
     if (ratio === "3:4") return "768x1024";
@@ -114,12 +120,19 @@ export function normalizeVideoSizeValue(value: string, _model = "") {
     return "1280x720";
 }
 
-export function normalizeVideoResolutionValue(_value: string, _model = "") {
-    return VIDEO_RESOLUTION;
+export function normalizeVideoResolutionValue(_value: string, model?: string) {
+    return getCanvasVideoResolution(normalizeCanvasVideoModel(model));
 }
 
-export function normalizeVideoSecondsForModel(value: string, _model = "") {
-    return Number(value) >= 15 ? "15" : "10";
+export function normalizeVideoSecondsForModel(value: string, model?: string) {
+    const max = isCanvasVideo25Model(normalizeCanvasVideoModel(model)) ? 29 : 15;
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return "10";
+    return String(Math.min(max, Math.max(4, Math.round(numeric))));
+}
+
+function getVideoSizeOptions(model: string) {
+    return isCanvasVideo25Model(model) ? VIDEO_SIZE_OPTIONS.filter((item) => ["1280x720", "720x1280", "1024x1024"].includes(item.value)) : VIDEO_SIZE_OPTIONS;
 }
 
 function readAspectRatio(value: string) {

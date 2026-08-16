@@ -9,7 +9,13 @@ import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceAudio, ReferenceImage } from "@/types/image";
 import { buildApiUrl as buildDevApiUrl, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from "../../../lib/devProxy";
 import { sanitizeApiErrorMessage } from "../../../lib/imageApiShared";
-import { CANVAS_VIDEO_MODEL, CANVAS_VIDEO_RESOLUTION } from "../../../lib/videoModel";
+import {
+    CANVAS_VIDEO_BASE_URL,
+    CANVAS_VIDEO_MODEL,
+    CANVAS_VIDEO_TIMEOUT,
+    isCanvasVideo25Model,
+    normalizeCanvasVideoModel,
+} from "../../../lib/videoModel";
 
 type VideoTask = {
     id: string;
@@ -34,16 +40,14 @@ type VideoApiSource = {
     timeout: number;
 };
 
-const VIDEO_POLL_INTERVAL_MS = typeof process !== "undefined" && process.env.NODE_ENV === "test" ? 1 : 2500;
+const VIDEO_POLL_INTERVAL_MS = typeof process !== "undefined" && process.env.NODE_ENV === "test" ? 1 : 5000;
+const VIDEO_TOTAL_TIMEOUT_MS = CANVAS_VIDEO_TIMEOUT * 1000;
 const VIDEO_REFERENCE_MAX_EDGE = 1920;
 const VIDEO_REFERENCE_MAX_INLINE_BYTES = 8 * 1024 * 1024;
 const VIDEO_REFERENCE_JPEG_QUALITY = 0.88;
-const VIDEO_IMAGE_LIMIT = 9;
-const VIDEO_AUDIO_LIMIT = 3;
-const VIDEO_FILE_LIMIT = 12;
 
 /**
- * 画布视频节点只调用 Seedance 2.0 的标准异步视频接口。
+ * 画布视频节点只调用固定地址的异步视频接口。
  * 创建、查询和下载都保持在同一套 /v1/videos 路径，避免旧模型兼容分支误发请求。
  */
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], audioReferences: ReferenceAudio[] = []) {
@@ -66,37 +70,37 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
 async function buildSeedanceVideoPayload(config: AiConfig, prompt: string, references: ReferenceImage[], audioReferences: ReferenceAudio[]) {
     const normalizedPrompt = prompt.trim();
     if (!normalizedPrompt) throw new Error("请输入视频提示词");
-    assertReferenceLimits(references, audioReferences);
-
+    const model = normalizeCanvasVideoModel(config.videoModel || config.model);
+    assertReferenceLimits(references, audioReferences, model);
     const payload: Record<string, unknown> = {
-        model: CANVAS_VIDEO_MODEL,
+        model,
         prompt: normalizedPrompt,
-        aspect_ratio: normalizeVideoAspectRatio(config.size),
-        resolution: CANVAS_VIDEO_RESOLUTION,
-        seconds: normalizeVideoSeconds(config.videoSeconds),
+        aspect_ratio: normalizeVideoAspectRatio(config.size, model),
+        duration: normalizeVideoDuration(config.videoSeconds, model),
     };
 
     const images = (await Promise.all(references.map(imageToVideoReferenceUrl))).filter(Boolean);
     if (images.length) {
-        // 第一张图作为主参考图，其余图片按文档放入额外参考图数组。
-        payload.image_url = images[0];
-        if (images.length > 1) payload.reference_image_urls = images.slice(1);
+        // 文档推荐使用 image_urls，单图和多图都走同一字段。
+        payload.image_urls = images;
     }
 
     const audios = (await Promise.all(audioReferences.map(audioToVideoReferenceUrl))).filter(Boolean);
     if (audios.length) {
-        payload.audio_url = audios[0];
-        // 接口允许多音频时同时提交数组；单音频仍只发送文档中的 audio_url。
-        if (audios.length > 1) payload.audio_urls = audios;
+        appendAudioReferences(payload, model, audios);
     }
 
     return payload;
 }
 
-function assertReferenceLimits(references: ReferenceImage[], audioReferences: ReferenceAudio[]) {
-    if (references.length > VIDEO_IMAGE_LIMIT) throw new Error(`视频参考图最多连接 ${VIDEO_IMAGE_LIMIT} 张`);
-    if (audioReferences.length > VIDEO_AUDIO_LIMIT) throw new Error(`视频参考音频最多连接 ${VIDEO_AUDIO_LIMIT} 个`);
-    if (references.length + audioReferences.length > VIDEO_FILE_LIMIT) throw new Error(`视频参考文件总数最多 ${VIDEO_FILE_LIMIT} 个`);
+function assertReferenceLimits(references: ReferenceImage[], audioReferences: ReferenceAudio[], modelValue: string) {
+    const model = normalizeCanvasVideoModel(modelValue || CANVAS_VIDEO_MODEL);
+    const imageLimit = isCanvasVideo25Model(model) ? 30 : 9;
+    const audioLimit = model === "sd-2.5-720p" ? 1 : isCanvasVideo25Model(model) ? 10 : 3;
+    const totalLimit = model === "sd-2.5-720p" ? 41 : isCanvasVideo25Model(model) ? 50 : 9;
+    if (references.length > imageLimit) throw new Error(`视频参考图最多连接 ${imageLimit} 张`);
+    if (audioReferences.length > audioLimit) throw new Error(`视频参考音频最多连接 ${audioLimit} 个`);
+    if (references.length + audioReferences.length > totalLimit) throw new Error(`视频参考文件总数最多 ${totalLimit} 个`);
     if (audioReferences.length && !references.length) throw new Error("视频参考音频必须同时连接至少一张参考图");
 
     const invalidDuration = audioReferences.find((audio) => typeof audio.duration === "number" && (audio.duration <= 2 || audio.duration >= 15));
@@ -106,35 +110,40 @@ function assertReferenceLimits(references: ReferenceImage[], audioReferences: Re
 async function waitForVideoResult(source: VideoApiSource, created: VideoTask) {
     if (!created.id) throw new Error("视频接口没有返回任务 ID");
     let task = created;
+    const deadline = Date.now() + VIDEO_TOTAL_TIMEOUT_MS;
 
     for (;;) {
         const videoUrl = findVideoUrl(task);
-        if (videoUrl) return fetchVideoResultBlob(source, created.id, videoUrl);
-        if (isVideoStatusCompleted(task.status)) return fetchVideoContent(source, created.id);
+        if (videoUrl) return fetchVideoResultBlob(source, created.id, videoUrl, remainingTimeout(deadline));
+        if (isVideoStatusCompleted(task.status)) return fetchVideoContent(source, created.id, remainingTimeout(deadline));
         if (isVideoStatusFailed(task.status)) throw new Error(task.error?.message || "视频生成失败");
 
-        await delayVideoPoll();
+        const remaining = remainingTimeout(deadline);
+        if (!remaining) throw new Error(`视频生成超过 ${CANVAS_VIDEO_TIMEOUT} 秒仍未完成`);
+        await delayVideoPoll(Math.min(VIDEO_POLL_INTERVAL_MS, remaining));
+        const nextRemaining = remainingTimeout(deadline);
+        if (!nextRemaining) throw new Error(`视频生成超过 ${CANVAS_VIDEO_TIMEOUT} 秒仍未完成`);
         task = unwrapVideoTask((await axios.get<VideoApiResponse>(videoApiUrl(source, `/videos/${created.id}`), {
             headers: videoApiHeaders(source),
-            timeout: requestTimeout(source),
+            timeout: requestTimeout(source, nextRemaining),
         })).data);
     }
 }
 
-async function fetchVideoContent(source: VideoApiSource, taskId: string) {
+async function fetchVideoContent(source: VideoApiSource, taskId: string, timeoutMs = requestTimeout(source)) {
     const response = await axios.get<Blob>(videoApiUrl(source, `/videos/${taskId}/content`), {
         headers: videoApiHeaders(source),
         responseType: "blob",
-        timeout: requestTimeout(source),
+        timeout: timeoutMs,
     });
     await assertVideoBlob(response.data);
     return response.data;
 }
 
 // 优先使用带鉴权的 content 下载端点，避免外部视频地址被浏览器跨域策略拦截。
-async function fetchVideoResultBlob(source: VideoApiSource, taskId: string, videoUrl: string) {
+async function fetchVideoResultBlob(source: VideoApiSource, taskId: string, videoUrl: string, timeoutMs = requestTimeout(source)) {
     try {
-        return await fetchVideoContent(source, taskId);
+        return await fetchVideoContent(source, taskId, timeoutMs);
     } catch (error) {
         if (!shouldFallbackToDirectVideoUrl(error)) throw error;
     }
@@ -150,14 +159,13 @@ async function fetchVideoResultBlob(source: VideoApiSource, taskId: string, vide
 }
 
 function resolveVideoApiSource(config: AiConfig): VideoApiSource {
-    const baseUrl = config.videoBaseUrl.trim().replace(/\/+$/, "");
     const apiKey = config.videoApiKey.trim();
-    if (!baseUrl || !apiKey) throw new Error("请先在设置里填写视频 API URL 和 Key");
+    if (!apiKey) throw new Error("请先在设置里填写视频 API Key");
     return {
-        baseUrl,
+        baseUrl: CANVAS_VIDEO_BASE_URL,
         apiKey,
         apiProxy: Boolean(config.videoApiProxy),
-        timeout: Number(config.videoTimeout || config.timeout),
+        timeout: CANVAS_VIDEO_TIMEOUT,
     };
 }
 
@@ -171,21 +179,38 @@ function videoApiHeaders(source: VideoApiSource) {
     return { Authorization: `Bearer ${source.apiKey}` };
 }
 
-function requestTimeout(source: VideoApiSource) {
-    return Math.max(10, source.timeout || 120) * 1000;
+function requestTimeout(source: VideoApiSource, remainingMs = source.timeout * 1000) {
+    return Math.max(1000, Math.min(source.timeout * 1000, remainingMs));
 }
 
 function refreshRemoteUser(config: AiConfig) {
     if (config.channelMode === "remote") void useUserStore.getState().hydrateUser();
 }
 
-function normalizeVideoSeconds(value: string) {
-    return Number(value) >= 15 ? "15" : "10";
+function normalizeVideoDuration(value: string, model: string) {
+    const max = isCanvasVideo25Model(model) ? 29 : 15;
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 10;
+    return Math.min(max, Math.max(4, Math.round(numeric)));
 }
 
-function normalizeVideoAspectRatio(value: string) {
+function normalizeVideoAspectRatio(value: string, model: string) {
     const ratio = readVideoAspectRatio(value);
-    return ["16:9", "9:16", "4:3", "3:4", "1:1", "21:9"].includes(ratio) ? ratio : "16:9";
+    const supported = isCanvasVideo25Model(model) ? ["16:9", "9:16", "1:1"] : ["16:9", "9:16", "4:3", "3:4", "1:1", "21:9"];
+    return supported.includes(ratio) ? ratio : "16:9";
+}
+
+function appendAudioReferences(payload: Record<string, unknown>, model: string, audios: string[]) {
+    if (model === "sd-2.5-720p") {
+        payload.audio_urls = audios;
+        return;
+    }
+    if (isCanvasVideo25Model(model)) {
+        payload.audio_reference = audios.map((url) => ({ url }));
+        return;
+    }
+    payload.audio_url = audios[0];
+    if (audios.length > 1) payload.audio_reference = audios.map((url) => ({ url }));
 }
 
 function readVideoAspectRatio(value: string) {
@@ -446,8 +471,12 @@ function shouldSendVideoDownloadAuth(source: VideoApiSource, url: string) {
     }
 }
 
-function delayVideoPoll() {
-    return new Promise((resolve) => setTimeout(resolve, VIDEO_POLL_INTERVAL_MS));
+function delayVideoPoll(delayMs = VIDEO_POLL_INTERVAL_MS) {
+    return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+function remainingTimeout(deadline: number) {
+    return Math.max(0, deadline - Date.now());
 }
 
 function readAxiosError(error: unknown, fallback: string) {

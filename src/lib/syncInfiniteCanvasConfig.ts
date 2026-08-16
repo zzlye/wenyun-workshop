@@ -2,6 +2,7 @@ import { useConfigStore } from '../infiniteCanvasSource/stores/use-config-store'
 import type { AppSettings } from '../types'
 import { getEffectiveImageApiProfile } from './accountApiKey'
 import { getActiveApiProfile, normalizeSettings } from './apiProfiles'
+import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_TIMEOUT, normalizeCanvasVideoModel } from './videoModel'
 
 export function syncInfiniteCanvasConfigFromSettings(settings: AppSettings) {
   const normalizedSettings = normalizeSettings(settings)
@@ -26,12 +27,12 @@ export function syncInfiniteCanvasConfigFromSettings(settings: AppSettings) {
       textApiKey: normalizedSettings.textApiKey,
       textApiProxy: normalizedSettings.textApiProxy,
       textTimeout: normalizedSettings.textTimeout,
-      videoBaseUrl: normalizedSettings.videoBaseUrl,
+      videoBaseUrl: CANVAS_VIDEO_BASE_URL,
       videoApiKey: normalizedSettings.videoApiKey,
       videoApiProxy: normalizedSettings.videoApiProxy,
-      videoTimeout: normalizedSettings.videoTimeout,
+      videoTimeout: CANVAS_VIDEO_TIMEOUT,
       textModel: normalizedSettings.textModel || state.config.textModel,
-      videoModel: normalizedSettings.videoModel || state.config.videoModel,
+      videoModel: normalizeCanvasVideoModel(normalizedSettings.videoModel || state.config.videoModel),
     },
   }))
 }

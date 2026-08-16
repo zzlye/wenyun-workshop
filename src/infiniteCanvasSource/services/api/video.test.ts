@@ -1,7 +1,7 @@
 import axios from "axios";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
-import { CANVAS_VIDEO_MODEL } from "../../../lib/videoModel";
+import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_MODEL } from "../../../lib/videoModel";
 import { defaultConfig } from "../../stores/use-config-store";
 import { requestVideoGeneration } from "./video";
 
@@ -15,7 +15,7 @@ vi.mock("axios", () => ({
 
 const videoBlob = () => new Blob(["video"], { type: "video/mp4" });
 
-describe("画布 Seedance 2.0 视频接口", () => {
+describe("画布 Seedance 异步视频接口", () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
@@ -24,7 +24,7 @@ describe("画布 Seedance 2.0 视频接口", () => {
         vi.restoreAllMocks();
     });
 
-    it("固定使用标准 videos 异步接口和指定模型", async () => {
+    it("固定使用 RollDek 地址、文档字段和异步轮询", async () => {
         (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-1", status: "processing" } });
         (axios.get as Mock)
             .mockResolvedValueOnce({ data: { task_id: "task-1", status: "completed", video_url: "https://cdn.example.com/result.mp4" } })
@@ -41,20 +41,20 @@ describe("画布 Seedance 2.0 视频接口", () => {
         }, "雨夜霓虹街道，镜头缓慢推进");
 
         expect(axios.post).toHaveBeenCalledWith(
-            "https://api.example.com/v1/videos",
+            `${CANVAS_VIDEO_BASE_URL}/videos`,
             {
                 model: CANVAS_VIDEO_MODEL,
                 prompt: "雨夜霓虹街道，镜头缓慢推进",
                 aspect_ratio: "16:9",
-                resolution: "720p",
-                seconds: "10",
+                duration: 4,
             },
             expect.objectContaining({
                 headers: { Authorization: "Bearer video-key", "Content-Type": "application/json" },
+                timeout: 900000,
             }),
         );
-        expect(axios.get).toHaveBeenNthCalledWith(1, "https://api.example.com/v1/videos/task-1", expect.objectContaining({ headers: { Authorization: "Bearer video-key" } }));
-        expect(axios.get).toHaveBeenNthCalledWith(2, "https://api.example.com/v1/videos/task-1/content", expect.objectContaining({ responseType: "blob" }));
+        expect(axios.get).toHaveBeenNthCalledWith(1, `${CANVAS_VIDEO_BASE_URL}/videos/task-1`, expect.objectContaining({ headers: { Authorization: "Bearer video-key" } }));
+        expect(axios.get).toHaveBeenNthCalledWith(2, `${CANVAS_VIDEO_BASE_URL}/videos/task-1/content`, expect.objectContaining({ responseType: "blob" }));
         expect(result.type).toBe("video/mp4");
     });
 
@@ -76,15 +76,41 @@ describe("画布 Seedance 2.0 视频接口", () => {
         ]);
 
         expect(axios.post).toHaveBeenCalledWith(
-            "https://api.example.com/v1/videos",
+            `${CANVAS_VIDEO_BASE_URL}/videos`,
             expect.objectContaining({
                 model: CANVAS_VIDEO_MODEL,
                 aspect_ratio: "4:3",
-                resolution: "720p",
-                seconds: "15",
-                image_url: "data:image/png;base64,bWFpbg==",
-                reference_image_urls: ["data:image/png;base64,cmVm"],
+                duration: 15,
+                image_urls: ["data:image/png;base64,bWFpbg==", "data:image/png;base64,cmVm"],
                 audio_url: "https://cdn.example.com/music.mp3",
+            }),
+            expect.any(Object),
+        );
+    });
+
+    it("按选中的 Seedance 2.5 模型使用对应时长和参考音频字段", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-25", status: "completed" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: videoBlob() });
+
+        await requestVideoGeneration({
+            ...defaultConfig,
+            videoApiKey: "video-key",
+            videoModel: "seedance-2.5-720p",
+            videoSeconds: "29",
+            size: "4:3",
+        }, "参考主体并按节奏运动", [
+            { id: "image-25", name: "主体", type: "image/png", dataUrl: "data:image/png;base64,c3ViamVjdA==" },
+        ], [
+            { id: "audio-25", name: "节奏", type: "audio/mpeg", url: "https://cdn.example.com/beat.mp3", duration: 10 },
+        ]);
+
+        expect(axios.post).toHaveBeenCalledWith(
+            `${CANVAS_VIDEO_BASE_URL}/videos`,
+            expect.objectContaining({
+                model: "seedance-2.5-720p",
+                duration: 29,
+                aspect_ratio: "16:9",
+                audio_reference: [{ url: "https://cdn.example.com/beat.mp3" }],
             }),
             expect.any(Object),
         );
@@ -132,8 +158,8 @@ describe("画布 Seedance 2.0 视频接口", () => {
         expect(axios.post).not.toHaveBeenCalled();
     });
 
-    it("缺少视频地址或 Key 时直接提示配置", async () => {
-        await expect(requestVideoGeneration(defaultConfig, "测试视频")).rejects.toThrow("请先在设置里填写视频 API URL 和 Key");
+    it("缺少 Key 时直接提示配置", async () => {
+        await expect(requestVideoGeneration(defaultConfig, "测试视频")).rejects.toThrow("请先在设置里填写视频 API Key");
         expect(axios.post).not.toHaveBeenCalled();
     });
 });

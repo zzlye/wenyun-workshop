@@ -25,7 +25,7 @@ import { validateEffectiveImageApiProfile } from "../../../../../lib/accountApiK
 import { copyImageSourceToClipboard, getClipboardFailureMessage } from "../../../../../lib/clipboard";
 import { getImageBlobExtension, getImageSourceBlob } from "../../../../../lib/imageTransfer";
 import { storeImage } from "../../../../../lib/db";
-import { CANVAS_VIDEO_MODEL } from "../../../../../lib/videoModel";
+import { normalizeCanvasVideoModel } from "../../../../../lib/videoModel";
 import { replaceAudioMentionsForApi, replaceImageMentionsForApi, stripImageMentionMarkers } from "../../../../../lib/promptImageMentions";
 import { primeImageCache, useStore } from "../../../../../store";
 import AccountBalanceBar from "../../../../../components/AccountBalanceBar";
@@ -4277,14 +4277,14 @@ function getInputSummary(inputs: NodeGenerationInput[]) {
 
 function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefined, mode: CanvasNodeGenerationMode, activeProfileId: string): AiConfig {
     const defaultModel = mode === "image" ? config.imageModel : mode === "video" ? config.videoModel : config.textModel;
-    const model = mode === "video" ? CANVAS_VIDEO_MODEL : node?.metadata?.model || defaultModel || config.model || defaultConfig.model;
-    const resolvedModel = mode === "image" ? normalizeImageModelForProfile(model, activeProfileId) : model;
+    const model = node?.metadata?.model || defaultModel || config.model || defaultConfig.model;
+    const resolvedModel = mode === "image" ? normalizeImageModelForProfile(model, activeProfileId) : mode === "video" ? normalizeCanvasVideoModel(model) : model;
     return {
         ...config,
         model: resolvedModel,
         imageModel: mode === "image" ? resolvedModel : config.imageModel,
         textModel: mode === "text" ? resolvedModel : config.textModel,
-        videoModel: mode === "video" ? CANVAS_VIDEO_MODEL : config.videoModel,
+        videoModel: mode === "video" ? resolvedModel : config.videoModel,
         quality: node?.metadata?.quality || config.quality || defaultConfig.quality,
         size: normalizeImageSizeForProfile(node?.metadata?.size || config.size || defaultConfig.size, activeProfileId),
         videoSeconds: node?.metadata?.seconds || config.videoSeconds || defaultConfig.videoSeconds,

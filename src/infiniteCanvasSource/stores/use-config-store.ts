@@ -6,7 +6,7 @@ import { persist } from "zustand/middleware";
 
 import { apiGet } from "@/services/api/request";
 import type { AdminPublicSettings } from "@/services/api/admin";
-import { CANVAS_VIDEO_MODEL } from "../../lib/videoModel";
+import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_MODEL, CANVAS_VIDEO_TIMEOUT, normalizeCanvasVideoModel } from "../../lib/videoModel";
 
 export type AiConfig = {
     channelMode: "remote" | "local";
@@ -56,10 +56,10 @@ export const defaultConfig: AiConfig = {
     textApiKey: "",
     textApiProxy: false,
     textTimeout: DEFAULT_TEXT_VIDEO_TIMEOUT,
-    videoBaseUrl: "",
+    videoBaseUrl: CANVAS_VIDEO_BASE_URL,
     videoApiKey: "",
     videoApiProxy: false,
-    videoTimeout: DEFAULT_TEXT_VIDEO_TIMEOUT,
+    videoTimeout: CANVAS_VIDEO_TIMEOUT,
     model: "gpt-image-2",
     imageModel: "gpt-image-2",
     videoModel: DEFAULT_VIDEO_MODEL,
@@ -98,7 +98,7 @@ function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSetti
         models,
         model: models.includes(config.model) ? config.model : fallbackModel,
         imageModel: models.includes(config.imageModel) ? config.imageModel : modelChannel.defaultImageModel || fallbackModel,
-        videoModel: DEFAULT_VIDEO_MODEL,
+        videoModel: normalizeCanvasVideoModel(config.videoModel),
         textModel: models.includes(config.textModel) ? config.textModel : modelChannel.defaultTextModel || fallbackModel,
         systemPrompt: modelChannel.systemPrompt,
     };
@@ -152,7 +152,7 @@ export const useConfigStore = create<ConfigStore>()(
                         ...config,
                         channelMode: config.channelMode || "remote",
                         imageModel: config.imageModel || config.model,
-                        videoModel: normalizeVideoModel(config.videoModel),
+                        videoModel: normalizeCanvasVideoModel(config.videoModel),
                         textModel: config.textModel || config.model,
                         videoSeconds: config.videoSeconds || "6",
                         vquality: config.vquality || "720",
@@ -165,10 +165,10 @@ export const useConfigStore = create<ConfigStore>()(
                         textApiKey: config.textApiKey || legacyTextVideoApiKey,
                         textApiProxy: typeof config.textApiProxy === "boolean" ? config.textApiProxy : legacyTextVideoApiProxy,
                         textTimeout: Number(config.textTimeout) || legacyTextVideoTimeout,
-                        videoBaseUrl: config.videoBaseUrl || legacyTextVideoBaseUrl,
+                        videoBaseUrl: CANVAS_VIDEO_BASE_URL,
                         videoApiKey: config.videoApiKey || legacyTextVideoApiKey,
                         videoApiProxy: typeof config.videoApiProxy === "boolean" ? config.videoApiProxy : legacyTextVideoApiProxy,
-                        videoTimeout: Number(config.videoTimeout) || legacyTextVideoTimeout,
+                        videoTimeout: CANVAS_VIDEO_TIMEOUT,
                         quality: config.quality || defaultConfig.quality,
                     },
                 };
@@ -187,10 +187,4 @@ export function buildApiUrl(baseUrl: string, path: string) {
     const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
     const apiBaseUrl = normalizedBaseUrl.endsWith("/v1") ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`;
     return `${apiBaseUrl}${path}`;
-}
-
-function normalizeVideoModel(model: string) {
-    void model;
-    // 旧画布保存的其他视频模型统一迁移到当前唯一支持的 Seedance 2.0。
-    return DEFAULT_VIDEO_MODEL;
 }

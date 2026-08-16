@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ModelPicker } from "@/components/model-picker";
 import { fetchImageModels } from "@/services/api/image";
 import { useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { CANVAS_VIDEO_MODELS, normalizeCanvasVideoModel } from "../../../lib/videoModel";
 
 export function AppConfigModal() {
     const { message } = App.useApp();
@@ -43,7 +44,6 @@ export function AppConfigModal() {
             const models = await fetchImageModels(config);
             updateConfig("models", models);
             if (models.length && !models.includes(config.imageModel)) updateConfig("imageModel", models[0]);
-            if (models.length && !models.includes(config.videoModel)) updateConfig("videoModel", models[0]);
             if (models.length && !models.includes(config.textModel)) updateConfig("textModel", models[0]);
             message.success("模型列表已更新");
         } catch (error) {
@@ -118,7 +118,7 @@ export function AppConfigModal() {
                             <ModelPicker config={modelConfig} value={modelConfig.imageModel} onChange={(model) => updateConfig("imageModel", model)} fullWidth />
                         </Form.Item>
                         <Form.Item label="默认视频模型" className="mb-4">
-                            <ModelPicker config={modelConfig} value={modelConfig.videoModel} onChange={(model) => updateConfig("videoModel", model)} fullWidth />
+                            <ModelPicker config={modelConfig} value={normalizeCanvasVideoModel(modelConfig.videoModel)} options={[...CANVAS_VIDEO_MODELS]} onChange={(model) => updateConfig("videoModel", normalizeCanvasVideoModel(model))} fullWidth />
                         </Form.Item>
                         <Form.Item label="默认文本模型" className="mb-4">
                             <ModelPicker config={modelConfig} value={modelConfig.textModel} onChange={(model) => updateConfig("textModel", model)} fullWidth />
