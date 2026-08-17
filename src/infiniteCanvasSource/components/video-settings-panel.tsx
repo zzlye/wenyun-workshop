@@ -5,7 +5,7 @@ import { useEffect, type ReactNode } from "react";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import type { AiConfig } from "@/stores/use-config-store";
-import { CANVAS_VIDEO_25_SECONDS, CANVAS_VIDEO_SECONDS, getCanvasVideoResolution, isCanvasVideo25Model, normalizeCanvasVideoModel } from "../../lib/videoModel";
+import { CANVAS_VIDEO_25_SECONDS, CANVAS_VIDEO_KLING_SECONDS, CANVAS_VIDEO_SECONDS, getCanvasVideoResolution, isCanvasVideo25Model, isCanvasVideoKlingModel, normalizeCanvasVideoKlingSeconds, normalizeCanvasVideoModel } from "../../lib/videoModel";
 
 const VIDEO_SIZE_OPTIONS = [
     { value: "1280x720", label: "16:9 横屏", width: 1280, height: 720 },
@@ -30,7 +30,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const size = normalizeVideoSizeValue(config.size, videoModel);
     const resolution = normalizeVideoResolutionValue(config.vquality, videoModel);
     const sizeOptions = getVideoSizeOptions(videoModel);
-    const secondsOptions = isCanvasVideo25Model(videoModel) ? CANVAS_VIDEO_25_SECONDS : CANVAS_VIDEO_SECONDS;
+    const secondsOptions = isCanvasVideoKlingModel(videoModel) ? CANVAS_VIDEO_KLING_SECONDS : isCanvasVideo25Model(videoModel) ? CANVAS_VIDEO_25_SECONDS : CANVAS_VIDEO_SECONDS;
 
     useEffect(() => {
         if ((config.videoSeconds || "") === seconds) return;
@@ -111,6 +111,7 @@ export function videoSecondsLabel(value: string, model?: string) {
 export function normalizeVideoSizeValue(value: string, model?: string) {
     const normalizedModel = normalizeCanvasVideoModel(model);
     const ratio = readAspectRatio(value);
+    if (isCanvasVideoKlingModel(normalizedModel) && !["16:9", "9:16"].includes(ratio)) return "1280x720";
     if (isCanvasVideo25Model(normalizedModel) && !["16:9", "9:16", "1:1"].includes(ratio)) return "1280x720";
     if (ratio === "9:16") return "720x1280";
     if (ratio === "4:3") return "1024x768";
@@ -125,13 +126,16 @@ export function normalizeVideoResolutionValue(_value: string, model?: string) {
 }
 
 export function normalizeVideoSecondsForModel(value: string, model?: string) {
-    const max = isCanvasVideo25Model(normalizeCanvasVideoModel(model)) ? 29 : 15;
+    const normalizedModel = normalizeCanvasVideoModel(model);
+    if (isCanvasVideoKlingModel(normalizedModel)) return String(normalizeCanvasVideoKlingSeconds(value));
+    const max = isCanvasVideo25Model(normalizedModel) ? 29 : 15;
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return "10";
     return String(Math.min(max, Math.max(4, Math.round(numeric))));
 }
 
 function getVideoSizeOptions(model: string) {
+    if (isCanvasVideoKlingModel(model)) return VIDEO_SIZE_OPTIONS.filter((item) => ["1280x720", "720x1280"].includes(item.value));
     return isCanvasVideo25Model(model) ? VIDEO_SIZE_OPTIONS.filter((item) => ["1280x720", "720x1280", "1024x1024"].includes(item.value)) : VIDEO_SIZE_OPTIONS;
 }
 

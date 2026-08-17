@@ -14,6 +14,8 @@ import {
     CANVAS_VIDEO_MODEL,
     CANVAS_VIDEO_TIMEOUT,
     isCanvasVideo25Model,
+    isCanvasVideoKlingModel,
+    normalizeCanvasVideoKlingSeconds,
     normalizeCanvasVideoModel,
 } from "../../../lib/videoModel";
 
@@ -52,7 +54,7 @@ const VIDEO_REFERENCE_JPEG_QUALITY = 0.88;
  */
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], audioReferences: ReferenceAudio[] = []) {
     const source = resolveVideoApiSource(config);
-    const payload = await buildSeedanceVideoPayload(config, prompt, references, audioReferences);
+    const payload = await buildCanvasVideoPayload(config, prompt, references, audioReferences);
 
     try {
         const created = unwrapVideoTask((await axios.post<VideoApiResponse>(videoApiUrl(source, "/videos"), payload, {
@@ -67,7 +69,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     }
 }
 
-async function buildSeedanceVideoPayload(config: AiConfig, prompt: string, references: ReferenceImage[], audioReferences: ReferenceAudio[]) {
+async function buildCanvasVideoPayload(config: AiConfig, prompt: string, references: ReferenceImage[], audioReferences: ReferenceAudio[]) {
     const normalizedPrompt = prompt.trim();
     if (!normalizedPrompt) throw new Error("请输入视频提示词");
     const model = normalizeCanvasVideoModel(config.videoModel || config.model);
@@ -78,16 +80,23 @@ async function buildSeedanceVideoPayload(config: AiConfig, prompt: string, refer
         aspect_ratio: normalizeVideoAspectRatio(config.size, model),
         duration: normalizeVideoDuration(config.videoSeconds, model),
     };
+    if (isCanvasVideoKlingModel(model)) payload.generate_audio = true;
 
     const images = (await Promise.all(references.map(imageToVideoReferenceUrl))).filter(Boolean);
     if (images.length) {
-        // 文档推荐使用 image_urls，单图和多图都走同一字段。
-        payload.image_urls = images;
+        if (isCanvasVideoKlingModel(model) && images.length === 1) {
+            payload.image_url = images[0];
+        } else {
+            // 文档规定两张图用 image_urls 表示首帧和尾帧。
+            payload.image_urls = images;
+        }
     }
 
-    const audios = (await Promise.all(audioReferences.map(audioToVideoReferenceUrl))).filter(Boolean);
-    if (audios.length) {
-        appendAudioReferences(payload, model, audios);
+    if (!isCanvasVideoKlingModel(model)) {
+        const audios = (await Promise.all(audioReferences.map(audioToVideoReferenceUrl))).filter(Boolean);
+        if (audios.length) {
+            appendAudioReferences(payload, model, audios);
+        }
     }
 
     return payload;
@@ -95,7 +104,8 @@ async function buildSeedanceVideoPayload(config: AiConfig, prompt: string, refer
 
 function assertReferenceLimits(references: ReferenceImage[], audioReferences: ReferenceAudio[], modelValue: string) {
     const model = normalizeCanvasVideoModel(modelValue || CANVAS_VIDEO_MODEL);
-    const imageLimit = isCanvasVideo25Model(model) ? 30 : 9;
+    if (isCanvasVideoKlingModel(model) && audioReferences.length) throw new Error("Kling 模型不支持参考音频，请移除音频节点后重试");
+    const imageLimit = isCanvasVideoKlingModel(model) ? 2 : isCanvasVideo25Model(model) ? 30 : 9;
     const audioLimit = model === "sd-2.5-720p" ? 1 : isCanvasVideo25Model(model) ? 10 : 3;
     const totalLimit = model === "sd-2.5-720p" ? 41 : isCanvasVideo25Model(model) ? 50 : 9;
     if (references.length > imageLimit) throw new Error(`视频参考图最多连接 ${imageLimit} 张`);
@@ -188,6 +198,7 @@ function refreshRemoteUser(config: AiConfig) {
 }
 
 function normalizeVideoDuration(value: string, model: string) {
+    if (isCanvasVideoKlingModel(model)) return normalizeCanvasVideoKlingSeconds(value);
     const max = isCanvasVideo25Model(model) ? 29 : 15;
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return 10;
@@ -196,7 +207,7 @@ function normalizeVideoDuration(value: string, model: string) {
 
 function normalizeVideoAspectRatio(value: string, model: string) {
     const ratio = readVideoAspectRatio(value);
-    const supported = isCanvasVideo25Model(model) ? ["16:9", "9:16", "1:1"] : ["16:9", "9:16", "4:3", "3:4", "1:1", "21:9"];
+    const supported = isCanvasVideoKlingModel(model) ? ["16:9", "9:16"] : isCanvasVideo25Model(model) ? ["16:9", "9:16", "1:1"] : ["16:9", "9:16", "4:3", "3:4", "1:1", "21:9"];
     return supported.includes(ratio) ? ratio : "16:9";
 }
 

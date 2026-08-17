@@ -22,4 +22,13 @@ describe("Seedance 视频参数", () => {
         expect(normalizeVideoSizeValue("4:3", "seedance-2.5-720p")).toBe("1280x720");
         expect(normalizeVideoSizeValue("auto", "seedance-2.0-720p")).toBe("1280x720");
     });
+
+    it("Kling 只显示 16:9、9:16 和 5/10/15 秒", () => {
+        expect(normalizeVideoSecondsForModel("4", "kling-3.0-omni-720p")).toBe("5");
+        expect(normalizeVideoSecondsForModel("8", "kling-3.0-omni-1080p")).toBe("10");
+        expect(normalizeVideoSecondsForModel("20", "kling-3.0-omni-1080p")).toBe("15");
+        expect(normalizeVideoSizeValue("16:9", "kling-3.0-omni-720p")).toBe("1280x720");
+        expect(normalizeVideoSizeValue("9:16", "kling-3.0-omni-720p")).toBe("720x1280");
+        expect(normalizeVideoSizeValue("4:3", "kling-3.0-omni-720p")).toBe("1280x720");
+    });
 });

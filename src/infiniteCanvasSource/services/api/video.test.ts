@@ -1,7 +1,7 @@
 import axios from "axios";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
-import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_MODEL } from "../../../lib/videoModel";
+import { CANVAS_VIDEO_MODEL } from "../../../lib/videoModel";
 import { defaultConfig } from "../../stores/use-config-store";
 import { requestVideoGeneration } from "./video";
 
@@ -14,8 +14,9 @@ vi.mock("axios", () => ({
 }));
 
 const videoBlob = () => new Blob(["video"], { type: "video/mp4" });
+const VIDEO_API_PROXY_BASE = "/api-proxy/wenyun";
 
-describe("画布 Seedance 异步视频接口", () => {
+describe("画布视频异步接口", () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
@@ -24,7 +25,7 @@ describe("画布 Seedance 异步视频接口", () => {
         vi.restoreAllMocks();
     });
 
-    it("固定使用 RollDek 地址、文档字段和异步轮询", async () => {
+    it("固定使用 NewAPI 同源代理、文档字段和异步轮询", async () => {
         (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-1", status: "processing" } });
         (axios.get as Mock)
             .mockResolvedValueOnce({ data: { task_id: "task-1", status: "completed", video_url: "https://cdn.example.com/result.mp4" } })
@@ -41,7 +42,7 @@ describe("画布 Seedance 异步视频接口", () => {
         }, "雨夜霓虹街道，镜头缓慢推进");
 
         expect(axios.post).toHaveBeenCalledWith(
-            `${CANVAS_VIDEO_BASE_URL}/videos`,
+            `${VIDEO_API_PROXY_BASE}/videos`,
             {
                 model: CANVAS_VIDEO_MODEL,
                 prompt: "雨夜霓虹街道，镜头缓慢推进",
@@ -53,9 +54,79 @@ describe("画布 Seedance 异步视频接口", () => {
                 timeout: 900000,
             }),
         );
-        expect(axios.get).toHaveBeenNthCalledWith(1, `${CANVAS_VIDEO_BASE_URL}/videos/task-1`, expect.objectContaining({ headers: { Authorization: "Bearer video-key" } }));
-        expect(axios.get).toHaveBeenNthCalledWith(2, `${CANVAS_VIDEO_BASE_URL}/videos/task-1/content`, expect.objectContaining({ responseType: "blob" }));
+        expect(axios.get).toHaveBeenNthCalledWith(1, `${VIDEO_API_PROXY_BASE}/videos/task-1`, expect.objectContaining({ headers: { Authorization: "Bearer video-key" } }));
+        expect(axios.get).toHaveBeenNthCalledWith(2, `${VIDEO_API_PROXY_BASE}/videos/task-1/content`, expect.objectContaining({ responseType: "blob" }));
         expect(result.type).toBe("video/mp4");
+    });
+
+    it("Kling 单图使用 image_url，并限制时长、比例和音频字段", async () => {
+        await expect(requestVideoGeneration({
+            ...defaultConfig,
+            videoApiKey: "video-key",
+            videoModel: "kling-3.0-omni-1080p",
+            videoSeconds: "8",
+            size: "4:3",
+        }, "人物在雨中回头", [
+            { id: "character", name: "角色", type: "image/png", dataUrl: "data:image/png;base64,Y2hhcmFjdGVy" },
+        ], [
+            { id: "ignored-audio", name: "不支持的音频", type: "audio/mpeg", url: "https://cdn.example.com/music.mp3" },
+        ])).rejects.toThrow("Kling 模型不支持参考音频，请移除音频节点后重试");
+
+        (axios.post as Mock).mockResolvedValueOnce({ data: { id: "kling-task-2", status: "completed" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: videoBlob() });
+
+        await requestVideoGeneration({
+            ...defaultConfig,
+            videoApiKey: "video-key",
+            videoModel: "kling-3.0-omni-1080p",
+            videoSeconds: "8",
+            size: "4:3",
+        }, "人物在雨中回头", [
+            { id: "character", name: "角色", type: "image/png", dataUrl: "data:image/png;base64,Y2hhcmFjdGVy" },
+        ]);
+
+        expect(axios.post).toHaveBeenCalledWith(
+            `${VIDEO_API_PROXY_BASE}/videos`,
+            {
+                model: "kling-3.0-omni-1080p",
+                prompt: "人物在雨中回头",
+                aspect_ratio: "16:9",
+                duration: 10,
+                generate_audio: true,
+                image_url: "data:image/png;base64,Y2hhcmFjdGVy",
+            },
+            expect.any(Object),
+        );
+        expect((axios.post as Mock).mock.calls[0][1]).not.toHaveProperty("audio_url");
+        expect((axios.post as Mock).mock.calls[0][1]).not.toHaveProperty("audio_reference");
+    });
+
+    it("Kling 双图使用 image_urls 作为首尾帧", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { id: "kling-task-3", status: "completed" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: videoBlob() });
+
+        await requestVideoGeneration({
+            ...defaultConfig,
+            videoApiKey: "video-key",
+            videoModel: "kling-3.0-omni-720p",
+            videoSeconds: "15",
+            size: "9:16",
+        }, "从站立到奔跑", [
+            { id: "first", name: "首帧", type: "image/png", dataUrl: "data:image/png;base64,Zmlyc3Q=" },
+            { id: "last", name: "尾帧", type: "image/png", dataUrl: "data:image/png;base64,bGFzdA==" },
+        ]);
+
+        expect(axios.post).toHaveBeenCalledWith(
+            `${VIDEO_API_PROXY_BASE}/videos`,
+            expect.objectContaining({
+                model: "kling-3.0-omni-720p",
+                aspect_ratio: "9:16",
+                duration: 15,
+                image_urls: ["data:image/png;base64,Zmlyc3Q=", "data:image/png;base64,bGFzdA=="],
+            }),
+            expect.any(Object),
+        );
+        expect((axios.post as Mock).mock.calls[0][1]).not.toHaveProperty("image_url");
     });
 
     it("按文档提交多图和音频参考字段", async () => {
@@ -76,7 +147,7 @@ describe("画布 Seedance 异步视频接口", () => {
         ]);
 
         expect(axios.post).toHaveBeenCalledWith(
-            `${CANVAS_VIDEO_BASE_URL}/videos`,
+            `${VIDEO_API_PROXY_BASE}/videos`,
             expect.objectContaining({
                 model: CANVAS_VIDEO_MODEL,
                 aspect_ratio: "4:3",
@@ -105,7 +176,7 @@ describe("画布 Seedance 异步视频接口", () => {
         ]);
 
         expect(axios.post).toHaveBeenCalledWith(
-            `${CANVAS_VIDEO_BASE_URL}/videos`,
+            `${VIDEO_API_PROXY_BASE}/videos`,
             expect.objectContaining({
                 model: "seedance-2.5-720p",
                 duration: 29,
@@ -155,6 +226,22 @@ describe("画布 Seedance 异步视频接口", () => {
             dataUrl: "data:image/png;base64,dGVzdA==",
         }));
         await expect(requestVideoGeneration(config, "测试视频", images)).rejects.toThrow("最多连接 9 张");
+        expect(axios.post).not.toHaveBeenCalled();
+    });
+
+    it("Kling 最多接受两张参考图", async () => {
+        const images = Array.from({ length: 3 }, (_, index) => ({
+            id: `kling-image-${index}`,
+            name: `图片${index}`,
+            type: "image/png",
+            dataUrl: "data:image/png;base64,dGVzdA==",
+        }));
+
+        await expect(requestVideoGeneration({
+            ...defaultConfig,
+            videoApiKey: "video-key",
+            videoModel: "kling-3.0-omni-720p",
+        }, "测试视频", images)).rejects.toThrow("最多连接 2 张");
         expect(axios.post).not.toHaveBeenCalled();
     });
 
