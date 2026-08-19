@@ -200,7 +200,9 @@ describe("画布视频异步接口", () => {
 
     it("content 地址不可用时回退下载任务返回的视频地址", async () => {
         (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-4", status: "completed", video_url: "https://cdn.example.com/result.mp4" } });
-        (axios.get as Mock).mockRejectedValueOnce({ isAxiosError: true, response: { status: 404 } });
+        (axios.get as Mock)
+            .mockRejectedValueOnce({ isAxiosError: true, response: { status: 502 } })
+            .mockRejectedValueOnce({ isAxiosError: true, response: { status: 502 } });
         vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(videoBlob()));
 
         const result = await requestVideoGeneration({
@@ -209,8 +211,42 @@ describe("画布视频异步接口", () => {
             videoApiKey: "video-key",
         }, "测试视频");
 
-        expect(fetch).toHaveBeenCalledWith("https://cdn.example.com/result.mp4", { cache: "no-store", headers: undefined });
+        expect(fetch).toHaveBeenCalledWith("/asset-proxy/https/cdn.example.com/result.mp4", expect.objectContaining({ cache: "no-store", headers: undefined, signal: expect.any(AbortSignal) }));
         expect(result.type).toBe("video/mp4");
+    });
+
+    it("主 content 代理失败时回退同源 NewAPI 路径", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-content-fallback", status: "completed" } });
+        (axios.get as Mock)
+            .mockRejectedValueOnce({ isAxiosError: true, response: { status: 502 } })
+            .mockResolvedValueOnce({ data: videoBlob() });
+
+        const result = await requestVideoGeneration({
+            ...defaultConfig,
+            videoApiKey: "video-key",
+        }, "测试同源回退");
+
+        expect(axios.get).toHaveBeenNthCalledWith(2, "/newapi-proxy/wenyun/v1/videos/task-content-fallback/content", expect.objectContaining({ responseType: "blob" }));
+        expect(result.type).toBe("video/mp4");
+    });
+
+    it("连接公网视频时提交 reference_video 字段", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-reference-video", status: "completed" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: videoBlob() });
+
+        await requestVideoGeneration({
+            ...defaultConfig,
+            videoApiKey: "video-key",
+            videoModel: "kling-3.0-omni-720p",
+        }, "参考视频的镜头节奏", [], [], [
+            { id: "reference-video", name: "参考视频", type: "video/mp4", url: "https://cdn.example.com/reference.mp4" },
+        ]);
+
+        expect(axios.post).toHaveBeenCalledWith(
+            `${VIDEO_API_PROXY_BASE}/videos`,
+            expect.objectContaining({ reference_video: "https://cdn.example.com/reference.mp4" }),
+            expect.any(Object),
+        );
     });
 
     it("拒绝只连接音频或超过文档限制的参考文件", async () => {

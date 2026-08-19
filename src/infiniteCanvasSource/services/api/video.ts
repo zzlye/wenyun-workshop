@@ -6,8 +6,8 @@ import { mediaToDataUrl } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import type { AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
-import type { ReferenceAudio, ReferenceImage } from "@/types/image";
-import { buildApiUrl as buildDevApiUrl, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from "../../../lib/devProxy";
+import type { ReferenceAudio, ReferenceImage, ReferenceVideo } from "@/types/image";
+import { buildApiUrl as buildDevApiUrl, getLockedAssetProxyUrl, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from "../../../lib/devProxy";
 import { sanitizeApiErrorMessage } from "../../../lib/imageApiShared";
 import {
     CANVAS_VIDEO_BASE_URL,
@@ -52,9 +52,9 @@ const VIDEO_REFERENCE_JPEG_QUALITY = 0.88;
  * 画布视频节点只调用固定地址的异步视频接口。
  * 创建、查询和下载都保持在同一套 /v1/videos 路径，避免旧模型兼容分支误发请求。
  */
-export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], audioReferences: ReferenceAudio[] = []) {
+export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], audioReferences: ReferenceAudio[] = [], videoReferences: ReferenceVideo[] = []) {
     const source = resolveVideoApiSource(config);
-    const payload = await buildCanvasVideoPayload(config, prompt, references, audioReferences);
+    const payload = await buildCanvasVideoPayload(config, prompt, references, audioReferences, videoReferences);
 
     try {
         const created = unwrapVideoTask((await axios.post<VideoApiResponse>(videoApiUrl(source, "/videos"), payload, {
@@ -69,11 +69,11 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     }
 }
 
-async function buildCanvasVideoPayload(config: AiConfig, prompt: string, references: ReferenceImage[], audioReferences: ReferenceAudio[]) {
+async function buildCanvasVideoPayload(config: AiConfig, prompt: string, references: ReferenceImage[], audioReferences: ReferenceAudio[], videoReferences: ReferenceVideo[]) {
     const normalizedPrompt = prompt.trim();
     if (!normalizedPrompt) throw new Error("请输入视频提示词");
     const model = normalizeCanvasVideoModel(config.videoModel || config.model);
-    assertReferenceLimits(references, audioReferences, model);
+    assertReferenceLimits(references, audioReferences, videoReferences, model);
     const payload: Record<string, unknown> = {
         model,
         prompt: normalizedPrompt,
@@ -99,10 +99,13 @@ async function buildCanvasVideoPayload(config: AiConfig, prompt: string, referen
         }
     }
 
+    const videoUrl = videoReferences.map(videoToReferenceUrl).find(Boolean);
+    if (videoUrl) payload.reference_video = videoUrl;
+
     return payload;
 }
 
-function assertReferenceLimits(references: ReferenceImage[], audioReferences: ReferenceAudio[], modelValue: string) {
+function assertReferenceLimits(references: ReferenceImage[], audioReferences: ReferenceAudio[], videoReferences: ReferenceVideo[], modelValue: string) {
     const model = normalizeCanvasVideoModel(modelValue || CANVAS_VIDEO_MODEL);
     if (isCanvasVideoKlingModel(model) && audioReferences.length) throw new Error("Kling 模型不支持参考音频，请移除音频节点后重试");
     const imageLimit = isCanvasVideoKlingModel(model) ? 2 : isCanvasVideo25Model(model) ? 30 : 9;
@@ -110,6 +113,7 @@ function assertReferenceLimits(references: ReferenceImage[], audioReferences: Re
     const totalLimit = model === "sd-2.5-720p" ? 41 : isCanvasVideo25Model(model) ? 50 : 9;
     if (references.length > imageLimit) throw new Error(`视频参考图最多连接 ${imageLimit} 张`);
     if (audioReferences.length > audioLimit) throw new Error(`视频参考音频最多连接 ${audioLimit} 个`);
+    if (videoReferences.length > 1) throw new Error("视频参考视频最多连接 1 个");
     if (references.length + audioReferences.length > totalLimit) throw new Error(`视频参考文件总数最多 ${totalLimit} 个`);
     if (audioReferences.length && !references.length) throw new Error("视频参考音频必须同时连接至少一张参考图");
 
@@ -141,7 +145,24 @@ async function waitForVideoResult(source: VideoApiSource, created: VideoTask) {
 }
 
 async function fetchVideoContent(source: VideoApiSource, taskId: string, timeoutMs = requestTimeout(source)) {
-    const response = await axios.get<Blob>(videoApiUrl(source, `/videos/${taskId}/content`), {
+    const contentPath = `/videos/${taskId}/content`;
+    const primaryUrl = videoApiUrl(source, contentPath);
+    try {
+        return await requestVideoContent(primaryUrl, source, timeoutMs);
+    } catch (primaryError) {
+        // 主代理偶发 502 时改走同源 NewAPI 直连路径，保持浏览器不跨域且不改变扣费任务。
+        const fallbackUrl = getLockedAssetProxyUrl(`${source.baseUrl.replace(/\/+$/, "")}${contentPath}`);
+        if (!fallbackUrl || fallbackUrl === primaryUrl) throw primaryError;
+        try {
+            return await requestVideoContent(fallbackUrl, source, timeoutMs);
+        } catch {
+            throw primaryError;
+        }
+    }
+}
+
+async function requestVideoContent(url: string, source: VideoApiSource, timeoutMs: number) {
+    const response = await axios.get<Blob>(url, {
         headers: videoApiHeaders(source),
         responseType: "blob",
         timeout: timeoutMs,
@@ -158,14 +179,25 @@ async function fetchVideoResultBlob(source: VideoApiSource, taskId: string, vide
         if (!shouldFallbackToDirectVideoUrl(error)) throw error;
     }
 
-    const response = await fetch(videoUrl, {
-        cache: "no-store",
-        headers: shouldSendVideoDownloadAuth(source, videoUrl) ? videoApiHeaders(source) : undefined,
-    });
-    if (!response.ok) throw new Error(`视频 URL 下载失败：HTTP ${response.status}`);
-    const blob = await response.blob();
-    await assertVideoBlob(blob);
-    return blob;
+    const downloadUrl = getLockedAssetProxyUrl(videoUrl);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(downloadUrl, {
+            cache: "no-store",
+            headers: shouldSendVideoDownloadAuth(source, videoUrl) ? videoApiHeaders(source) : undefined,
+            signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`视频 URL 下载失败：HTTP ${response.status}`);
+        const blob = await response.blob();
+        await assertVideoBlob(blob);
+        return blob;
+    } catch (error) {
+        if (controller.signal.aborted) throw new Error("视频结果下载超时");
+        throw error;
+    } finally {
+        clearTimeout(timeoutId);
+    }
 }
 
 function resolveVideoApiSource(config: AiConfig): VideoApiSource {
@@ -256,6 +288,12 @@ async function audioToVideoReferenceUrl(audio: ReferenceAudio) {
     if (!dataUrl) return "";
     if (!dataUrl.startsWith("data:audio/")) throw new Error("参考音频格式不正确，请上传 MP3 或 WAV 音频");
     return normalizeVideoReferenceAudioDataUrl(dataUrl, audio.duration);
+}
+
+function videoToReferenceUrl(video: ReferenceVideo) {
+    const directUrl = (video.url || "").trim();
+    // 上游只接受公网 HTTP(S) 视频地址，浏览器的 blob 地址只用于本地预览，不能直接提交。
+    return /^https?:\/\//i.test(directUrl) ? directUrl : "";
 }
 
 async function normalizeVideoReferenceAudioDataUrl(dataUrl: string, knownDuration?: number) {
@@ -466,8 +504,8 @@ function isVideoStatusFailed(status?: string) {
 }
 
 function shouldFallbackToDirectVideoUrl(error: unknown) {
-    if (!axios.isAxiosError(error)) return true;
-    return !error.response || [400, 404, 405].includes(error.response.status || 0);
+    // content 端点在不同 NewAPI 版本中可能返回 404、405 或 5xx；只要任务带有结果地址，就统一尝试同源代理回退。
+    return Boolean(error);
 }
 
 function shouldSendVideoDownloadAuth(source: VideoApiSource, url: string) {

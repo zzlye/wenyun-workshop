@@ -267,10 +267,17 @@ function scheduleThumbnailBackfillTick() {
 async function processNextThumbnailBackfill() {
   if (thumbnailBackfillRunningIds.size > 0) return
 
-  const ids = await getNextThumbnailBackfillBatch()
-  for (const id of ids) startThumbnailBackfill(id)
+  try {
+    const ids = await getNextThumbnailBackfillBatch()
+    for (const id of ids) startThumbnailBackfill(id)
 
-  if (thumbnailBackfillIds.size > 0) scheduleThumbnailBackfillTick()
+    if (thumbnailBackfillIds.size > 0) scheduleThumbnailBackfillTick()
+  } catch {
+    // IndexedDB 事务中止只影响缩略图补齐，不能冒泡成未捕获异常干扰当前生成任务。
+    if (thumbnailBackfillIds.size > 0) {
+      globalThis.setTimeout(() => scheduleThumbnailBackfillTick(), 1_000)
+    }
+  }
 }
 
 async function getNextThumbnailBackfillBatch() {

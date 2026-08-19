@@ -2,7 +2,7 @@
 
 import { Children, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent, KeyboardEvent, ReactNode } from "react";
-import { ArrowUp, AudioLines, Link2, LoaderCircle, Paintbrush, Plus, Search, Trash2, Upload, X } from "lucide-react";
+import { ArrowUp, AudioLines, Link2, LoaderCircle, Paintbrush, Plus, Search, Trash2, Upload, Video, X } from "lucide-react";
 import { Button, Empty, Input, Modal, Tabs, Tag } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -15,7 +15,7 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { assetTagOptions, assetTagValues, getAssetTag, normalizeAssetTag, type AssetTag } from "@/lib/asset-tags";
 import type { InputImage } from "../../../../../types";
 import { getActiveApiProfile, getApiModelUnitCostText, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
-import { audioMentionMatches, getAtImageQuery, getAudioMentionLabel, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertAudioMentionAtVisibleRange, insertImageMentionAtVisibleRange, isCursorInSelectedImageMention, remapImageMentionsForOrder, stripImageMentionMarkers } from "../../../../../lib/promptImageMentions";
+import { audioMentionMatches, getAtImageQuery, getAudioMentionLabel, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, getVideoMentionLabel, imageMentionMatches, insertAudioMentionAtVisibleRange, insertImageMentionAtVisibleRange, insertVideoMentionAtVisibleRange, isCursorInSelectedImageMention, remapImageMentionsForOrder, stripImageMentionMarkers, videoMentionMatches } from "../../../../../lib/promptImageMentions";
 import { storeImage } from "../../../../../lib/db";
 import { normalizeCanvasVideoModel } from "../../../../../lib/videoModel";
 import { useCanvasModelOptions } from "./canvas-model-options";
@@ -23,9 +23,9 @@ import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { getCanvasPromptDomSyncAction, isCanvasPromptImeEvent } from "./canvas-prompt-editor-state";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData, type CanvasReferenceImage } from "../types";
-import { buildConnectedPromptText, getNodeGenerationInputReferenceAudios, getNodeGenerationInputReferenceImages, hasUsableNodeGenerationPrompt, mergeNodeReferenceImages, referenceAudioIdentity, referenceImageIdentity, stripConnectedPromptSuffix, type NodeGenerationInput } from "./canvas-node-generation";
+import { buildConnectedPromptText, getNodeGenerationInputReferenceAudios, getNodeGenerationInputReferenceImages, getNodeGenerationInputReferenceVideos, hasUsableNodeGenerationPrompt, mergeNodeReferenceImages, referenceAudioIdentity, referenceImageIdentity, referenceVideoIdentity, stripConnectedPromptSuffix, type NodeGenerationInput } from "./canvas-node-generation";
 import { createInputImageFromFile, primeImageCache, useStore } from "../../../../../store";
-import type { ReferenceAudio } from "@/types/image";
+import type { ReferenceAudio, ReferenceVideo } from "@/types/image";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
 
@@ -41,7 +41,10 @@ type CanvasNodePromptPanelProps = {
 };
 
 type ReferencePickerCategory = AssetTag;
-type AtMediaOption = { key: string; kind: "image"; label: string; image: InputImage; imageIndex: number; source: string } | { key: string; kind: "audio"; label: string; audio: ReferenceAudio; audioIndex: number; source: string };
+type AtMediaOption =
+    | { key: string; kind: "image"; label: string; image: InputImage; imageIndex: number; source: string }
+    | { key: string; kind: "audio"; label: string; audio: ReferenceAudio; audioIndex: number; source: string }
+    | { key: string; kind: "video"; label: string; video: ReferenceVideo; videoIndex: number; source: string };
 
 const MAX_REFERENCE_IMAGES = 16;
 const referenceCategoryOptions = assetTagOptions;
@@ -88,6 +91,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
     const referenceImages = node.metadata?.referenceImages || EMPTY_REFERENCE_IMAGES;
     const connectedReferenceImages = useMemo(() => getNodeGenerationInputReferenceImages(inputs), [inputs]);
     const connectedReferenceAudios = useMemo(() => (mode === "video" ? getNodeGenerationInputReferenceAudios(inputs) : []), [inputs, mode]);
+    const connectedReferenceVideos = useMemo(() => (mode === "video" ? getNodeGenerationInputReferenceVideos(inputs) : []), [inputs, mode]);
     const connectedReferenceKeys = useMemo(() => new Set(connectedReferenceImages.map(referenceImageIdentity)), [connectedReferenceImages]);
     const mentionableReferences = useMemo(() => mergeNodeReferenceImages(referenceImages, connectedReferenceImages), [connectedReferenceImages, referenceImages]);
     const mentionableInputImages = useMemo<InputImage[]>(() => mentionableReferences.map(referenceToInputImage), [mentionableReferences]);
@@ -102,6 +106,10 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
         () => connectedReferenceAudios.map((audio, index) => ({ audio, mentionIndex: index })),
         [connectedReferenceAudios],
     );
+    const connectedVideoItems = useMemo(
+        () => connectedReferenceVideos.map((video, index) => ({ video, mentionIndex: index })),
+        [connectedReferenceVideos],
+    );
     const referenceImagesRef = useRef(referenceImages);
     const mentionableReferencesRef = useRef(mentionableReferences);
     const promptRef = useRef(prompt);
@@ -109,7 +117,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
     const imageCostText = mode === "image" ? (getApiModelUnitCostText(settings, activeProfile.id, config.model) ?? "HUHN --") : null;
     const atReferenceLimit = referenceImages.length >= MAX_REFERENCE_IMAGES;
     const visiblePrompt = stripImageMentionMarkers(prompt);
-    const mentionableMediaCount = mentionableInputImages.length + connectedReferenceAudios.length;
+    const mentionableMediaCount = mentionableInputImages.length + connectedReferenceAudios.length + connectedReferenceVideos.length;
     const atImageQuery = isCursorInSelectedImageMention(prompt, cursorPos) ? null : getAtImageQuery(visiblePrompt, cursorPos, { length: mentionableMediaCount });
     const atMediaOptions: AtMediaOption[] = useMemo(() => {
         if (!atImageQuery) return [];
@@ -119,8 +127,11 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
         const audioOptions: AtMediaOption[] = connectedReferenceAudios
             .map((audio, index) => ({ key: referenceAudioIdentity(audio), kind: "audio" as const, label: getAudioMentionLabel(index), audio, audioIndex: index, source: "连接音频" }))
             .filter((option) => audioMentionMatches(atImageQuery.query, option.audioIndex));
-        return [...imageOptions, ...audioOptions];
-    }, [atImageQuery, connectedReferenceAudios, connectedReferenceKeys, mentionableReferences]);
+        const videoOptions: AtMediaOption[] = connectedReferenceVideos
+            .map((video, index) => ({ key: referenceVideoIdentity(video), kind: "video" as const, label: getVideoMentionLabel(index), video, videoIndex: index, source: "连接视频" }))
+            .filter((option) => videoMentionMatches(atImageQuery.query, option.videoIndex));
+        return [...imageOptions, ...audioOptions, ...videoOptions];
+    }, [atImageQuery, connectedReferenceAudios, connectedReferenceKeys, connectedReferenceVideos, mentionableReferences]);
     const showAtImageMenu = !atImageMenuDismissed && atMediaOptions.length > 0;
 
     useEffect(() => {
@@ -449,7 +460,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
             setAtImageMenuIndex(0);
             if (!query) return;
 
-            const label = option.kind === "image" ? getImageMentionLabel(option.imageIndex) : getAudioMentionLabel(option.audioIndex);
+            const label = option.kind === "image" ? getImageMentionLabel(option.imageIndex) : option.kind === "audio" ? getAudioMentionLabel(option.audioIndex) : getVideoMentionLabel(option.videoIndex);
             const nextCursor = query.start + label.length;
             if (el) {
                 el.focus();
@@ -461,7 +472,11 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                 }
             }
 
-            const next = option.kind === "image" ? insertImageMentionAtVisibleRange(prompt, query.start, cursor, option.imageIndex) : insertAudioMentionAtVisibleRange(prompt, query.start, cursor, option.audioIndex);
+            const next = option.kind === "image"
+                ? insertImageMentionAtVisibleRange(prompt, query.start, cursor, option.imageIndex)
+                : option.kind === "audio"
+                    ? insertAudioMentionAtVisibleRange(prompt, query.start, cursor, option.audioIndex)
+                    : insertVideoMentionAtVisibleRange(prompt, query.start, cursor, option.videoIndex);
             isUserInputRef.current = false;
             updatePrompt(next.prompt);
             window.setTimeout(() => {
@@ -488,6 +503,32 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                 }
             }
             const next = insertImageMentionAtVisibleRange(prompt, cursor, cursor, imageIndex);
+            isUserInputRef.current = false;
+            updatePrompt(next.prompt);
+            window.setTimeout(() => {
+                if (!inputRef.current) return;
+                inputRef.current.focus();
+                setContentEditableCursor(inputRef.current, next.cursor);
+            }, 0);
+        },
+        [cursorPos, prompt, syncPromptFromInput, updatePrompt],
+    );
+
+    const insertVideoMentionAtCursor = useCallback(
+        (videoIndex: number) => {
+            const el = inputRef.current;
+            const cursor = el ? getContentEditableCursor(el) : cursorPos;
+            const nextCursor = cursor + getVideoMentionLabel(videoIndex).length;
+            if (el) {
+                el.focus();
+                setContentEditableCursor(el, cursor);
+                if (document.execCommand("insertHTML", false, getMentionTagHtml(getVideoMentionLabel(videoIndex)))) {
+                    setContentEditableCursor(el, nextCursor);
+                    syncPromptFromInput();
+                    return;
+                }
+            }
+            const next = insertVideoMentionAtVisibleRange(prompt, cursor, cursor, videoIndex);
             isUserInputRef.current = false;
             updatePrompt(next.prompt);
             window.setTimeout(() => {
@@ -697,7 +738,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
             onWheel={(event) => event.stopPropagation()}
         >
             <div className="rounded-xl border p-2 shadow-sm" style={{ background: theme.node.fill, borderColor: theme.node.stroke }}>
-                {connectedReferenceItems.length > 0 || connectedAudioItems.length > 0 ? (
+                {connectedReferenceItems.length > 0 || connectedAudioItems.length > 0 || connectedVideoItems.length > 0 ? (
                     <div className="mb-2 rounded-xl border border-blue-200/70 bg-blue-50/70 p-2 dark:border-blue-400/20 dark:bg-blue-500/10">
                         <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-blue-600 dark:text-blue-300">
                             <Link2 className="size-3.5" />
@@ -733,6 +774,22 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                                 >
                                     <AudioLines className="size-5" />
                                     <span className="mt-1 max-w-10 truncate text-[9px]">{audio.name}</span>
+                                    <span className="pointer-events-none absolute bottom-1 left-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600/85 px-1 text-[9px] font-semibold leading-none text-white backdrop-blur-sm">{mentionIndex + 1}</span>
+                                </button>
+                            ))}
+                            {connectedVideoItems.map(({ video, mentionIndex }) => (
+                                <button
+                                    key={referenceVideoIdentity(video)}
+                                    type="button"
+                                    className="group/ref relative flex h-[52px] w-[52px] flex-col items-center justify-center overflow-hidden rounded-xl border border-blue-200 bg-white text-blue-600 shadow-sm transition hover:border-blue-400 dark:border-blue-400/30 dark:bg-white/[0.04] dark:text-blue-300"
+                                    onContextMenu={(event) => {
+                                        event.preventDefault();
+                                        insertVideoMentionAtCursor(mentionIndex);
+                                    }}
+                                    title="右键插入 @视频"
+                                >
+                                    {video.url ? <video src={video.url} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : <Video className="size-5" />}
+                                    <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-black/55 px-1 py-0.5 text-[8px] text-white">{video.name}</span>
                                     <span className="pointer-events-none absolute bottom-1 left-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600/85 px-1 text-[9px] font-semibold leading-none text-white backdrop-blur-sm">{mentionIndex + 1}</span>
                                 </button>
                             ))}
@@ -834,7 +891,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                                             optionIndex === atImageMenuIndex ? "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300" : "text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/[0.06]"
                                         }`}
                                     >
-                                        {option.kind === "image" ? <img src={option.image.dataUrl} alt={option.label} className="size-8 shrink-0 rounded-lg object-cover" /> : <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-500 dark:bg-blue-500/10 dark:text-blue-300"><AudioLines className="size-4" /></span>}
+                                        {option.kind === "image" ? <img src={option.image.dataUrl} alt={option.label} className="size-8 shrink-0 rounded-lg object-cover" /> : option.kind === "audio" ? <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-500 dark:bg-blue-500/10 dark:text-blue-300"><AudioLines className="size-4" /></span> : <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-lg bg-blue-50 text-blue-500 dark:bg-blue-500/10 dark:text-blue-300">{option.video.url ? <video src={option.video.url} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : <Video className="size-4" />}</span>}
                                         <span className="min-w-0 flex-1 truncate font-medium">{option.label}</span>
                                         <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-white/[0.08] dark:text-gray-400">{option.source}</span>
                                     </button>

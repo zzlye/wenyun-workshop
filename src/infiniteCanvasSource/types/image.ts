@@ -18,3 +18,16 @@ export type ReferenceAudio = {
     storageKey?: string;
     duration?: number;
 };
+
+export type ReferenceVideo = {
+    id: string;
+    name: string;
+    type: string;
+    url?: string;
+    storageKey?: string;
+    mimeType?: string;
+    width?: number;
+    height?: number;
+    bytes?: number;
+    duration?: number;
+};

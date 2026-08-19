@@ -127,6 +127,26 @@ describe("canvas node generation prompt handling", () => {
         expect(context.referenceAudios[0]).toMatchObject({ id: audioNode.id, url: audioNode.metadata?.content, storageKey: "audio:source" });
     });
 
+    it("视频节点会把上游视频加入连接素材上下文", () => {
+        const sourceVideo = baseNode({
+            id: "video-source",
+            type: CanvasNodeType.Video,
+            title: "参考视频",
+            metadata: { content: "blob:video-url", storageKey: "video:source", mimeType: "video/mp4", naturalWidth: 1280, naturalHeight: 720 },
+        });
+        const targetVideo = baseNode({
+            id: "video-target",
+            type: CanvasNodeType.Video,
+            metadata: { prompt: "参考 @视频1 的镜头运动生成视频" },
+        });
+        const connections: CanvasConnection[] = [{ id: "conn-video", fromNodeId: sourceVideo.id, toNodeId: targetVideo.id }];
+
+        const context = buildNodeGenerationContext(targetVideo.id, [sourceVideo, targetVideo], connections, "参考 [reference video 1] 的镜头运动生成视频");
+
+        expect(context.videoCount).toBe(1);
+        expect(context.referenceVideos[0]).toMatchObject({ id: sourceVideo.id, url: sourceVideo.metadata?.content, storageKey: "video:source", width: 1280, height: 720 });
+    });
+
     it("合并参考图时保留手动参考图在连接图之前并按图片去重", () => {
         const manual = { id: "manual-1", name: "手动图", type: "image/png", dataUrl: "data:image/png;base64,manual" };
         const connected = { id: "connected-1", name: "连接图", type: "image/png", dataUrl: "data:image/png;base64,connected" };
