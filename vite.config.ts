@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { readFileSync } from 'fs'
+import { request as httpRequest, type IncomingHttpHeaders, type ServerResponse } from 'node:http'
+import { request as httpsRequest } from 'node:https'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath, URL } from 'node:url'
@@ -126,6 +128,20 @@ const HOP_BY_HOP_HEADERS = new Set([
   'upgrade',
 ])
 
+const RAW_RESPONSE_OMITTED_HEADERS = new Set([
+  'connection',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+])
+
+const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308])
+const MAX_ASSET_PROXY_REDIRECTS = 5
+
 function toFetchHeaders(headers: Record<string, string | string[] | undefined>): Headers {
   const result = new Headers()
   for (const [name, value] of Object.entries(headers)) {
@@ -144,6 +160,116 @@ function writeResponseHeaders(response: Response, res: import('node:http').Serve
     if (normalizedName === 'content-encoding') return
     res.setHeader(name, value)
   })
+}
+
+function toNodeRequestHeaders(headers: Record<string, string | string[] | undefined>) {
+  const result: Record<string, string | string[]> = {}
+  for (const [name, value] of Object.entries(headers)) {
+    const normalizedName = name.toLowerCase()
+    if (HOP_BY_HOP_HEADERS.has(normalizedName) || value == null) continue
+    result[name] = value
+  }
+  return result
+}
+
+function writeRawResponseHeaders(headers: IncomingHttpHeaders, res: ServerResponse) {
+  for (const [name, value] of Object.entries(headers)) {
+    if (value == null || RAW_RESPONSE_OMITTED_HEADERS.has(name.toLowerCase())) continue
+    // 原样保留视频流长度和编码，浏览器才能按上游协议完整读取二进制内容。
+    res.setHeader(name, value)
+  }
+}
+
+function isVideoContentRequest(requestUrl: string, method: string) {
+  if (method !== 'GET' && method !== 'HEAD') return false
+  const pathname = new URL(requestUrl, 'http://localhost').pathname
+  return /\/videos\/[^/]+\/content$/i.test(pathname)
+}
+
+function isSensitiveRedirectHeader(name: string) {
+  return ['authorization', 'cookie', 'proxy-authorization'].includes(name.toLowerCase())
+}
+
+function sanitizeRedirectHeaders(headers: Record<string, string | string[]>, currentUrl: URL, nextUrl: URL) {
+  if (currentUrl.origin === nextUrl.origin) return headers
+  return Object.fromEntries(Object.entries(headers).filter(([name]) => !isSensitiveRedirectHeader(name)))
+}
+
+async function proxyRawResponse(target: string, req: import('node:http').IncomingMessage, res: ServerResponse, redirects = 0, requestHeaders = toNodeRequestHeaders(req.headers)) {
+  const targetUrl = new URL(target)
+  const sendRequest = targetUrl.protocol === 'https:' ? httpsRequest : httpRequest
+
+  await new Promise<void>((resolve, reject) => {
+    const upstreamRequest = sendRequest(targetUrl, {
+      method: req.method ?? 'GET',
+      headers: requestHeaders,
+    }, (upstreamResponse) => {
+      const statusCode = upstreamResponse.statusCode ?? 502
+      const location = upstreamResponse.headers.location
+      const redirectLocation = Array.isArray(location) ? location[0] : location
+
+      if (REDIRECT_STATUS_CODES.has(statusCode) && redirectLocation && redirects < MAX_ASSET_PROXY_REDIRECTS) {
+        upstreamResponse.resume()
+        const nextUrl = normalizeAssetProxyTarget(new URL(redirectLocation, targetUrl).toString())
+        if (!nextUrl) {
+          reject(new Error('资源下载重定向地址无效'))
+          return
+        }
+        void proxyRawResponse(nextUrl, req, res, redirects + 1, sanitizeRedirectHeaders(requestHeaders, targetUrl, new URL(nextUrl)))
+          .then(resolve, reject)
+        return
+      }
+
+      res.statusCode = statusCode
+      res.statusMessage = upstreamResponse.statusMessage ?? ''
+      writeRawResponseHeaders(upstreamResponse.headers, res)
+
+      let settled = false
+      const settle = (error?: Error) => {
+        if (settled) return
+        settled = true
+        upstreamResponse.removeListener('error', onUpstreamError)
+        upstreamResponse.removeListener('aborted', onUpstreamAborted)
+        res.removeListener('error', onResponseError)
+        res.removeListener('finish', onResponseFinish)
+        res.removeListener('close', onResponseClose)
+        if (error) reject(error)
+        else resolve()
+      }
+      const onUpstreamError = (error: Error) => settle(error)
+      const onUpstreamAborted = () => settle(new Error('上游视频流提前中断'))
+      const onResponseError = (error: Error) => settle(error)
+      const onResponseFinish = () => settle()
+      const onResponseClose = () => {
+        // 客户端主动关闭时停止读取上游，避免再向已经结束的响应写入错误文本。
+        if (!res.writableEnded) {
+          upstreamResponse.destroy()
+          settle()
+        }
+      }
+
+      upstreamResponse.once('error', onUpstreamError)
+      upstreamResponse.once('aborted', onUpstreamAborted)
+      res.once('error', onResponseError)
+      res.once('finish', onResponseFinish)
+      res.once('close', onResponseClose)
+      upstreamResponse.pipe(res)
+    })
+
+    upstreamRequest.once('error', reject)
+    upstreamRequest.setTimeout(900_000, () => upstreamRequest.destroy(new Error('资源下载超时')))
+    upstreamRequest.end()
+  })
+}
+
+function endProxyError(res: ServerResponse, message: string) {
+  if (res.headersSent) {
+    if (!res.writableEnded) res.destroy()
+    return
+  }
+  res.statusCode = 502
+  res.setHeader('Content-Type', 'text/plain;charset=utf-8')
+  res.end(message)
 }
 
 function findLockedFetchProxyRoute(requestUrl: string): LockedFetchProxyRoute | null {
@@ -170,29 +296,12 @@ function lockedFetchProxyPlugin() {
         const assetProxyTarget = resolveAssetProxyTarget(requestUrl)
         if (assetProxyTarget) {
           try {
-            const response = await fetch(assetProxyTarget, {
-              method: req.method ?? 'GET',
-              headers: toFetchHeaders(req.headers),
-              redirect: 'follow',
-            })
-
-            res.statusCode = response.status
-            res.statusMessage = response.statusText
-            writeResponseHeaders(response, res)
-            if (!response.body) {
-              res.end()
-              return
-            }
-            await pipeline(Readable.fromWeb(response.body as any), res)
+            await proxyRawResponse(assetProxyTarget, req, res)
           } catch (error) {
             const cause = error instanceof Error && 'cause' in error && error.cause ? `\n原因: ${String(error.cause)}` : ''
             const message = error instanceof Error ? `${error.stack ?? error.message}${cause}` : String(error)
             server.config.logger.error(`[asset-proxy] ${requestUrl} 代理失败:\n${message}`)
-            if (!res.headersSent) {
-              res.statusCode = 502
-              res.setHeader('Content-Type', 'text/plain;charset=utf-8')
-            }
-            res.end('图片代理请求失败')
+            endProxyError(res, '资源代理请求失败')
           }
           return
         }
@@ -235,6 +344,10 @@ function lockedFetchProxyPlugin() {
             headers.set('New-Api-User', userId)
             headers.set('Cache-Control', 'no-cache')
           }
+          if (isVideoContentRequest(requestUrl, method)) {
+            await proxyRawResponse(targetUrl.toString(), req, res)
+            return
+          }
           const response = await fetch(targetUrl, {
             method,
             headers,
@@ -254,11 +367,7 @@ function lockedFetchProxyPlugin() {
           const cause = error instanceof Error && 'cause' in error && error.cause ? `\n原因: ${String(error.cause)}` : ''
           const message = error instanceof Error ? `${error.stack ?? error.message}${cause}` : String(error)
           server.config.logger.error(`[locked-fetch-proxy] ${requestUrl} 代理失败:\n${message}`)
-          if (!res.headersSent) {
-            res.statusCode = 502
-            res.setHeader('Content-Type', 'text/plain;charset=utf-8')
-          }
-          res.end('代理请求失败')
+          endProxyError(res, '代理请求失败')
         }
       })
     },
