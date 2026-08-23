@@ -25,6 +25,7 @@ import {
   LOCKED_WENYUN_PROFILE_ID,
   mergeImportedSettings,
   normalizeImageSizeForProfile,
+  normalizeImageModelForProfile,
   normalizeApiFormat,
   normalizeSettings,
   resolveImageApiFormat,
@@ -729,6 +730,8 @@ describe('custom providers', () => {
     expect(getFixedImageRequestModel('gpt-image-2-vip')).toBe('gpt-image-2-4k')
     expect(getFixedImageRequestModel('gpt-image-2-4k')).toBe('gpt-image-2-4k')
     expect(getBananaPricedImageModel('nano-banana-pro')).toBe('nano-banana-pro')
+    expect(normalizeImageModelForProfile('nano-banana-pro', LOCKED_WENYUN_PROFILE_ID)).toBe('Nano-Banana-Pro')
+    expect(normalizeImageModelForProfile('NANO-BANANA-2', LOCKED_WENYUN_PROFILE_ID)).toBe('Nano-Banana-2')
   })
 
   it('restores OpenAI-compatible URL after switching through fal.ai', () => {

@@ -2,7 +2,8 @@
 
 import { Children, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent, KeyboardEvent, ReactNode } from "react";
-import { ArrowUp, AudioLines, Link2, LoaderCircle, Paintbrush, Plus, Search, Trash2, Upload, Video, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ArrowUp, AudioLines, Link2, LoaderCircle, Maximize2, Minimize2, Paintbrush, Plus, Search, Trash2, Upload, Video, X } from "lucide-react";
 import { Button, Empty, Input, Modal, Tabs, Tag } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -88,6 +89,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
     const [atImageMenuIndex, setAtImageMenuIndex] = useState(0);
     const [atImageMenuDismissed, setAtImageMenuDismissed] = useState(false);
     const [referencePickerOpen, setReferencePickerOpen] = useState(false);
+    const [isPromptExpanded, setIsPromptExpanded] = useState(false);
     const referenceImages = node.metadata?.referenceImages || EMPTY_REFERENCE_IMAGES;
     const connectedReferenceImages = useMemo(() => getNodeGenerationInputReferenceImages(inputs), [inputs]);
     const connectedReferenceAudios = useMemo(() => (mode === "video" ? getNodeGenerationInputReferenceAudios(inputs) : []), [inputs, mode]);
@@ -197,6 +199,21 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
         },
         [],
     );
+
+    useEffect(() => {
+        setIsPromptExpanded(false);
+    }, [node.id]);
+
+    useEffect(() => {
+        if (!isPromptExpanded) return;
+        const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+            if (event.key !== "Escape") return;
+            event.preventDefault();
+            setIsPromptExpanded(false);
+        };
+        window.addEventListener("keydown", closeOnEscape);
+        return () => window.removeEventListener("keydown", closeOnEscape);
+    }, [isPromptExpanded]);
 
     useEffect(() => {
         const el = inputRef.current;
@@ -728,10 +745,12 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
         submit();
     };
 
-    return (
+    const panel = (
         <div
             data-canvas-editor
-            className="rounded-2xl border p-3 shadow-2xl backdrop-blur"
+            className={`rounded-2xl border shadow-2xl backdrop-blur ${isPromptExpanded
+                ? "fixed left-1/2 top-1/2 z-[1000] max-h-[calc(100vh-32px)] w-[min(760px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto p-4"
+                : "w-full max-w-[420px] p-2.5"}`}
             style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
@@ -905,8 +924,11 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                         contentEditable
                         suppressContentEditableWarning
                         spellCheck={false}
-                        className="thin-scrollbar col-start-1 row-start-1 max-h-44 min-h-[2rem] w-full select-text overflow-y-auto whitespace-pre-wrap break-words rounded-lg border-0 bg-transparent px-2 py-1.5 text-sm leading-5 outline-none"
+                        className={`thin-scrollbar col-start-1 row-start-1 w-full select-text overflow-y-auto whitespace-pre-wrap break-words rounded-lg border-0 bg-transparent text-sm leading-5 outline-none ${isPromptExpanded
+                            ? "min-h-[280px] max-h-[min(60vh,480px)] px-3 py-3 pr-12"
+                            : "min-h-[52px] max-h-24 px-2 py-1.5 pr-10"}`}
                         style={{ color: theme.node.text }}
+                        onWheel={(event) => event.stopPropagation()}
                         onInput={(event) => {
                             isUserInputRef.current = true;
                             if (isCanvasPromptImeEvent(isComposingRef.current, event.nativeEvent as InputEvent)) return;
@@ -956,12 +978,28 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                         }}
                         aria-label={getPromptPlaceholder(mode, hasImageContent, hasTextContent)}
                     />
-                    {!prompt ? <div className="pointer-events-none col-start-1 row-start-1 px-2 py-1.5 text-sm leading-5" style={{ color: theme.node.placeholder }}>{getPromptPlaceholder(mode, hasImageContent, hasTextContent)}</div> : null}
+                    {!prompt ? <div className={`pointer-events-none col-start-1 row-start-1 text-sm leading-5 ${isPromptExpanded ? "px-3 py-3 pr-12" : "px-2 py-1.5 pr-10"}`} style={{ color: theme.node.placeholder }}>{getPromptPlaceholder(mode, hasImageContent, hasTextContent)}</div> : null}
+                    <button
+                        type="button"
+                        className="absolute right-1.5 top-1.5 z-10 grid size-7 place-items-center rounded-lg border border-transparent text-current/60 transition hover:border-current/15 hover:bg-black/5 hover:text-current dark:hover:bg-white/10"
+                        aria-label={isPromptExpanded ? "收起编辑框" : "放大编辑框"}
+                        title={isPromptExpanded ? "收起编辑框" : "放大编辑框"}
+                        onMouseDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                        }}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            setIsPromptExpanded((expanded) => !expanded);
+                        }}
+                    >
+                        {isPromptExpanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+                    </button>
                 </div>
             </div>
 
-            <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
+            <div className={`mt-2 flex min-w-0 gap-2 ${isPromptExpanded ? "items-center justify-between" : "flex-wrap items-center"}`}>
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
                     {mode === "image" ? (
                         <>
                             <ModelPicker config={config} value={config.model} options={modelOptions} onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
@@ -1029,6 +1067,8 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
             />
         </div>
     );
+
+    return isPromptExpanded && typeof document !== "undefined" ? createPortal(panel, document.body) : panel;
 }
 
 function CanvasReferencePickerModal({ open, nodeId, canvasNodes, selectedReferences, onUpload, onSelect, onClose }: { open: boolean; nodeId: string; canvasNodes: CanvasNodeData[]; selectedReferences: CanvasReferenceImage[]; onUpload: () => void; onSelect: (images: CanvasReferenceImage[]) => void; onClose: () => void }) {

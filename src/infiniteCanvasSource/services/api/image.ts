@@ -103,11 +103,14 @@ function buildCanvasImageSettings(config: AiConfig, apiProfileId?: string): AppS
     const effectiveProfile = activeProfile ? getEffectiveImageApiProfile(current, activeProfile) : null;
     const requestApiKey = effectiveProfile?.apiKey || config.apiKey || current.apiKey;
     const requestTimeout = config.timeout || effectiveProfile?.timeout || activeProfile?.timeout || current.timeout;
+    const requestApiFormat = activeProfile?.apiFormat || current.apiFormat;
 
     return normalizeSettings({
         ...current,
         apiKey: requestApiKey,
         model,
+        // 画布节点和主页共用同一套协议判断，不能因为画布自身配置没有该字段而丢失 Gemini/OpenAI 选择。
+        apiFormat: requestApiFormat,
         timeout: requestTimeout,
         activeProfileId: activeProfile?.id || current.activeProfileId,
         profiles: current.profiles.map((profile) =>
@@ -117,6 +120,7 @@ function buildCanvasImageSettings(config: AiConfig, apiProfileId?: string): AppS
                       // 画布本地配置可能残留切站前的 key，生成时必须优先使用设置里当前站点的 key。
                       apiKey: profile.id === activeProfile?.id ? requestApiKey : profile.apiKey || config.apiKey,
                       model,
+                      apiFormat: requestApiFormat,
                       timeout: requestTimeout || profile.timeout,
                   }
                 : profile,

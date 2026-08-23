@@ -113,5 +113,13 @@ export function normalizeFixedImageModel(value: unknown): string {
   if (/^Nano-Banana-Pro-(?:1k|2k|4k)$/i.test(model)) return 'Nano-Banana-Pro'
   if (/^Nano-Banana-2-(?:1k|2k|4k)$/i.test(model)) return 'Nano-Banana-2'
   if (/^Nano-Banana-(?:1k|2k|4k)$/i.test(model)) return 'Nano-Banana-2'
+
+  // 画布节点可能保存上游接口返回的小写模型 ID，这里统一还原为站点使用的显示模型，避免被误判成默认模型。
+  const normalizedKey = model.toLowerCase()
+  const fixedModel = FIXED_IMAGE_MODEL_PRICING.find((item) => (
+    item.model.toLowerCase() === normalizedKey || item.requestModel.toLowerCase() === normalizedKey
+  ))
+  if (fixedModel) return fixedModel.model
+
   return FIXED_IMAGE_MODEL_VALUES.has(model) ? model : DEFAULT_IMAGES_MODEL
 }

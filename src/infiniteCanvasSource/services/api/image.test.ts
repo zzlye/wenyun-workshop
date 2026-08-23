@@ -63,6 +63,52 @@ describe("canvas image api", () => {
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZmluYWw=" }]);
     });
 
+    it("让画布图片生成节点沿用 Banana 原生协议并识别小写模型 ID", async () => {
+        vi.stubEnv("VITE_API_PROXY_AVAILABLE", "true");
+        const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+            new Response(JSON.stringify({
+                candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: "Y2FudmFz" } }] } }],
+            }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+            }),
+        );
+
+        useStore.setState({
+            settings: {
+                ...DEFAULT_SETTINGS,
+                apiFormat: "gemini",
+                profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
+                    ...profile,
+                    apiKey: "canvas-key",
+                    apiFormat: "gemini",
+                    model: "nano-banana-pro",
+                })),
+            },
+        });
+
+        const images = await requestGeneration(
+            {
+                ...defaultConfig,
+                baseUrl: "",
+                apiKey: "canvas-key",
+                model: "nano-banana-pro",
+                imageModel: "nano-banana-pro",
+                size: "1:1",
+                quality: "auto",
+                count: "1",
+            },
+            "画布香蕉测试",
+        );
+
+        const [url, init] = fetchMock.mock.calls[0];
+        const body = JSON.parse(String((init as RequestInit).body));
+        expect(String(url)).toBe("/newapi-proxy/wenyun/v1beta/models/nano-banana-pro:generateContent");
+        expect(body.contents[0].parts[0]).toEqual({ text: "画布香蕉测试" });
+        expect(body.generationConfig.responseModalities).toEqual(["IMAGE"]);
+        expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,Y2FudmFz" }]);
+    });
+
     it("keeps selected canvas image quality when building image requests", async () => {
         const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
             new Response(JSON.stringify({ data: [{ b64_json: "ZmluYWw=" }] }), {
