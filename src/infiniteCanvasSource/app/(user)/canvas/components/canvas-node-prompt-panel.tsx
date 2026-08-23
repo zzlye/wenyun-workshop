@@ -15,7 +15,7 @@ import { useAssetStore, type Asset } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { assetTagOptions, assetTagValues, getAssetTag, normalizeAssetTag, type AssetTag } from "@/lib/asset-tags";
 import type { InputImage } from "../../../../../types";
-import { getActiveApiProfile, getApiModelUnitCostText, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
+import { getActiveApiProfile, getApiModelUnitCostText, isBananaImageModel, normalizeApiFormat, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
 import { audioMentionMatches, getAtImageQuery, getAudioMentionLabel, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, getVideoMentionLabel, imageMentionMatches, insertAudioMentionAtVisibleRange, insertImageMentionAtVisibleRange, insertVideoMentionAtVisibleRange, isCursorInSelectedImageMention, remapImageMentionsForOrder, stripImageMentionMarkers, videoMentionMatches } from "../../../../../lib/promptImageMentions";
 import { storeImage } from "../../../../../lib/db";
 import { normalizeCanvasVideoModel } from "../../../../../lib/videoModel";
@@ -78,6 +78,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
     const activeProfile = useMemo(() => getActiveApiProfile(normalizeSettings(settings)), [settings]);
     const mode = defaultMode(node.type);
     const config = buildNodeConfig(globalConfig, node, mode, activeProfile.id);
+    const isBananaModel = mode === "image" && isBananaImageModel(config.model);
     const modelOptions = useCanvasModelOptions(config, mode, activeProfile.id);
     const connectedPromptText = useMemo(() => buildConnectedPromptText(inputs), [inputs]);
     const [prompt, setPrompt] = useState(() => stripConnectedPromptSuffix(node.metadata?.prompt || "", connectedPromptText));
@@ -750,7 +751,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
             data-canvas-editor
             className={`rounded-2xl border shadow-2xl backdrop-blur ${isPromptExpanded
                 ? "fixed left-1/2 top-1/2 z-[1000] max-h-[calc(100vh-32px)] w-[min(760px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto p-4"
-                : "w-full max-w-[420px] p-2.5"}`}
+                : "w-[640px] max-w-[calc(100vw-24px)] p-3"}`}
             style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
@@ -998,15 +999,30 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                 </div>
             </div>
 
-            <div className={`mt-2 flex min-w-0 gap-2 ${isPromptExpanded ? "items-center justify-between" : "flex-wrap items-center"}`}>
-                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            <div className={`mt-2 flex min-w-0 items-center gap-2 ${isPromptExpanded ? "justify-between" : ""}`}>
+                <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden">
                     {mode === "image" ? (
                         <>
-                            <ModelPicker config={config} value={config.model} options={modelOptions} onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
+                            <ModelPicker config={config} value={config.model} options={modelOptions} className="!min-w-[9rem] !max-w-[180px] shrink-0" onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
+                            {isBananaModel ? (
+                                <label className="flex shrink-0 items-center gap-1.5" title="选择香蕉接口协议">
+                                    <span className="sr-only">香蕉协议</span>
+                                    <select
+                                        aria-label="香蕉协议"
+                                        value={normalizeApiFormat(activeProfile.apiFormat)}
+                                        onChange={(event) => setSettings({ apiFormat: normalizeApiFormat(event.target.value) })}
+                                        className="h-8 max-w-[126px] rounded-full border border-input bg-transparent px-2.5 text-xs shadow-sm outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/20"
+                                    >
+                                        <option value="auto">自动识别</option>
+                                        <option value="openai">OpenAI</option>
+                                        <option value="gemini">Gemini</option>
+                                    </select>
+                                </label>
+                            ) : null}
                             <CanvasImageSettingsPopover
                                 config={config}
                                 placement="topLeft"
-                                buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3"
+                                buttonClassName="!h-10 !max-w-[170px] !shrink-0 !justify-start !rounded-full !px-3"
                                 onConfigChange={(key, value) => onConfigChange(node.id, key === "count" ? { count: Number(value) || 1 } : { [key]: value })}
                                 onMissingConfig={() => openConfigDialog(true)}
                                 onOpenChange={onImageSettingsOpenChange}

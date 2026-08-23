@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { QrCode, ReceiptText, RefreshCw, X } from 'lucide-react'
-import type { ApiProfile } from '../types'
+import type { ApiPriceSnapshot, ApiProfile } from '../types'
 import { useStore } from '../store'
 import { buildFixedModelPriceRows } from '../lib/modelPricing'
 import { queryNewApiModelPerformance, queryNewApiPriceTable, type NewApiModelPerformanceItem } from '../lib/newApi'
@@ -38,34 +38,38 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
   const [performanceError, setPerformanceError] = useState('')
   const [performanceItems, setPerformanceItems] = useState<NewApiModelPerformanceItem[]>([])
   const [performanceUpdatedAt, setPerformanceUpdatedAt] = useState<number | null>(null)
+  const [priceItems, setPriceItems] = useState<ApiPriceSnapshot['items']>([])
+  const pendingPriceSnapshotRef = useRef<ApiPriceSnapshot | null>(null)
+  const loadRequestIdRef = useRef(0)
   const rows = useMemo(() => {
     const baseRows = buildFixedModelPriceRows(activeProfile.id)
     const snapshot = settings.apiPriceByProfileId[activeProfile.id]
-    if (!snapshot?.items.length) return baseRows
-    const priceMap = new Map(snapshot.items.map((item) => [item.model.trim().toLowerCase(), item] as const))
+    const syncedItems = priceItems.length ? priceItems : snapshot?.items ?? []
+    if (!syncedItems.length) return baseRows
+    const priceMap = new Map(syncedItems.map((item) => [item.model.trim().toLowerCase(), item] as const))
     return baseRows.map((row) => {
       const synced = priceMap.get(row.model.trim().toLowerCase()) ?? (row.upstreamModel ? priceMap.get(row.upstreamModel.trim().toLowerCase()) : undefined)
       return synced ? { ...row, priceText: synced.text } : row
     })
-  }, [activeProfile.id, settings.apiPriceByProfileId])
+  }, [activeProfile.id, priceItems, settings.apiPriceByProfileId])
 
   const loadPerformance = async () => {
+    const requestId = ++loadRequestIdRef.current
     setIsLoadingPerformance(true)
     setPriceError('')
     setPerformanceError('')
 
     try {
       const priceTable = await queryNewApiPriceTable(activeProfile)
+      if (requestId !== loadRequestIdRef.current) return
       if (priceTable.found) {
-        setSettings(setApiPriceSnapshot(useStore.getState().settings, activeProfile.id, {
-          items: priceTable.items.map((item) => ({
-            model: item.model,
-            rawPrice: item.rawPrice,
-            text: item.text,
-          })),
+        // 模型列表打开时只更新弹窗内的价格，避免刷新全局设置导致画布浮层被卸载。
+        setPriceItems(priceTable.items)
+        pendingPriceSnapshotRef.current = {
+          items: priceTable.items,
           updatedAt: priceTable.updatedAt,
           found: priceTable.found,
-        }))
+        }
       } else {
         setPriceError('本次价格同步未获取到数据，已沿用上次同步价格或固定价格')
       }
@@ -75,6 +79,7 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
 
     try {
       const result = await queryNewApiModelPerformance(activeProfile, 24)
+      if (requestId !== loadRequestIdRef.current) return
       setPerformanceItems(result.items)
       setPerformanceUpdatedAt(result.found ? result.updatedAt : null)
       if (!result.found) setPerformanceError('当前站点的 NewAPI 模型广场成功率未开放或暂无 24 小时数据')
@@ -83,6 +88,7 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
       setPerformanceUpdatedAt(null)
       setPerformanceError(err instanceof Error ? err.message : '成功率检测失败')
     } finally {
+      if (requestId !== loadRequestIdRef.current) return
       setIsLoadingPerformance(false)
     }
   }
@@ -93,6 +99,15 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
     // 模型列表打开时拉取当前站点的实时成功率，刷新按钮负责再次手动检测。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, activeProfile.id])
+
+  const closeModelList = () => {
+    const pendingSnapshot = pendingPriceSnapshotRef.current
+    if (pendingSnapshot) {
+      setSettings(setApiPriceSnapshot(useStore.getState().settings, activeProfile.id, pendingSnapshot))
+      pendingPriceSnapshotRef.current = null
+    }
+    setOpen(false)
+  }
 
   return (
     <>
@@ -132,7 +147,7 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
           onMouseDown={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <div className="absolute inset-0 bg-black/45 backdrop-blur-sm animate-overlay-in" onClick={() => setOpen(false)} />
+          <div className="absolute inset-0 bg-black/45 backdrop-blur-sm animate-overlay-in" onClick={closeModelList} />
           <div className="relative z-10 flex max-h-[82vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-white/50 bg-white/95 shadow-2xl ring-1 ring-black/5 animate-modal-in dark:border-white/[0.08] dark:bg-gray-900/95 dark:ring-white/10">
             <div className="flex shrink-0 items-center justify-between gap-4 border-b border-gray-100 p-5 dark:border-white/[0.08]">
               <div className="min-w-0">
@@ -158,7 +173,7 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
                 <button
                   type="button"
                   className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-white/[0.08] dark:hover:text-gray-100"
-                  onClick={() => setOpen(false)}
+                  onClick={closeModelList}
                   aria-label="关闭模型列表"
                 >
                   <X className="h-4 w-4" />
