@@ -1,6 +1,6 @@
 "use client";
 
-import { Children, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Children, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent, KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ArrowUp, AudioLines, Link2, LoaderCircle, Maximize2, Minimize2, Paintbrush, Plus, Search, Trash2, Upload, Video, X } from "lucide-react";
@@ -216,7 +216,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
         return () => window.removeEventListener("keydown", closeOnEscape);
     }, [isPromptExpanded]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const el = inputRef.current;
         if (!el) return;
         const parts = getPromptMentionParts(prompt, mentionableInputImages);
@@ -255,7 +255,8 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                 else setContentEditableSelection(el, selection.start, selection.end);
             }
         }
-    }, [prompt, mentionableInputImages]);
+        // 展开面板会把编辑框移动到 Portal，新 DOM 节点需要在首次绘制前重新填充内容。
+    }, [isPromptExpanded, prompt, mentionableInputImages]);
 
     useEffect(() => {
         const handleSelectionChange = () => {
