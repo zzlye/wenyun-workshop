@@ -4,6 +4,8 @@ import type { Asset } from './infiniteCanvasSource/stores/use-asset-store'
 // ===== 设置 =====
 
 export type ApiMode = 'images' | 'responses'
+/** 图片模型请求协议，自动模式根据地址和模型特征选择。 */
+export type ApiFormat = 'auto' | 'openai' | 'gemini'
 export type AppMode = 'gallery' | 'agent'
 export type ReferenceImageEditAction = 'ask' | 'replace-reference' | 'add-mask'
 export type BuiltInApiProvider = 'openai' | 'fal'
@@ -87,12 +89,13 @@ export interface ApiProfile {
   model: string
   timeout: number
   apiMode: ApiMode
+  apiFormat: ApiFormat
   codexCli: boolean
   apiProxy: boolean
   responseFormatB64Json?: boolean
   streamImages?: boolean
   streamPartialImages?: number
-  providerDrafts?: Partial<Record<ApiProvider, Partial<Pick<ApiProfile, 'baseUrl' | 'model' | 'apiMode' | 'codexCli' | 'apiProxy' | 'responseFormatB64Json' | 'streamImages' | 'streamPartialImages'>>>>
+  providerDrafts?: Partial<Record<ApiProvider, Partial<Pick<ApiProfile, 'baseUrl' | 'model' | 'apiMode' | 'apiFormat' | 'codexCli' | 'apiProxy' | 'responseFormatB64Json' | 'streamImages' | 'streamPartialImages'>>>>
 }
 
 export interface ApiBalanceSnapshot {
@@ -194,6 +197,8 @@ export interface AppSettings {
   model: string
   timeout: number
   apiMode: ApiMode
+  /** 当前激活图片配置使用的请求协议。 */
+  apiFormat: ApiFormat
   codexCli: boolean
   apiProxy: boolean
   streamImages?: boolean

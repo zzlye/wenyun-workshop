@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback, useState, useMemo, useLayoutEffect, typ
 import { createPortal } from 'react-dom'
 import { useStore, submitTask, submitAgentMessage, stopAgentResponse, addImageFromFile, createInputImageFromFile, deleteImageIfUnreferenced, updateTaskInStore, removeMultipleTasks, getCachedImage, ensureImageCached, getActiveAgentRounds } from '../store'
 import { DEFAULT_PARAMS } from '../types'
-import { FIXED_IMAGE_MODEL_OPTIONS, allowsCustomImageRatioForProfile, getActiveApiProfile, getApiModelUnitCostText, getImageSizeTiersForProfile, normalizeImageSizeForProfile, normalizeSettings } from '../lib/apiProfiles'
+import { FIXED_IMAGE_MODEL_OPTIONS, allowsCustomImageRatioForProfile, getActiveApiProfile, getApiModelUnitCostText, getImageSizeTiersForProfile, isBananaImageModel, normalizeApiFormat, normalizeImageSizeForProfile, normalizeSettings } from '../lib/apiProfiles'
 import { getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
 import { normalizeImageSize } from '../lib/size'
@@ -644,6 +644,7 @@ export default function InputBar() {
   const allowCustomImageRatio = allowsCustomImageRatioForProfile(activeProfile.id)
   const modelOptions = [...FIXED_IMAGE_MODEL_OPTIONS]
   const selectedModelOption = modelOptions.find((option) => option.value === activeProfile.model)
+  const isBananaModel = isBananaImageModel(activeProfile.model)
 
   useEffect(() => {
     const nextSize = normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id)
@@ -1742,6 +1743,21 @@ export default function InputBar() {
           className="px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/[0.06] focus:outline-none text-xs transition-all duration-200 shadow-sm"
         />
       </label>
+      {isBananaModel && (
+        <label className="relative flex flex-col gap-0.5">
+          <span className="text-gray-400 dark:text-gray-500 ml-1">香蕉协议</span>
+          <Select
+            value={normalizeApiFormat(activeProfile.apiFormat)}
+            onChange={(apiFormat) => setSettings({ apiFormat: normalizeApiFormat(apiFormat) })}
+            options={[
+              { label: '自动识别', value: 'auto' },
+              { label: 'OpenAI', value: 'openai' },
+              { label: 'Gemini', value: 'gemini' },
+            ]}
+            className="px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/[0.06] focus:outline-none text-xs transition-all duration-200 shadow-sm"
+          />
+        </label>
+      )}
       <label
         className="relative flex flex-col gap-0.5"
       >
@@ -2089,7 +2105,7 @@ export default function InputBar() {
             {/* 桌面端布局 */}
             <div className="hidden sm:flex flex-wrap items-end gap-3">
               <div className="min-w-0 flex-1 basis-[28rem]">
-                {renderParams('grid-cols-2 lg:grid-cols-4')}
+                {renderParams(isBananaModel ? 'grid-cols-2 lg:grid-cols-5' : 'grid-cols-2 lg:grid-cols-4')}
               </div>
 
               <div className="ml-auto flex shrink-0 gap-2 mb-0.5">
@@ -2154,7 +2170,7 @@ export default function InputBar() {
             <div className="sm:hidden flex flex-col gap-2">
               <div className={`collapse-section${mobileCollapsed ? ' collapsed' : ''}`}>
                 <div className="collapse-inner">
-                  {renderParams('grid-cols-4')}
+                  {renderParams(isBananaModel ? 'grid-cols-2' : 'grid-cols-4')}
                   <div className="h-2" />
                 </div>
               </div>

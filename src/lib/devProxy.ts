@@ -90,6 +90,11 @@ export function isLockedApiProxyTarget(baseUrl: string): boolean {
   return getLockedApiProxyPrefix(baseUrl) !== null
 }
 
+export function getLockedNewApiProxyPrefix(baseUrl: string): string | null {
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl).toLowerCase()
+  return LOCKED_PROXY_TARGETS.find((target) => target.baseUrl.toLowerCase() === normalizedBaseUrl)?.newApiPrefix ?? null
+}
+
 export function getLockedNewApiProxyUrl(url: string): string | null {
   try {
     const parsed = new URL(url)

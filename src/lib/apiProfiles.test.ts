@@ -25,7 +25,9 @@ import {
   LOCKED_WENYUN_PROFILE_ID,
   mergeImportedSettings,
   normalizeImageSizeForProfile,
+  normalizeApiFormat,
   normalizeSettings,
+  resolveImageApiFormat,
   setApiBalanceSnapshot,
   setApiPriceSnapshot,
   switchApiProfileProvider,
@@ -53,6 +55,20 @@ describe('validateApiProfile', () => {
       apiKey: 'test-key',
       apiProxy: true,
     }))).toBe('缺少 API URL')
+  })
+})
+
+describe('image API format', () => {
+  it('defaults old profiles to automatic OpenAI-compatible detection', () => {
+    expect(normalizeApiFormat(undefined)).toBe('auto')
+    expect(createDefaultOpenAIProfile().apiFormat).toBe('auto')
+    expect(resolveImageApiFormat({ baseUrl: 'https://api.example.com/v1', model: 'Nano-Banana-Pro' })).toBe('openai')
+  })
+
+  it('detects native Gemini endpoints and keeps explicit selection authoritative', () => {
+    expect(resolveImageApiFormat({ baseUrl: 'https://generativelanguage.googleapis.com/v1beta', model: 'Nano-Banana-Pro' })).toBe('gemini')
+    expect(resolveImageApiFormat({ baseUrl: 'https://api.example.com/v1', model: 'Nano-Banana-Pro', apiFormat: 'gemini' })).toBe('gemini')
+    expect(resolveImageApiFormat({ baseUrl: 'https://generativelanguage.googleapis.com/v1beta', model: 'Nano-Banana-Pro', apiFormat: 'openai' })).toBe('openai')
   })
 })
 

@@ -1,7 +1,7 @@
 import { DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type CustomProviderDefinition, type CustomProviderPollMapping, type CustomProviderResultMapping, type CustomProviderSubmitMapping, type ImageApiResponse, type ImageResponseItem, type ResponsesApiResponse, type ResponsesOutputItem, type TaskParams } from '../types'
 import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './canvasImage'
-import { getFixedImageRequestModel, isBananaImageModel } from './apiProfiles'
-import { buildApiUrl, isLockedApiProxyTarget, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from './devProxy'
+import { getFixedImageRequestModel, isBananaImageModel, resolveImageApiFormat } from './apiProfiles'
+import { buildApiUrl, getLockedNewApiProxyPrefix, isLockedApiProxyTarget, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from './devProxy'
 import { fetchImageTask, shouldUseImageTasks } from './imageTasks'
 import { formatImageRatio, normalizeImageSize, parseRatio } from './size'
 import {
@@ -67,6 +67,256 @@ function appendBananaGenerationFormFields(formData: FormData, profile: ApiProfil
   formData.append('aspectRatio', getBananaAspectRatio(params.size))
   formData.append('imageSize', getBananaImageSize(params.size))
   formData.append('replyType', 'json')
+}
+
+function getGeminiBaseUrl(baseUrl: string): string {
+  const input = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(baseUrl.trim()) ? baseUrl.trim() : `https://${baseUrl.trim()}`
+  try {
+    const url = new URL(input)
+    const pathname = url.pathname.replace(/\/v1(?:beta)?\/?$/i, '').replace(/\/+$/, '')
+    return `${url.origin}${pathname}`
+  } catch {
+    return baseUrl.trim().replace(/\/v1(?:beta)?\/?$/i, '').replace(/\/+$/, '')
+  }
+}
+
+function buildGeminiGenerateContentUrl(
+  profile: ApiProfile,
+  proxyConfig: ReturnType<typeof readClientDevProxyConfig>,
+  useApiProxy: boolean,
+): string {
+  const model = encodeURIComponent(getFixedImageRequestModel(profile.model))
+  const endpointPath = `v1beta/models/${model}:generateContent`
+
+  if (useApiProxy) {
+    // Gemini 原生路径不属于 OpenAI 的 /v1 代理，内置站点改走同源 NewAPI 代理，避免被错误拼成 /v1/v1beta。
+    const newApiPrefix = getLockedNewApiProxyPrefix(profile.baseUrl)
+    if (newApiPrefix) return `${newApiPrefix}/${endpointPath}`
+    if (proxyConfig?.prefix) return `${proxyConfig.prefix}/${endpointPath}`
+  }
+
+  return `${getGeminiBaseUrl(profile.baseUrl)}/${endpointPath}`
+}
+
+function createGeminiInlineImagePart(dataUrl: string, fallbackMime: string): Record<string, unknown> {
+  const match = dataUrl.match(/^data:([^;,]+)(?:;[^,]*)?,([\s\S]*)$/i)
+  return {
+    inlineData: {
+      mimeType: match?.[1] || fallbackMime,
+      data: match?.[2] || dataUrl,
+    },
+  }
+}
+
+function createGeminiRequestBody(opts: CallApiOptions, profile: ApiProfile): Record<string, unknown> {
+  const fallbackMime = MIME_MAP[opts.params.output_format] || 'image/png'
+  const parts: Record<string, unknown>[] = [{ text: opts.prompt }]
+  for (const dataUrl of opts.inputImageDataUrls) {
+    parts.push(createGeminiInlineImagePart(dataUrl, fallbackMime))
+  }
+
+  return {
+    contents: [{ role: 'user', parts }],
+    generationConfig: {
+      responseModalities: ['IMAGE'],
+      imageConfig: {
+        aspectRatio: getBananaAspectRatio(opts.params.size),
+        imageSize: getBananaImageSize(opts.params.size),
+      },
+    },
+  }
+}
+
+function createGeminiRequestHeaders(profile: ApiProfile): Record<string, string> {
+  return {
+    Authorization: `Bearer ${profile.apiKey}`,
+    // Google 原生接口读取 x-goog-api-key，NewAPI 等兼容网关会忽略这个额外请求头并继续使用 Bearer。
+    'x-goog-api-key': profile.apiKey,
+    'Content-Type': 'application/json',
+  }
+}
+
+type BananaApiFormat = 'openai' | 'gemini'
+
+const BANANA_FORMAT_CACHE_KEY = 'wenyun-banana-api-format-v1'
+const bananaFormatCache = new Map<string, BananaApiFormat>()
+
+function getApiKeyFingerprint(apiKey: string): string {
+  let hash = 2166136261
+  for (const char of apiKey) {
+    hash ^= char.charCodeAt(0)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(16)
+}
+
+function getBananaFormatCacheId(profile: ApiProfile): string {
+  return [profile.provider, profile.baseUrl.trim().replace(/\/+$/, '').toLowerCase(), getFixedImageRequestModel(profile.model).trim().toLowerCase(), getApiKeyFingerprint(profile.apiKey.trim())].join('|')
+}
+
+function readRememberedBananaFormat(profile: ApiProfile): BananaApiFormat | null {
+  const cacheId = getBananaFormatCacheId(profile)
+  const memoryValue = bananaFormatCache.get(cacheId)
+  if (memoryValue) return memoryValue
+
+  if (typeof localStorage === 'undefined') return null
+  try {
+    const stored = JSON.parse(localStorage.getItem(BANANA_FORMAT_CACHE_KEY) || '{}') as Record<string, unknown>
+    const value = stored[cacheId]
+    if (value === 'openai' || value === 'gemini') {
+      bananaFormatCache.set(cacheId, value)
+      return value
+    }
+  } catch {
+    // 本地缓存损坏时直接重新协商，不影响正常生成。
+  }
+  return null
+}
+
+function rememberBananaFormat(profile: ApiProfile, format: BananaApiFormat): void {
+  const cacheId = getBananaFormatCacheId(profile)
+  bananaFormatCache.set(cacheId, format)
+  if (typeof localStorage === 'undefined') return
+
+  try {
+    const stored = JSON.parse(localStorage.getItem(BANANA_FORMAT_CACHE_KEY) || '{}') as Record<string, unknown>
+    const next = { ...stored, [cacheId]: format }
+    const entries = Object.entries(next).slice(-20)
+    localStorage.setItem(BANANA_FORMAT_CACHE_KEY, JSON.stringify(Object.fromEntries(entries)))
+  } catch {
+    // 隐私模式或浏览器禁用存储时只保留当前页面内的记忆。
+  }
+}
+
+function isBananaFormatMismatchError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const rawPayload = typeof (error as Error & { rawResponsePayload?: unknown }).rawResponsePayload === 'string'
+    ? (error as Error & { rawResponsePayload: string }).rawResponsePayload
+    : ''
+  const status = Number((error as Error & { status?: unknown }).status)
+  const text = `${error.message}\n${rawPayload}`.toLowerCase()
+
+  // 只在明确表示协议、路径或模型格式不匹配时切换，普通额度、限流和提示词错误不自动重发。
+  if (/only imagen models|not supported model for image generation|unsupported(?:\s+model|\s+image)|unknown model|model[^\n]*(?:not found|unsupported)/i.test(text)) return true
+  if (/generatecontent|v1beta|endpoint[^\n]*(?:not found|unsupported)|method not allowed|cannot post/i.test(text)) return true
+  return status === 404 || status === 405
+}
+
+function getEmbeddedApiErrorMessage(payload: unknown): string | null {
+  if (!isRecordValue(payload)) return null
+  const error = payload.error
+  if (typeof error === 'string' && error.trim()) return error.trim()
+  if (isRecordValue(error) && typeof error.message === 'string' && error.message.trim()) return error.message.trim()
+  for (const key of ['message', 'detail', 'msg']) {
+    if (typeof payload[key] === 'string' && payload[key].trim()) return payload[key].trim()
+  }
+  return null
+}
+
+function getGeminiInlineDataPart(part: unknown): { data: string; mimeType?: string } | null {
+  if (!isRecordValue(part)) return null
+  const inlineData = isRecordValue(part.inlineData)
+    ? part.inlineData
+    : isRecordValue(part.inline_data)
+      ? part.inline_data
+      : null
+  if (!inlineData || typeof inlineData.data !== 'string' || !inlineData.data.trim()) return null
+
+  const mimeType = typeof inlineData.mimeType === 'string'
+    ? inlineData.mimeType
+    : typeof inlineData.mime_type === 'string'
+      ? inlineData.mime_type
+      : undefined
+  return { data: inlineData.data, mimeType }
+}
+
+function getGeminiResponseCandidates(payload: unknown): unknown[] {
+  if (!isRecordValue(payload)) return []
+  const candidates = Array.isArray(payload.candidates) ? payload.candidates : []
+  if (candidates.length) return candidates
+  return isRecordValue(payload.response) && Array.isArray(payload.response.candidates)
+    ? payload.response.candidates
+    : []
+}
+
+async function parseGeminiImageResponse(payload: unknown, fallbackMime: string, signal?: AbortSignal): Promise<CallApiResult> {
+  const images: string[] = []
+  const revisedPrompts: Array<string | undefined> = []
+
+  for (const candidate of getGeminiResponseCandidates(payload)) {
+    if (!isRecordValue(candidate) || !isRecordValue(candidate.content) || !Array.isArray(candidate.content.parts)) continue
+    for (const part of candidate.content.parts) {
+      const inline = getGeminiInlineDataPart(part)
+      if (!inline) continue
+      images.push(normalizeBase64Image(inline.data, inline.mimeType || fallbackMime))
+      revisedPrompts.push(undefined)
+    }
+  }
+
+  if (images.length) {
+    const actualParams = isRecordValue(payload) ? mergeActualParams(pickActualParams(payload)) : undefined
+    return {
+      images,
+      actualParams,
+      actualParamsList: images.map(() => actualParams),
+      revisedPrompts,
+    }
+  }
+
+  // 部分 Gemini 兼容网关会把原生请求转换后仍返回 OpenAI data 数组，这里只兼容响应解析，不重发请求。
+  if (isRecordValue(payload) && (Array.isArray(payload.data) || Array.isArray(payload.results))) {
+    return parseImagesApiResponse(payload as ImageApiResponse, fallbackMime, signal)
+  }
+
+  const err = new Error(getEmbeddedApiErrorMessage(payload) || 'Gemini 接口没有返回可识别的图片数据，请检查渠道是否支持原生 Gemini 格式')
+  ;(err as any).rawResponsePayload = JSON.stringify(payload, null, 2)
+  throw err
+}
+
+async function callGeminiImageApiSingle(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
+  const mime = MIME_MAP[opts.params.output_format] || 'image/png'
+  const proxyConfig = readClientDevProxyConfig()
+  const useApiProxy = shouldUseApiProxyForBaseUrl(profile.apiProxy, profile.baseUrl, proxyConfig)
+  const timeoutSeconds = getImageRequestTimeoutSeconds(profile.model, opts.params, profile.timeout)
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutSeconds * 1000)
+
+  try {
+    const response = await fetch(buildGeminiGenerateContentUrl(profile, proxyConfig, useApiProxy), {
+      method: 'POST',
+      headers: createGeminiRequestHeaders(profile),
+      cache: 'no-store',
+      body: JSON.stringify(createGeminiRequestBody(opts, profile)),
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      const error = new Error(await getApiErrorMessage(response))
+      ;(error as any).status = response.status
+      throw error
+    }
+    return parseGeminiImageResponse(await response.json() as unknown, mime, controller.signal)
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
+async function callGeminiImageApi(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
+  const count = Math.max(1, opts.params.n)
+  if (count === 1) return callGeminiImageApiSingle(opts, profile)
+
+  // Gemini 原生 generateContent 不接受 OpenAI 的 n 字段，多图请求拆成独立任务并行执行。
+  const results = await Promise.all(
+    Array.from({ length: count }, () => callGeminiImageApiSingle({
+      ...opts,
+      params: { ...opts.params, n: 1 },
+    }, profile)),
+  )
+  const images = results.flatMap((result) => result.images)
+  const actualParamsList = results.flatMap((result) => result.actualParamsList ?? result.images.map(() => result.actualParams))
+  const revisedPrompts = results.flatMap((result) => result.revisedPrompts ?? result.images.map(() => undefined))
+  const actualParams = mergeActualParams(results[0]?.actualParams, { n: images.length })
+  return { images, actualParams, actualParamsList, revisedPrompts }
 }
 
 function appendQuery(path: string, query?: Record<string, string>): string {
@@ -332,7 +582,7 @@ async function parseImagesApiResponse(payload: ImageApiResponse, mime: string, s
   // Grsai Banana 原生接口返回 results，NewAPI 自定义渠道会原样透传。
   const data = Array.isArray(payload.data) && payload.data.length ? payload.data : payload.results
   if (!Array.isArray(data) || !data.length) {
-    const err = new Error('接口没有返回图片数据，请查看原始响应内容确认服务商实际返回的数据结构。如果使用的是中转或兼容接口，建议创建并使用「自定义服务商」配置。')
+    const err = new Error(getEmbeddedApiErrorMessage(payload) || '接口没有返回图片数据，请查看原始响应内容确认服务商实际返回的数据结构。如果使用的是中转或兼容接口，建议创建并使用「自定义服务商」配置。')
     ;(err as any).rawResponsePayload = JSON.stringify(payload, null, 2)
     throw err
   }
@@ -530,6 +780,38 @@ export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile
     return callCustomHttpImageApi(opts, profile, customProvider)
   }
 
+  if (isBananaImageModel(profile.model)) {
+    if (profile.apiFormat === 'auto') return callBananaImageApiAutomatically(opts, profile)
+    return callBananaImageApiByFormat(opts, profile, resolveImageApiFormat(profile))
+  }
+
+  return callOpenAIImageApi(opts, profile)
+}
+
+async function callBananaImageApiByFormat(opts: CallApiOptions, profile: ApiProfile, format: BananaApiFormat): Promise<CallApiResult> {
+  if (format === 'gemini') return callGeminiImageApi(opts, profile)
+  return callOpenAIImageApi(opts, profile)
+}
+
+async function callBananaImageApiAutomatically(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
+  const rememberedFormat = readRememberedBananaFormat(profile)
+  const firstFormat = rememberedFormat ?? resolveImageApiFormat(profile)
+
+  try {
+    const result = await callBananaImageApiByFormat(opts, profile, firstFormat)
+    rememberBananaFormat(profile, firstFormat)
+    return result
+  } catch (error) {
+    if (!isBananaFormatMismatchError(error)) throw error
+
+    const fallbackFormat: BananaApiFormat = firstFormat === 'gemini' ? 'openai' : 'gemini'
+    const result = await callBananaImageApiByFormat(opts, profile, fallbackFormat)
+    rememberBananaFormat(profile, fallbackFormat)
+    return result
+  }
+}
+
+async function callOpenAIImageApi(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
   const requestModel = getFixedImageRequestModel(profile.model)
   if (profile.provider === 'openai' && requestModel !== profile.model) {
     return callImagesApi(opts, {
@@ -737,7 +1019,9 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
     }
 
     if (!response.ok) {
-      throw new Error(await getApiErrorMessage(response))
+      const error = new Error(await getApiErrorMessage(response))
+      ;(error as any).status = response.status
+      throw error
     }
 
     if (isEventStreamResponse(response)) {

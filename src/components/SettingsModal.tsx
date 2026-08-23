@@ -945,6 +945,7 @@ export default function SettingsModal() {
         url.searchParams.set('apiKey', '{key}')
       }
       url.searchParams.set('apiMode', profile.apiMode)
+      if (profile.apiFormat !== 'auto') url.searchParams.set('apiFormat', profile.apiFormat)
       const model = profile.model.trim() || getDefaultModelForMode(profile.apiMode)
       url.searchParams.set('model', !options.includeApiKey && options.useNewApiModel ? '{model}' : model)
       if (profile.codexCli) url.searchParams.set('codexCli', 'true')

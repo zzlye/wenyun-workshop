@@ -1131,6 +1131,7 @@ export const useStore = create<AppState>()(
           incoming.model !== undefined ||
           incoming.timeout !== undefined ||
           incoming.apiMode !== undefined ||
+          incoming.apiFormat !== undefined ||
           incoming.codexCli !== undefined ||
           incoming.apiProxy !== undefined ||
           incoming.streamImages !== undefined ||
@@ -1146,6 +1147,7 @@ export const useStore = create<AppState>()(
                   model: incoming.model ?? profile.model,
                   timeout: incoming.timeout ?? profile.timeout,
                   apiMode: incoming.apiMode === 'images' || incoming.apiMode === 'responses' ? incoming.apiMode : profile.apiMode,
+                  apiFormat: incoming.apiFormat === 'openai' || incoming.apiFormat === 'gemini' || incoming.apiFormat === 'auto' ? incoming.apiFormat : profile.apiFormat,
                   codexCli: incoming.codexCli ?? profile.codexCli,
                   apiProxy: incoming.apiProxy ?? profile.apiProxy,
                   streamImages: incoming.streamImages ?? profile.streamImages,
@@ -1724,6 +1726,7 @@ function createSettingsForApiProfile(settings: AppSettings, profile: ApiProfile)
     model: profile.model,
     timeout: profile.timeout,
     apiMode: profile.apiMode,
+    apiFormat: profile.apiFormat,
     codexCli: profile.codexCli,
     apiProxy: profile.apiProxy,
     profiles: normalized.profiles.map((item) => item.id === profile.id ? profile : item),

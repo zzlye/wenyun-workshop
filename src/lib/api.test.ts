@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PARAMS } from '../types'
-import { DEFAULT_SETTINGS, GPT_IMAGE_2_SUPER_MODEL, LOCKED_PUBLIC_PROFILE_ID } from './apiProfiles'
+import { DEFAULT_SETTINGS, GPT_IMAGE_2_SUPER_MODEL, LOCKED_PUBLIC_PROFILE_ID, getActiveApiProfile } from './apiProfiles'
 import { callImageApi } from './api'
 import { getGenericAssetProxyUrl } from './devProxy'
 
@@ -577,6 +577,115 @@ describe('callImageApi', () => {
       prompt: 'prompt',
     })
     expect(result.images).toEqual(['data:image/png;base64,ZmluYWw='])
+  })
+
+  it('automatically switches Banana protocol when the first format is rejected', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: { message: 'not supported model for image generation, only imagen models are supported' },
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        candidates: [{
+          content: { parts: [{ inlineData: { mimeType: 'image/png', data: 'YXV0bw==' } }] },
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      apiKey: 'auto-format-test-key',
+      apiFormat: 'auto' as const,
+      model: 'Nano-Banana-Pro',
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
+        ...profile,
+        baseUrl: 'https://auto-format.example.com/v1',
+        apiKey: 'auto-format-test-key',
+        apiFormat: 'auto' as const,
+        model: 'Nano-Banana-Pro',
+        apiProxy: false,
+      })),
+    }
+
+    expect(getActiveApiProfile(settings).apiFormat).toBe('auto')
+    expect(getActiveApiProfile(settings).model).toMatch(/^Nano-Banana/)
+
+    const result = await callImageApi({
+      settings,
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    } as any)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(String(fetchMock.mock.calls[0][0])).toBe('https://api.zzlye.xyz/v1/images/generations')
+    expect(String(fetchMock.mock.calls[1][0])).toBe('/newapi-proxy/wenyun/v1beta/models/nano-banana-pro:generateContent')
+    expect(result.images).toEqual(['data:image/png;base64,YXV0bw=='])
+  })
+
+  it('routes Banana image models through native Gemini generateContent when selected', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      candidates: [{
+        content: {
+          parts: [
+            { text: '已生成图片' },
+            { inlineData: { mimeType: 'image/png', data: 'Z2VtaW5p' } },
+          ],
+        },
+      }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      apiKey: 'test-key',
+      apiFormat: 'gemini' as const,
+      model: 'Nano-Banana-Pro',
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
+        ...profile,
+        apiKey: 'test-key',
+        apiFormat: 'gemini' as const,
+        model: 'Nano-Banana-Pro',
+      })),
+    }
+
+    const result = await callImageApi({
+      settings,
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS, size: '2560x1440' },
+      inputImageDataUrls: ['data:image/jpeg;base64,cmVm'],
+    } as any)
+
+    const [url, init] = fetchMock.mock.calls[0]
+    const body = JSON.parse(String((init as RequestInit).body))
+    expect(String(url)).toBe('/newapi-proxy/wenyun/v1beta/models/nano-banana-pro:generateContent')
+    expect(body).toEqual({
+      contents: [{
+        role: 'user',
+        parts: [
+          { text: 'prompt' },
+          { inlineData: { mimeType: 'image/jpeg', data: 'cmVm' } },
+        ],
+      }],
+      generationConfig: {
+        responseModalities: ['IMAGE'],
+        imageConfig: { aspectRatio: '16:9', imageSize: '2K' },
+      },
+    })
+    expect(init).toMatchObject({
+      method: 'POST',
+      headers: expect.objectContaining({
+        Authorization: 'Bearer test-key',
+        'x-goog-api-key': 'test-key',
+      }),
+    })
+    expect(result.images).toEqual(['data:image/png;base64,Z2VtaW5p'])
   })
 
   it('adds Banana native image size fields to NewAPI requests', async () => {

@@ -1,5 +1,6 @@
 import type {
   AccountApiKeyMode,
+  ApiFormat,
   ApiMode,
   ApiBalanceSnapshot,
   ApiPriceSnapshot,
@@ -76,6 +77,28 @@ export const DEFAULT_FAL_MODEL = 'openai/gpt-image-2'
 export const DEFAULT_OPENAI_PROFILE_ID = LOCKED_WENYUN_PROFILE_ID
 export const DEFAULT_API_TIMEOUT = 600
 const IMAGE_STREAMING_ENABLED = false
+
+export function normalizeApiFormat(value: unknown): ApiFormat {
+  return value === 'openai' || value === 'gemini' ? value : 'auto'
+}
+
+/** 根据配置和地址推断首选协议；自动模式的失败切换在请求层处理。 */
+export function resolveImageApiFormat(profile: Pick<ApiProfile, 'baseUrl' | 'model'> & Partial<Pick<ApiProfile, 'apiFormat'>>): Exclude<ApiFormat, 'auto'> {
+  const configured = normalizeApiFormat(profile.apiFormat)
+  if (configured !== 'auto') return configured
+
+  const baseUrl = profile.baseUrl.trim().toLowerCase()
+  const model = profile.model.trim().toLowerCase()
+  if (
+    baseUrl.includes('generativelanguage.googleapis.com') ||
+    /\/v1beta(?:\/|$)/i.test(baseUrl) ||
+    /^gemini(?:-|$)/i.test(model)
+  ) {
+    return 'gemini'
+  }
+
+  return 'openai'
+}
 
 export function normalizeImageModelForProfile(model: string, profileId: string): string {
   void profileId
@@ -324,6 +347,7 @@ function createLockedOpenAIProfile(definition: typeof LOCKED_OPENAI_PROFILE_DEFI
     model: normalizeFixedImageModel(overrides.model),
     timeout: normalizeApiTimeout(overrides.timeout),
     apiMode: 'images',
+    apiFormat: normalizeApiFormat(overrides.apiFormat),
     codexCli: false,
     apiProxy: typeof overrides.apiProxy === 'boolean' ? overrides.apiProxy : false,
     responseFormatB64Json: overrides.responseFormatB64Json === true ? true : undefined,
@@ -700,6 +724,7 @@ export function createDefaultFalProfile(overrides: Partial<ApiProfile> = {}): Ap
     model: DEFAULT_FAL_MODEL,
     timeout: DEFAULT_API_TIMEOUT,
     apiMode: 'images',
+    apiFormat: 'auto',
     codexCli: false,
     apiProxy: false,
     streamImages: false,
@@ -715,6 +740,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
       baseUrl: profile.baseUrl,
       model: profile.model,
       apiMode: profile.apiMode,
+      apiFormat: profile.apiFormat,
       codexCli: profile.codexCli,
       apiProxy: profile.apiProxy,
       responseFormatB64Json: profile.responseFormatB64Json,
@@ -731,6 +757,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
       baseUrl: savedDraft?.baseUrl ?? DEFAULT_FAL_BASE_URL,
       model: savedDraft?.model ?? DEFAULT_FAL_MODEL,
       apiMode: savedDraft?.apiMode ?? 'images',
+      apiFormat: savedDraft?.apiFormat ?? 'auto',
       codexCli: false,
       apiProxy: false,
       responseFormatB64Json: savedDraft?.responseFormatB64Json,
@@ -748,6 +775,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
       baseUrl: savedDraft?.baseUrl ?? (shouldUseOpenAIDefaults ? DEFAULT_BASE_URL : profile.baseUrl || DEFAULT_BASE_URL),
       model: savedDraft?.model ?? (shouldUseOpenAIDefaults ? DEFAULT_IMAGES_MODEL : profile.model || DEFAULT_IMAGES_MODEL),
       apiMode: savedDraft?.apiMode ?? 'images',
+      apiFormat: savedDraft?.apiFormat ?? 'auto',
       codexCli: false,
       apiProxy: false,
       responseFormatB64Json: savedDraft?.responseFormatB64Json,
@@ -763,6 +791,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
     baseUrl: savedDraft?.baseUrl ?? DEFAULT_BASE_URL,
     model: savedDraft?.model ?? DEFAULT_IMAGES_MODEL,
     apiMode: savedDraft?.apiMode ?? profile.apiMode,
+    apiFormat: savedDraft?.apiFormat ?? profile.apiFormat,
     codexCli: false,
     apiProxy: savedDraft?.apiProxy ?? DEFAULT_OPENAI_API_PROXY,
     responseFormatB64Json: savedDraft?.responseFormatB64Json,
@@ -778,6 +807,7 @@ function normalizeProviderDraft(input: unknown, provider: ApiProvider, customPro
   const baseUrl = typeof input.baseUrl === 'string' ? input.baseUrl : undefined
   const model = typeof input.model === 'string' && input.model.trim() ? input.model : undefined
   const apiMode = input.apiMode === 'responses' ? 'responses' : input.apiMode === 'images' ? 'images' : undefined
+  const apiFormat = input.apiFormat === 'openai' || input.apiFormat === 'gemini' ? input.apiFormat : undefined
   const knownProvider = provider === 'fal' || provider === 'openai' || customProviderIds.has(provider)
   if (!knownProvider) return undefined
 
@@ -787,6 +817,7 @@ function normalizeProviderDraft(input: unknown, provider: ApiProvider, customPro
       : baseUrl,
     model,
     apiMode,
+    apiFormat,
     codexCli: false,
     apiProxy: typeof input.apiProxy === 'boolean' ? input.apiProxy : fallback.apiProxy,
     responseFormatB64Json: input.responseFormatB64Json === true ? true : undefined,
@@ -814,6 +845,7 @@ export function normalizeApiProfile(input: unknown, fallback?: Partial<ApiProfil
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : fallback?.apiKey,
     model: typeof record.model === 'string' ? record.model : fallback?.model,
     timeout: normalizeApiTimeout(record.timeout, fallback?.timeout ?? DEFAULT_API_TIMEOUT),
+    apiFormat: normalizeApiFormat(record.apiFormat ?? fallback?.apiFormat),
     apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : fallback?.apiProxy,
     responseFormatB64Json: record.responseFormatB64Json === true ? true : fallback?.responseFormatB64Json,
     streamImages: IMAGE_STREAMING_ENABLED,
@@ -832,6 +864,10 @@ function validateImportedProfileRecord(input: unknown) {
   if (typeof input.apiMode === 'string' && input.apiMode !== 'images' && input.apiMode !== 'responses') {
     throw new Error('apiMode 格式无效，应为 images 或 responses')
   }
+
+  if (typeof input.apiFormat === 'string' && !['auto', 'openai', 'gemini'].includes(input.apiFormat)) {
+    throw new Error('apiFormat 格式无效，应为 auto、openai 或 gemini')
+  }
 }
 
 export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSettings {
@@ -843,6 +879,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     model: DEFAULT_IMAGES_MODEL,
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : DEFAULT_API_TIMEOUT,
     apiMode: 'images',
+    apiFormat: normalizeApiFormat(record.apiFormat),
     codexCli: false,
     apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : DEFAULT_OPENAI_API_PROXY,
     responseFormatB64Json: undefined,
@@ -881,6 +918,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     model: normalizeFixedImageModel(active.model),
     timeout: active.timeout,
     apiMode: 'images',
+    apiFormat: active.apiFormat,
     codexCli: false,
     apiProxy: active.apiProxy,
     streamImages: IMAGE_STREAMING_ENABLED,
@@ -1019,6 +1057,7 @@ export function getActiveApiProfile(settings: Partial<AppSettings> | unknown): A
     model: typeof record.model === 'string' ? record.model : profile.model,
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : profile.timeout,
     apiMode: 'images',
+    apiFormat: normalizeApiFormat(record.apiFormat ?? profile.apiFormat),
     codexCli: false,
     apiProxy: record.apiProxy === true ? true : profile.apiProxy,
     responseFormatB64Json: profile.responseFormatB64Json,
@@ -1044,6 +1083,7 @@ function isDefaultOpenAIProfile(profile: ApiProfile): boolean {
     profile.model === DEFAULT_IMAGES_MODEL &&
     profile.timeout === DEFAULT_API_TIMEOUT &&
     profile.apiMode === 'images' &&
+    profile.apiFormat === 'auto' &&
     profile.codexCli === false &&
     profile.apiProxy === false &&
     profile.streamImages === IMAGE_STREAMING_ENABLED &&
@@ -1073,6 +1113,7 @@ function getApiProfileDedupKey(profile: ApiProfile): string {
     profile.apiKey.trim(),
     profile.model.trim(),
     profile.apiMode,
+    profile.apiFormat,
   ])
 }
 
@@ -1082,6 +1123,7 @@ function getApiProfileConnectionKey(profile: ApiProfile): string {
     profile.baseUrl.trim().replace(/\/+$/, '').toLowerCase(),
     profile.model.trim(),
     profile.apiMode,
+    profile.apiFormat,
   ])
 }
 
@@ -1200,6 +1242,7 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   model: DEFAULT_IMAGES_MODEL,
   timeout: DEFAULT_API_TIMEOUT,
   apiMode: 'images',
+  apiFormat: 'auto',
   codexCli: false,
   apiProxy: false,
   streamImages: IMAGE_STREAMING_ENABLED,
