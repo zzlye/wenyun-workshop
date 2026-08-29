@@ -330,13 +330,13 @@ describe('interrupted OpenAI running tasks', () => {
     const openAIRunning = task({ id: 'openai-running', apiProvider: 'openai', status: 'running', createdAt: 2_000, finishedAt: null, elapsed: null })
     const falRunning = task({ id: 'fal-running', apiProvider: 'fal', status: 'running', createdAt: 3_000, finishedAt: null, elapsed: null })
     const customAsyncRunning = task({ id: 'custom-running', apiProvider: 'custom-provider', customTaskId: 'task-1', status: 'running', createdAt: 4_000, finishedAt: null, elapsed: null })
-    const incompleteImageTask = task({ id: 'image-task-incomplete', apiProvider: 'openai', imageTaskIdempotencyKey: 'home-task-key', status: 'running', createdAt: 5_000, finishedAt: null, elapsed: null })
+    const imageTaskPendingCredentials = task({ id: 'image-task-pending-credentials', apiProvider: 'openai', imageTaskIdempotencyKey: 'home-task-key', status: 'running', createdAt: 5_000, finishedAt: null, elapsed: null })
     const imageTaskRunning = task({ id: 'image-task-running', apiProvider: 'openai', imageTaskId: 'server-task-1', imageTaskAccessToken: 'server-token-1', imageTaskIdempotencyKey: 'home-task-key-complete', status: 'running', createdAt: 6_000, finishedAt: null, elapsed: null })
     const doneTask = task({ id: 'done-task', apiProvider: 'openai', status: 'done' })
 
-    const result = markInterruptedOpenAIRunningTasks([legacyRunning, openAIRunning, falRunning, customAsyncRunning, incompleteImageTask, imageTaskRunning, doneTask], now)
+    const result = markInterruptedOpenAIRunningTasks([legacyRunning, openAIRunning, falRunning, customAsyncRunning, imageTaskPendingCredentials, imageTaskRunning, doneTask], now)
 
-    expect(result.interruptedTasks.map((item) => item.id)).toEqual(['legacy-running', 'openai-running', 'image-task-incomplete'])
+    expect(result.interruptedTasks.map((item) => item.id)).toEqual(['legacy-running', 'openai-running'])
     expect(result.tasks.find((item) => item.id === 'legacy-running')).toMatchObject({
       status: 'error',
       error: expect.stringContaining('后台可能已提交请求'),
@@ -349,19 +349,14 @@ describe('interrupted OpenAI running tasks', () => {
       finishedAt: now,
       elapsed: 8_000,
     })
-    expect(result.tasks.find((item) => item.id === 'image-task-incomplete')).toMatchObject({
-      status: 'error',
-      error: expect.stringContaining('无法自动取回'),
-      finishedAt: now,
-      elapsed: 5_000,
-    })
+    expect(result.tasks.find((item) => item.id === 'image-task-pending-credentials')).toEqual(imageTaskPendingCredentials)
     expect(result.tasks.find((item) => item.id === 'fal-running')).toEqual(falRunning)
     expect(result.tasks.find((item) => item.id === 'custom-running')).toEqual(customAsyncRunning)
     expect(result.tasks.find((item) => item.id === 'image-task-running')).toEqual(imageTaskRunning)
     expect(result.tasks.find((item) => item.id === 'done-task')).toEqual(doneTask)
   })
 
-  it('only restores running image tasks with complete server credentials', () => {
+  it('restores running image tasks when the server credentials or only the idempotency key are available', () => {
     const credentials = {
       apiProvider: 'openai' as const,
       imageTaskId: 'server-task-1',
@@ -372,7 +367,8 @@ describe('interrupted OpenAI running tasks', () => {
     expect(shouldRecoverImageTask(task({ ...credentials, status: 'running' }))).toBe(true)
     expect(shouldRecoverImageTask(task({ ...credentials, status: 'error' }))).toBe(false)
     expect(shouldRecoverImageTask(task({ ...credentials, status: 'done' }))).toBe(false)
-    expect(shouldRecoverImageTask(task({ ...credentials, status: 'running', imageTaskAccessToken: undefined }))).toBe(false)
+    expect(shouldRecoverImageTask(task({ ...credentials, status: 'running', imageTaskId: undefined, imageTaskAccessToken: undefined }))).toBe(true)
+    expect(shouldRecoverImageTask(task({ ...credentials, status: 'running', imageTaskIdempotencyKey: '  ' }))).toBe(false)
   })
 })
 

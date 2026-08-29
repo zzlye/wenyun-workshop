@@ -47,7 +47,7 @@ describe("canvas generation running session", () => {
         expect(result[0].metadata?.errorDetails).toBeUndefined();
     });
 
-    it("marks idempotency-only legacy tasks as retryable instead of resubmitting", () => {
+    it("keeps idempotency-only tasks loading so they can reclaim the same server task", () => {
         const incomplete = node("image-1", "loading");
         incomplete.metadata = {
             ...incomplete.metadata,
@@ -57,10 +57,8 @@ describe("canvas generation running session", () => {
 
         const result = resetInterruptedCanvasGenerations([incomplete], new Set());
 
-        expect(result[0].metadata).toMatchObject({
-            status: "error",
-            errorDetails: expect.stringContaining("无法自动取回"),
-        });
+        expect(result[0].metadata?.status).toBe("loading");
+        expect(result[0].metadata?.errorDetails).toBeUndefined();
     });
 
     it("marks stale loading nodes as retryable after session state is gone", () => {

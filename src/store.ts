@@ -1610,17 +1610,18 @@ function isRunningOpenAITask(task: TaskRecord) {
 }
 
 function getStoredImageTaskReference(task: TaskRecord): ImageTaskReference | null {
-  // 自动恢复只能查询已经创建成功的服务端任务，缺少任务凭据时绝不能重新提交生成请求。
-  if (!task.imageTaskId || !task.imageTaskAccessToken || !task.imageTaskIdempotencyKey) return null
+  // 只要幂等键已经落盘，就可以用同一个键重新认领任务；服务端会复用已创建的任务，避免刷新窗口造成重复生成。
+  const idempotencyKey = task.imageTaskIdempotencyKey?.trim()
+  if (!idempotencyKey) return null
   return {
-    taskId: task.imageTaskId,
-    accessToken: task.imageTaskAccessToken,
-    idempotencyKey: task.imageTaskIdempotencyKey,
+    taskId: task.imageTaskId?.trim() || '',
+    accessToken: task.imageTaskAccessToken?.trim() || '',
+    idempotencyKey,
   }
 }
 
 export function shouldRecoverImageTask(task: TaskRecord): boolean {
-  // 失败和完成任务都是终态，刷新页面时只续查仍在运行且凭据完整的任务。
+  // 失败和完成任务都是终态；运行任务即使只有幂等键，也能通过创建接口重新认领。
   return task.status === 'running' && getStoredImageTaskReference(task) !== null
 }
 

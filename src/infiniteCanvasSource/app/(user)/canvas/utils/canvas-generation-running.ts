@@ -45,13 +45,8 @@ export function getCanvasGenerationSessionIds(projectId: string) {
 
 export function hasRecoverableCanvasImageTask(node: Pick<CanvasNodeData, "metadata"> | null | undefined) {
     const metadata = node?.metadata;
-    // 自动恢复必须具备完整服务端任务凭据，只保存了幂等键的旧失败节点不能重新提交。
-    return Boolean(
-        metadata?.imageTaskId &&
-        metadata.imageTaskAccessToken &&
-        metadata.imageTaskIdempotencyKey &&
-        metadata.imageTaskRequestFingerprint,
-    );
+    // 只要任务指纹和幂等键已经保存，就能用同一个键重新认领服务端任务；服务端会复用已有任务，避免重复生成。
+    return Boolean(metadata?.imageTaskIdempotencyKey && metadata.imageTaskRequestFingerprint);
 }
 
 export function resetInterruptedCanvasGenerations(nodes: CanvasNodeData[], activeNodeIds: ReadonlySet<string>) {

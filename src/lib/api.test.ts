@@ -497,6 +497,64 @@ describe('callImageApi', () => {
     expect(result.images).toEqual(['data:image/png;base64,ZmluYWw='])
   })
 
+  it('文运站图生图通过异步任务入口提交 edits 并复用任务凭据', async () => {
+    vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'enabled')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.startsWith('data:')) return new Response(new Blob(['ref'], { type: 'image/png' }))
+      if (url.startsWith('/image-tasks?')) {
+        return new Response(JSON.stringify({
+          taskId: 'edit-task-1',
+          accessToken: 'edit-token-1',
+          status: 'pending',
+        }), { status: 202, headers: { 'Content-Type': 'application/json' } })
+      }
+      if (url.endsWith('/result')) {
+        return new Response(JSON.stringify({ data: [{ b64_json: 'ZWRpdC1maW5hbA==' }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({ taskId: 'edit-task-1', status: 'succeeded' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+    const onImageTaskCreated = vi.fn()
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      apiKey: 'test-key',
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({ ...profile, apiKey: 'test-key' })),
+    }
+    const result = await callImageApi({
+      settings,
+      prompt: '保留主体并替换背景',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: ['data:image/png;base64,cmVm'],
+      imageTask: { taskId: '', accessToken: '', idempotencyKey: 'home-edit-task-1' },
+      onImageTaskCreated,
+    })
+
+    const createCall = fetchMock.mock.calls.find(([input]) => String(input).startsWith('/image-tasks?'))
+    expect(createCall).toBeTruthy()
+    const [url, init] = createCall!
+    expect(String(url)).toBe('/image-tasks?endpoint=%2Fimages%2Fedits')
+    expect(init).toMatchObject({ method: 'POST' })
+    const formData = (init as RequestInit).body as FormData
+    expect(formData.get('model')).toBe('gpt-image-2')
+    expect(formData.get('prompt')).toBe('保留主体并替换背景')
+    expect(formData.getAll('image')).toHaveLength(1)
+    expect(formData.get('mask')).toBeNull()
+    expect(new Headers((init as RequestInit).headers).get('x-wenyun-idempotency-key')).toBe('home-edit-task-1')
+    expect(onImageTaskCreated).toHaveBeenCalledWith({
+      taskId: 'edit-task-1',
+      accessToken: 'edit-token-1',
+      idempotencyKey: 'home-edit-task-1',
+    })
+    expect(result.images).toEqual(['data:image/png;base64,ZWRpdC1maW5hbA=='])
+  })
+
   it('按公开文档提交文运站图生图且不发送 mask', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input)

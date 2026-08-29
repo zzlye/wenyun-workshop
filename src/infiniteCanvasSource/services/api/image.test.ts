@@ -102,6 +102,52 @@ describe("canvas image api", () => {
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,c2VlZHJlYW0=" }]);
     });
 
+    it("让文运 Seedream 5 Pro 通过异步任务入口提交并轮询结果", async () => {
+        vi.stubEnv("VITE_IMAGE_TASKS_AVAILABLE", "enabled");
+        const fetchMock = vi.spyOn(globalThis, "fetch")
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                taskId: "seedream-task-1",
+                accessToken: "seedream-token-1",
+                status: "pending",
+            }), { status: 202, headers: { "Content-Type": "application/json" } }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                taskId: "seedream-task-1",
+                status: "succeeded",
+            }), { status: 200, headers: { "Content-Type": "application/json" } }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ b64_json: "YXN5bmMtc2VlZHJlYW0=" }] }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+            }));
+
+        useStore.setState({
+            settings: {
+                ...DEFAULT_SETTINGS,
+                profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
+                    ...profile,
+                    apiKey: "test-key",
+                    model: "seedream-5-pro",
+                })),
+            },
+        });
+
+        const images = await requestGeneration(
+            {
+                ...defaultConfig,
+                model: "seedream-5-pro",
+                imageModel: "seedream-5-pro",
+                size: "2048x2048",
+                count: "1",
+            },
+            "Seedream 异步测试",
+        );
+
+        const [url, init] = fetchMock.mock.calls[0];
+        expect(String(url)).toBe("/image-tasks?endpoint=%2Fimages%2Fgenerations");
+        expect(new Headers((init as RequestInit).headers).get("x-wenyun-task-client-version")).toBe("2");
+        expect(JSON.parse(String((init as RequestInit).body)).model).toBe("seedream-5-pro");
+        expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,YXN5bmMtc2VlZHJlYW0=" }]);
+    });
+
     it("让画布图片生成节点沿用 Banana 原生协议并识别小写模型 ID", async () => {
         vi.stubEnv("VITE_API_PROXY_AVAILABLE", "true");
         const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
