@@ -8,6 +8,7 @@ import type { ReferenceImage } from "@/types/image";
 import { callImageApi } from "../../../lib/api";
 import { getEffectiveImageApiProfile } from "../../../lib/accountApiKey";
 import { normalizeSettings } from "../../../lib/apiProfiles";
+import { normalizeParamsForSettings } from "../../../lib/paramCompatibility";
 import { buildApiUrl as buildDevApiUrl, readClientDevProxyConfig } from "../../../lib/devProxy";
 import { sanitizeApiErrorMessage } from "../../../lib/imageApiShared";
 import { createImageTaskIdempotencyKey, shouldUseImageTasks } from "../../../lib/imageTasks";
@@ -94,6 +95,11 @@ function buildTaskParams(config: AiConfig): TaskParams {
         // 品质可以交给模型自动判断；旧画布里残留的比例值按 1K 转成具体尺寸，避免预览和实际请求不一致。
         size: resolveRequestSize(quality === "auto" ? "low" : quality, config.size) || DEFAULT_PARAMS.size,
     };
+}
+
+function buildNormalizedTaskParams(config: AiConfig, settings: AppSettings, hasInputImages = false): TaskParams {
+    // 画布请求提交前再次按模型能力收敛参数，避免旧节点把已停用的尺寸直接发给上游。
+    return normalizeParamsForSettings(buildTaskParams(config), settings, { hasInputImages });
 }
 
 function buildCanvasImageSettings(config: AiConfig, apiProfileId?: string): AppSettings {
@@ -264,7 +270,7 @@ export async function requestGeneration(
         const result = await callImageApi({
             settings,
             prompt: withSystemPrompt(config, prompt),
-            params: buildTaskParams(config),
+            params: buildNormalizedTaskParams(config, settings),
             inputImageDataUrls: [],
             imageTask,
             onImageTaskCreated: onTaskCreated,
@@ -314,7 +320,7 @@ export async function requestEdit(
         const result = await callImageApi({
             settings,
             prompt: withSystemPrompt(config, prompt),
-            params: buildTaskParams(config),
+            params: buildNormalizedTaskParams(config, settings, inputImageDataUrls.length > 0),
             inputImageDataUrls,
             maskDataUrl,
             imageTask,

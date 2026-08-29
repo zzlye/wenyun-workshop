@@ -536,7 +536,7 @@ function InfiniteCanvasPage() {
                     model,
                     imageModel: model,
                     quality: metadata.quality || effectiveConfig.quality,
-                    size: normalizeImageSizeForProfile(metadata.size || effectiveConfig.size, taskProfileId),
+                    size: normalizeImageSizeForProfile(metadata.size || effectiveConfig.size, taskProfileId, model),
                     count: "1",
                 };
                 const requestPrompt = (metadata.generationPrompt || metadata.prompt || "").trim();
@@ -3023,7 +3023,7 @@ function InfiniteCanvasPage() {
                           model: savedImageModel,
                           imageModel: savedImageModel,
                           quality: savedImageMetadata.quality || effectiveConfig.quality,
-                          size: normalizeImageSizeForProfile(savedImageMetadata.size || effectiveConfig.size, activeProfile.id),
+                          size: normalizeImageSizeForProfile(savedImageMetadata.size || effectiveConfig.size, activeProfile.id, savedImageModel),
                           count: "1",
                     }
                     : { ...buildGenerationConfig(effectiveConfig, sourceNode, node.type === CanvasNodeType.Text ? "text" : node.type === CanvasNodeType.Video ? "video" : "image", activeProfile.id), count: "1" };
@@ -4287,7 +4287,7 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
         textModel: mode === "text" ? resolvedModel : config.textModel,
         videoModel: mode === "video" ? resolvedModel : config.videoModel,
         quality: node?.metadata?.quality || config.quality || defaultConfig.quality,
-        size: normalizeImageSizeForProfile(node?.metadata?.size || config.size || defaultConfig.size, activeProfileId),
+        size: normalizeImageSizeForProfile(node?.metadata?.size || config.size || defaultConfig.size, activeProfileId, resolvedModel),
         videoSeconds: node?.metadata?.seconds || config.videoSeconds || defaultConfig.videoSeconds,
         vquality: node?.metadata?.vquality || config.vquality || defaultConfig.vquality,
         count: String(node?.metadata?.count || (mode === "image" ? 1 : config.count) || defaultConfig.count),

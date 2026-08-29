@@ -717,6 +717,9 @@ describe('custom providers', () => {
     expect(normalizeImageSizeForProfile('3840x2160', LOCKED_PUBLIC_PROFILE_ID)).toBe('3840x2160')
     expect(normalizeImageSizeForProfile('1280x1024', LOCKED_PUBLIC_PROFILE_ID)).toBe('1280x1024')
     expect(normalizeImageSizeForProfile('3840x2160', LOCKED_WENYUN_PROFILE_ID)).toBe('3840x2160')
+    expect(getImageSizeTiersForProfile(LOCKED_WENYUN_PROFILE_ID, 'seedream-5-pro')).toEqual(['1K', '2K'])
+    expect(normalizeImageSizeForProfile('3840x2160', LOCKED_WENYUN_PROFILE_ID, 'seedream-5-pro')).toBe('2560x1440')
+    expect(normalizeImageSizeForProfile('2048x2048', LOCKED_WENYUN_PROFILE_ID, 'seedream-5-pro')).toBe('2048x2048')
   })
 
   it('uses fixed display prices for built-in image models', () => {

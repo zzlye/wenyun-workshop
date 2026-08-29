@@ -24,7 +24,7 @@ import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_STREAM_PARTIAL_IMAGES } from '..
 import { normalizeBaseUrl, shouldUseApiProxyForBaseUrl } from './devProxy'
 import { readRuntimeEnv } from './runtimeEnv'
 import { isImportableConfigUrl } from './customProviderConfigUrl'
-import type { SizeTier } from './size'
+import { normalizeImageSizeForMaxTier, type SizeTier } from './size'
 import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_MODEL, CANVAS_VIDEO_TIMEOUT, normalizeCanvasVideoModel } from './videoModel'
 import {
   DEFAULT_IMAGES_MODEL,
@@ -37,6 +37,7 @@ import {
   getBananaPricedImageModel,
   getFixedImageModelUnitCostText,
   getFixedImageRequestModel,
+  getImageSizeTiersForModel,
   getImageModelOptionsForProfile,
   isBananaImageModel,
   normalizeFixedImageModel,
@@ -53,6 +54,7 @@ export {
   getBananaPricedImageModel,
   getFixedImageModelUnitCostText,
   getFixedImageRequestModel,
+  getImageSizeTiersForModel,
   getImageModelOptionsForProfile,
   isBananaImageModel,
   normalizeFixedImageModel,
@@ -105,16 +107,19 @@ export function normalizeImageModelForProfile(model: string, profileId: string):
   return normalizeFixedImageModel(model)
 }
 
-export function getImageSizeTiersForProfile(_profileId: string): SizeTier[] {
-  return ['1K', '2K', '4K']
+export function getImageSizeTiersForProfile(_profileId: string, model = ''): SizeTier[] {
+  return getImageSizeTiersForModel(model)
 }
 
 export function allowsCustomImageRatioForProfile(_profileId: string): boolean {
   return true
 }
 
-export function normalizeImageSizeForProfile(size: string, _profileId: string): string {
-  return size
+export function normalizeImageSizeForProfile(size: string, _profileId: string, model = ''): string {
+  // Seedream 5 Pro 最高只支持 2K，历史保存的 4K 尺寸按原比例收敛到 2K。
+  return getImageSizeTiersForModel(model).includes('4K')
+    ? size
+    : normalizeImageSizeForMaxTier(size, '2K')
 }
 
 function normalizeApiPriceItem(value: unknown): ApiPriceSnapshot['items'][number] | null {

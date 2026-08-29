@@ -1,6 +1,9 @@
+import type { SizeTier } from './size'
+
 export const DEFAULT_IMAGES_MODEL = 'gpt-image-2'
 export const GPT_IMAGE_2_4K_MODEL = 'gpt-image-2-4k'
 export const GPT_IMAGE_2_4K_REQUEST_MODEL = 'gpt-image-2-4k'
+export const SEEDREAM_5_PRO_MODEL = 'seedream-5-pro'
 export const GPT_IMAGE_2_VIP_MODEL = GPT_IMAGE_2_4K_MODEL
 export const GPT_IMAGE_2_SUPER_MODEL = GPT_IMAGE_2_4K_MODEL
 export const GPT_IMAGE_2_VIP_REQUEST_MODEL = GPT_IMAGE_2_4K_REQUEST_MODEL
@@ -25,6 +28,7 @@ export type ModelPriceRow = {
 export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
   { model: DEFAULT_IMAGES_MODEL, label: DEFAULT_IMAGES_MODEL, requestModel: DEFAULT_IMAGES_MODEL, unitCostText: 'HUHN 0.06', resolutionText: '1K' },
   { model: GPT_IMAGE_2_4K_MODEL, label: GPT_IMAGE_2_4K_MODEL, requestModel: GPT_IMAGE_2_4K_REQUEST_MODEL, unitCostText: 'HUHN 0.09', resolutionText: '1K、2K、4K' },
+  { model: SEEDREAM_5_PRO_MODEL, label: SEEDREAM_5_PRO_MODEL, requestModel: SEEDREAM_5_PRO_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K' },
   { model: 'Nano-Banana-2', label: 'Nano Banana 2', requestModel: 'nano-banana-2', unitCostText: 'HUHN 0.09', resolutionText: '1K、2K、4K' },
   { model: 'Nano-Banana-Pro', label: 'Nano Banana Pro', requestModel: 'nano-banana-pro', unitCostText: 'HUHN 0.15', resolutionText: '1K、2K、4K' },
 ]
@@ -71,6 +75,12 @@ export function getFixedImagePricing(model: string): FixedImageModelPricing | nu
 
 export function getFixedImageRequestModel(model: string): string {
   return getFixedImagePricing(model)?.requestModel ?? model.trim()
+}
+
+export function getImageSizeTiersForModel(model: string): SizeTier[] {
+  return getFixedImageRequestModel(model).toLowerCase() === SEEDREAM_5_PRO_MODEL
+    ? ['1K', '2K']
+    : ['1K', '2K', '4K']
 }
 
 export function getFixedImageModelUnitCostText(model: string): string | null {

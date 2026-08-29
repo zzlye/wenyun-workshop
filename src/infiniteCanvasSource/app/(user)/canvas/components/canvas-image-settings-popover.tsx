@@ -46,7 +46,8 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const settings = useStore((state) => state.settings);
     const activeProfile = useMemo(() => getActiveApiProfile(normalizeSettings(settings)), [settings]);
-    const allowedTiers = useMemo(() => getImageSizeTiersForProfile(activeProfile.id), [activeProfile.id]);
+    const imageModel = config.imageModel || config.model || activeProfile.model;
+    const allowedTiers = useMemo(() => getImageSizeTiersForProfile(activeProfile.id, imageModel), [activeProfile.id, imageModel]);
     const allowCustomRatio = useMemo(() => allowsCustomImageRatioForProfile(activeProfile.id), [activeProfile.id]);
     const buttonRef = useRef<HTMLSpanElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
@@ -54,7 +55,8 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = config.quality || "auto";
-    const activeSize = normalizeImageSizeForProfile(normalizeImageSize(config.size || "1024x1024"), activeProfile.id);
+    const activeSize = normalizeImageSizeForProfile(normalizeImageSize(config.size || "1024x1024"), activeProfile.id, imageModel);
+    const normalizedConfig = useMemo(() => activeSize === config.size ? config : { ...config, size: activeSize }, [activeSize, config]);
 
     const updateOpen = (nextOpen: boolean) => {
         setOpen(nextOpen);
@@ -82,7 +84,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
         };
     }, [open]);
 
-    const panel = open && buttonRect ? <ImageSizePortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} allowedTiers={allowedTiers} allowCustomRatio={allowCustomRatio} onConfigChange={onConfigChange} /> : null;
+    const panel = open && buttonRect ? <ImageSizePortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={normalizedConfig} allowedTiers={allowedTiers} allowCustomRatio={allowCustomRatio} onConfigChange={onConfigChange} /> : null;
 
     return (
         <>
@@ -178,7 +180,7 @@ function CanvasImageSizePanel({ config, allowedTiers, allowCustomRatio, onConfig
 
     useEffect(() => {
         if (tiers.includes(tier)) return;
-        const nextTier = tiers[0] || "1K";
+        const nextTier = tiers[tiers.length - 1] || "1K";
         setTier(nextTier);
         const nextRatio = allowCustomRatio ? activeRatio : "1:1";
         applySize(nextTier, nextRatio);

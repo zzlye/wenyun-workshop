@@ -17,7 +17,7 @@ export function normalizeParamsForSettings(
 ): TaskParams {
   const activeProfile = getActiveApiProfile(settings)
   const outputImageLimit = getOutputImageLimitForSettings(settings)
-  const normalizedSize = normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id)
+  const normalizedSize = normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id, activeProfile.model)
   const nextParams: TaskParams = {
     ...params,
     size: normalizedSize === 'auto' ? DEFAULT_PARAMS.size : normalizedSize || DEFAULT_PARAMS.size,

@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppProviders } from './infiniteCanvasSource/components/layout/app-providers'
 import { useThemeStore } from './infiniteCanvasSource/stores/use-theme-store'
-import { normalizeSettings } from './lib/apiProfiles'
+import { getActiveApiProfile, LOCKED_WENYUN_BASE_URL, mergeImportedSettings, normalizeSettings, setApiPriceSnapshot } from './lib/apiProfiles'
+import { getEffectiveImageApiProfile } from './lib/accountApiKey'
 import { flushSync } from 'react-dom'
 import { initStore } from './store'
 import { useStore } from './store'
 import { buildSettingsFromUrlParams, clearUrlSettingParams, hasUrlSettingParams } from './lib/urlSettings'
-import { LOCKED_WENYUN_BASE_URL, mergeImportedSettings } from './lib/apiProfiles'
 import { getCustomProviderConfigUrl, loadCustomProviderSettingsFromUrl } from './lib/customProviderConfigUrl'
-import { fetchNewApiNotice, type NewApiNoticeItem } from './lib/newApi'
+import { fetchNewApiNotice, queryNewApiPriceTable, type NewApiNoticeItem } from './lib/newApi'
 import { requestPersistentStorage } from './lib/persistentStorage'
 import { useDockerApiUrlMigrationNotice } from './hooks/useDockerApiUrlMigrationNotice'
 import Header from './components/Header'
@@ -64,6 +64,7 @@ export default function App() {
   const [announcementItems, setAnnouncementItems] = useState<NewApiNoticeItem[]>([])
   const [announcementLoading, setAnnouncementLoading] = useState(false)
   const announcementAutoOpenAttemptedRef = useRef(false)
+  const automaticPriceSyncAttemptedRef = useRef(new Set<string>())
   useDockerApiUrlMigrationNotice()
   useGlobalClickSuppression()
 
@@ -74,6 +75,27 @@ export default function App() {
       }
     })
   }, [])
+
+  useEffect(() => {
+    const normalizedSettings = normalizeSettings(settings)
+    const configuredProfile = getActiveApiProfile(normalizedSettings)
+    const activeProfile = getEffectiveImageApiProfile(normalizedSettings, configuredProfile)
+    const authState = activeProfile.apiKey.trim() ? 'authenticated' : 'public'
+    const syncKey = `${activeProfile.id}:${activeProfile.baseUrl.trim().replace(/\/+$/, '').toLowerCase()}:${authState}`
+    if (automaticPriceSyncAttemptedRef.current.has(syncKey)) return
+    automaticPriceSyncAttemptedRef.current.add(syncKey)
+
+    // 首次进入页面即同步当前站点价格，避免用户必须先打开模型列表。
+    void queryNewApiPriceTable(activeProfile).then((priceTable) => {
+      if (!priceTable.found) return
+      const state = useStore.getState()
+      state.setSettings(setApiPriceSnapshot(state.settings, activeProfile.id, {
+        items: priceTable.items,
+        updatedAt: priceTable.updatedAt,
+        found: priceTable.found,
+      }))
+    })
+  }, [settings])
 
   const loadAnnouncement = useCallback(async (autoOpen = false) => {
     setAnnouncementLoading(true)

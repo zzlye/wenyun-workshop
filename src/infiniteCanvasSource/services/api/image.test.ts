@@ -63,6 +63,45 @@ describe("canvas image api", () => {
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZmluYWw=" }]);
     });
 
+    it("让 Seedream 5 Pro 沿用标准图片接口并把 4K 请求限制为 2K", async () => {
+        const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+            new Response(JSON.stringify({ data: [{ b64_json: "c2VlZHJlYW0=" }] }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+            }),
+        );
+
+        useStore.setState({
+            settings: {
+                ...DEFAULT_SETTINGS,
+                profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
+                    ...profile,
+                    apiKey: "test-key",
+                    model: "seedream-5-pro",
+                })),
+            },
+        });
+
+        const images = await requestGeneration(
+            {
+                ...defaultConfig,
+                model: "seedream-5-pro",
+                imageModel: "seedream-5-pro",
+                size: "3840x2160",
+                quality: "high",
+                count: "1",
+            },
+            "Seedream 测试",
+        );
+
+        const [url, init] = fetchMock.mock.calls[0];
+        const body = JSON.parse(String((init as RequestInit).body));
+        expect(String(url)).toBe("https://api.zzlye.xyz/v1/images/generations");
+        expect(body.model).toBe("seedream-5-pro");
+        expect(body.size).toBe("2560x1440");
+        expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,c2VlZHJlYW0=" }]);
+    });
+
     it("让画布图片生成节点沿用 Banana 原生协议并识别小写模型 ID", async () => {
         vi.stubEnv("VITE_API_PROXY_AVAILABLE", "true");
         const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -233,7 +272,8 @@ describe("canvas image api", () => {
     it.each([
         ["文运站 Banana 2", "Nano-Banana-2", "nano-banana-2"],
         ["文运站 Banana Pro", "Nano-Banana-Pro", "nano-banana-pro"],
-    ])("routes %s canvas image edits through standard NewAPI edits like public site", async (
+        ["文运站 Seedream 5 Pro", "seedream-5-pro", "seedream-5-pro"],
+    ])("routes %s canvas image edits through standard NewAPI edits", async (
         _label,
         model,
         requestModel,
@@ -292,6 +332,7 @@ describe("canvas image api", () => {
     it.each([
         ["公益站 Banana 2", "Nano-Banana-2", "nano-banana-2"],
         ["公益站 Banana Pro", "Nano-Banana-Pro", "nano-banana-pro"],
+        ["公益站 Seedream 5 Pro", "seedream-5-pro", "seedream-5-pro"],
     ])("routes %s canvas image edits through standard NewAPI edits without changing site URL", async (
         _label,
         model,

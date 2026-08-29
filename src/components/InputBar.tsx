@@ -638,18 +638,18 @@ export default function InputBar() {
     : isFalProvider
     ? `fal.ai 最大请求数量为 ${outputImageLimit}`
     : `OpenAI 最大请求数量为 ${outputImageLimit}`
-  const normalizedDisplaySize = normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id)
+  const normalizedDisplaySize = normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id, activeProfile.model)
   const displaySize = normalizedDisplaySize === 'auto' ? DEFAULT_PARAMS.size : normalizedDisplaySize || DEFAULT_PARAMS.size
-  const imageSizeTiers = getImageSizeTiersForProfile(activeProfile.id)
+  const imageSizeTiers = getImageSizeTiersForProfile(activeProfile.id, activeProfile.model)
   const allowCustomImageRatio = allowsCustomImageRatioForProfile(activeProfile.id)
   const modelOptions = [...FIXED_IMAGE_MODEL_OPTIONS]
   const selectedModelOption = modelOptions.find((option) => option.value === activeProfile.model)
   const isBananaModel = isBananaImageModel(activeProfile.model)
 
   useEffect(() => {
-    const nextSize = normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id)
+    const nextSize = normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id, activeProfile.model)
     if (nextSize && nextSize !== params.size) setParams({ size: nextSize })
-  }, [activeProfile.id, params.size, setParams])
+  }, [activeProfile.id, activeProfile.model, params.size, setParams])
 
   const atImageLimit = inputImages.length >= API_MAX_IMAGES
   const uploadImageTooltipText = atImageLimit ? `参考图数量已达上限（${API_MAX_IMAGES} 张），无法继续添加` : '上传图片'

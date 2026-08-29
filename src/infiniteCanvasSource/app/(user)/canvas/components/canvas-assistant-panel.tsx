@@ -149,7 +149,7 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
             ...effectiveConfig,
             model: nextMode === "image" ? imageModel : effectiveConfig.textModel || effectiveConfig.model,
             imageModel,
-            size: nextMode === "image" ? normalizeImageSizeForProfile(effectiveConfig.size, activeProfile.id) : effectiveConfig.size,
+            size: nextMode === "image" ? normalizeImageSizeForProfile(effectiveConfig.size, activeProfile.id, imageModel) : effectiveConfig.size,
         };
         if (!isAiConfigReady(requestConfig, requestConfig.model)) {
             openConfigDialog(true);
