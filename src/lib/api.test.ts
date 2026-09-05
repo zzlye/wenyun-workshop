@@ -685,6 +685,141 @@ describe('callImageApi', () => {
     expect(result.images).toEqual(['data:image/png;base64,YXV0bw=='])
   })
 
+  it('parses Banana images returned as Markdown links inside Gemini text parts without re-sending', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      // 网关把只支持 OpenAI 对话接口的渠道结果转成 Gemini 结构时，图片只会以 Markdown 链接出现在 text 里。
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        candidates: [{
+          content: { role: 'model', parts: [{ text: '已生成：![image](https://cdn.example.com/out/1.png)' }] },
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      // 第二次 fetch 是浏览器下载图片链接。
+      .mockResolvedValueOnce(new Response(new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }), {
+        status: 200,
+        headers: { 'Content-Type': 'image/png' },
+      }))
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      apiKey: 'markdown-text-key',
+      apiFormat: 'gemini' as const,
+      model: 'Nano-Banana-2',
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
+        ...profile,
+        baseUrl: 'https://markdown-text.example.com/v1',
+        apiKey: 'markdown-text-key',
+        apiFormat: 'gemini' as const,
+        model: 'Nano-Banana-2',
+        apiProxy: false,
+      })),
+    }
+
+    const result = await callImageApi({
+      settings,
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    } as any)
+
+    // 只发了一次生成请求，没有换协议重发（避免上游重复计费）。
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes(':generateContent'))).toHaveLength(1)
+    expect(result.images).toHaveLength(1)
+    expect(result.images[0]).toMatch(/^data:image\/png;base64,/)
+    expect(result.rawImageUrls).toEqual(['https://cdn.example.com/out/1.png'])
+  })
+
+  it('switches a remembered Gemini protocol back to OpenAI when the channel returns no image data', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      // 第一次：OpenAI 协议被拒绝，自动切到 Gemini 并记住。
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: { message: 'not supported model for image generation, only imagen models are supported' },
+      }), { status: 400, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: 'Zmlyc3Q=' } }] } }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      // 第二次：站点后端换成只兼容 OpenAI 的渠道，Gemini 协议返回 200 但没有任何图片。
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        candidates: [{ content: { role: 'model', parts: [{ text: '好的，这是您要的图片。' }] }, finishReason: 'STOP' }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: [{ b64_json: 'c2Vjb25k' }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      // 第三次：应直接使用记住的 OpenAI 协议。
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: [{ b64_json: 'dGhpcmQ=' }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      apiKey: 'channel-switch-key',
+      apiFormat: 'auto' as const,
+      model: 'Nano-Banana-2',
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
+        ...profile,
+        baseUrl: 'https://channel-switch.example.com/v1',
+        apiKey: 'channel-switch-key',
+        apiFormat: 'auto' as const,
+        model: 'Nano-Banana-2',
+        apiProxy: false,
+      })),
+    }
+    const call = () => callImageApi({
+      settings,
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    } as any)
+
+    const first = await call()
+    expect(first.images).toEqual(['data:image/png;base64,Zmlyc3Q='])
+    expect(String(fetchMock.mock.calls[1][0])).toContain(':generateContent')
+
+    const second = await call()
+    expect(second.images).toEqual(['data:image/png;base64,c2Vjb25k'])
+    expect(String(fetchMock.mock.calls[2][0])).toContain(':generateContent')
+    expect(String(fetchMock.mock.calls[3][0])).toContain('/images/generations')
+
+    const third = await call()
+    expect(third.images).toEqual(['data:image/png;base64,dGhpcmQ='])
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+    expect(String(fetchMock.mock.calls[4][0])).toContain('/images/generations')
+  })
+
+  it('reports both protocol errors when Banana auto mode fails on both formats', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: [],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ text: 'no image' }] } }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      apiKey: 'both-fail-key',
+      apiFormat: 'auto' as const,
+      model: 'Nano-Banana-2',
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
+        ...profile,
+        baseUrl: 'https://both-fail.example.com/v1',
+        apiKey: 'both-fail-key',
+        apiFormat: 'auto' as const,
+        model: 'Nano-Banana-2',
+        apiProxy: false,
+      })),
+    }
+
+    await expect(callImageApi({
+      settings,
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    } as any)).rejects.toThrow(/OpenAI 协议：[\s\S]*Gemini 协议：/)
+  })
+
   it('routes Banana image models through native Gemini generateContent when selected', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
       candidates: [{

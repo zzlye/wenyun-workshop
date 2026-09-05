@@ -196,6 +196,9 @@ function isBananaFormatMismatchError(error: unknown): boolean {
   const status = Number((error as Error & { status?: unknown }).status)
   const text = `${error.message}\n${rawPayload}`.toLowerCase()
 
+  // 请求成功返回但整段响应里找不到任何图片，说明渠道没有按当前协议返回图片，视为协议不匹配。
+  if ((error as Error & { bananaFormatMismatch?: unknown }).bananaFormatMismatch === true) return true
+
   // 只在明确表示协议、路径或模型格式不匹配时切换，普通额度、限流和提示词错误不自动重发。
   if (/only imagen models|not supported model for image generation|unsupported(?:\s+model|\s+image)|unknown model|model[^\n]*(?:not found|unsupported)/i.test(text)) return true
   if (/generatecontent|v1beta|endpoint[^\n]*(?:not found|unsupported)|method not allowed|cannot post/i.test(text)) return true
@@ -239,18 +242,111 @@ function getGeminiResponseCandidates(payload: unknown): unknown[] {
     : []
 }
 
+/** 从文本里提取 Markdown 图片、裸 http(s) 图片链接和 data URL；网关把生成结果当文本回传时用得到。 */
+function extractImageUrlsFromText(text: string): string[] {
+  const urls: string[] = []
+  const seen = new Set<string>()
+  const push = (raw: string | undefined) => {
+    const value = (raw || '').trim().replace(/[)\]>,;.。，）]+$/g, '')
+    if (!value || seen.has(value)) return
+    if (!isHttpUrl(value) && !isDataUrl(value)) return
+    seen.add(value)
+    urls.push(value)
+  }
+
+  // Markdown 图片语法优先，链接里允许出现括号以外的任意字符。
+  for (const match of text.matchAll(/!\[[^\]]*\]\(\s*<?([^\s)]+)>?\s*\)/g)) push(match[1])
+  // 裸 data URL（base64 图片）
+  for (const match of text.matchAll(/data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+/gi)) push(match[0])
+  // 裸 http(s) 链接：只认看起来像图片的地址，避免把说明文字里的普通网页链接当成图。
+  for (const match of text.matchAll(/https?:\/\/[^\s<>"')\]]+/gi)) {
+    const candidate = match[0]
+    if (/\.(?:png|jpe?g|webp|gif|bmp|avif)(?:[?#]|$)/i.test(candidate) || /(?:image|img|file|cdn|oss|storage|download)/i.test(candidate)) push(candidate)
+  }
+  return urls
+}
+
+function getGeminiFileDataUri(part: unknown): string | null {
+  if (!isRecordValue(part)) return null
+  const fileData = isRecordValue(part.fileData) ? part.fileData : isRecordValue(part.file_data) ? part.file_data : null
+  if (!fileData) return null
+  const uri = typeof fileData.fileUri === 'string' ? fileData.fileUri : typeof fileData.file_uri === 'string' ? fileData.file_uri : ''
+  return uri.trim() || null
+}
+
+/** 兼容 OpenAI chat.completions 结构：部分渠道只支持对话接口，网关转换后会把图片放在 message 里。 */
+function collectChatCompletionImageSources(payload: Record<string, unknown>): string[] {
+  const sources: string[] = []
+  const choices = Array.isArray(payload.choices) ? payload.choices : []
+  for (const choice of choices) {
+    if (!isRecordValue(choice)) continue
+    const message = isRecordValue(choice.message) ? choice.message : isRecordValue(choice.delta) ? choice.delta : null
+    if (!message) continue
+    if (typeof message.content === 'string') sources.push(...extractImageUrlsFromText(message.content))
+    if (Array.isArray(message.content)) {
+      for (const block of message.content) {
+        if (!isRecordValue(block)) continue
+        if (typeof block.text === 'string') sources.push(...extractImageUrlsFromText(block.text))
+        const imageUrl = isRecordValue(block.image_url) ? block.image_url.url : block.image_url
+        if (typeof imageUrl === 'string' && imageUrl.trim()) sources.push(imageUrl.trim())
+      }
+    }
+    // OpenRouter 风格：message.images[].image_url.url
+    if (Array.isArray(message.images)) {
+      for (const image of message.images) {
+        if (!isRecordValue(image)) continue
+        const imageUrl = isRecordValue(image.image_url) ? image.image_url.url : image.url
+        if (typeof imageUrl === 'string' && imageUrl.trim()) sources.push(imageUrl.trim())
+      }
+    }
+  }
+  return sources
+}
+
+async function resolveImageSourceToDataUrl(source: string, fallbackMime: string, signal?: AbortSignal): Promise<string> {
+  if (isDataUrl(source)) return fetchImageUrlAsDataUrl(source, fallbackMime, signal)
+  try {
+    return await fetchImageUrlAsDataUrl(source, fallbackMime, signal)
+  } catch {
+    // 图片已经生成，只是浏览器下载失败（跨域等），保留原始链接避免整次任务判失败。
+    return getSafeImageDisplayUrl(source)
+  }
+}
+
 async function parseGeminiImageResponse(payload: unknown, fallbackMime: string, signal?: AbortSignal): Promise<CallApiResult> {
   const images: string[] = []
   const revisedPrompts: Array<string | undefined> = []
+  // inlineData 之外的图片来源（fileData 链接、文本里的 Markdown 图片链接），统一在最后下载。
+  const remoteSources: string[] = []
 
   for (const candidate of getGeminiResponseCandidates(payload)) {
     if (!isRecordValue(candidate) || !isRecordValue(candidate.content) || !Array.isArray(candidate.content.parts)) continue
     for (const part of candidate.content.parts) {
       const inline = getGeminiInlineDataPart(part)
-      if (!inline) continue
-      images.push(normalizeBase64Image(inline.data, inline.mimeType || fallbackMime))
-      revisedPrompts.push(undefined)
+      if (inline) {
+        images.push(normalizeBase64Image(inline.data, inline.mimeType || fallbackMime))
+        revisedPrompts.push(undefined)
+        continue
+      }
+      const fileUri = getGeminiFileDataUri(part)
+      if (fileUri) {
+        remoteSources.push(fileUri)
+        continue
+      }
+      // 只支持 OpenAI 对话接口的渠道经网关转换后，图片往往以 Markdown 链接出现在 text 里。
+      if (isRecordValue(part) && typeof part.text === 'string') remoteSources.push(...extractImageUrlsFromText(part.text))
     }
+  }
+
+  // 网关把原生请求转成 chat.completions 后原样返回的情况。
+  if (!images.length && !remoteSources.length && isRecordValue(payload)) {
+    remoteSources.push(...collectChatCompletionImageSources(payload))
+  }
+
+  const rawImageUrls = remoteSources.filter(isHttpUrl)
+  for (const source of remoteSources) {
+    images.push(await resolveImageSourceToDataUrl(source, fallbackMime, signal))
+    revisedPrompts.push(undefined)
   }
 
   if (images.length) {
@@ -260,6 +356,7 @@ async function parseGeminiImageResponse(payload: unknown, fallbackMime: string, 
       actualParams,
       actualParamsList: images.map(() => actualParams),
       revisedPrompts,
+      ...(rawImageUrls.length ? { rawImageUrls } : {}),
     }
   }
 
@@ -268,8 +365,11 @@ async function parseGeminiImageResponse(payload: unknown, fallbackMime: string, 
     return parseImagesApiResponse(payload as ImageApiResponse, fallbackMime, signal)
   }
 
-  const err = new Error(getEmbeddedApiErrorMessage(payload) || 'Gemini 接口没有返回可识别的图片数据，请检查渠道是否支持原生 Gemini 格式')
+  const embeddedError = getEmbeddedApiErrorMessage(payload)
+  const err = new Error(embeddedError || 'Gemini 接口没有返回可识别的图片数据，请检查渠道是否支持原生 Gemini 格式')
   ;(err as any).rawResponsePayload = JSON.stringify(payload, null, 2)
+  // 没有任何业务报错却拿不到图片，通常是渠道不支持原生 Gemini 协议，允许自动模式切换到 OpenAI 协议重试。
+  if (!embeddedError) (err as any).bananaFormatMismatch = true
   throw err
 }
 
@@ -582,8 +682,11 @@ async function parseImagesApiResponse(payload: ImageApiResponse, mime: string, s
   // Grsai Banana 原生接口返回 results，NewAPI 自定义渠道会原样透传。
   const data = Array.isArray(payload.data) && payload.data.length ? payload.data : payload.results
   if (!Array.isArray(data) || !data.length) {
-    const err = new Error(getEmbeddedApiErrorMessage(payload) || '接口没有返回图片数据，请查看原始响应内容确认服务商实际返回的数据结构。如果使用的是中转或兼容接口，建议创建并使用「自定义服务商」配置。')
+    const embeddedError = getEmbeddedApiErrorMessage(payload)
+    const err = new Error(embeddedError || '接口没有返回图片数据，请查看原始响应内容确认服务商实际返回的数据结构。如果使用的是中转或兼容接口，建议创建并使用「自定义服务商」配置。')
     ;(err as any).rawResponsePayload = JSON.stringify(payload, null, 2)
+    // 没有业务报错却没有图片列表，香蕉自动模式下允许切换到 Gemini 协议重试。
+    if (!embeddedError) (err as any).bananaFormatMismatch = true
     throw err
   }
 
@@ -625,6 +728,8 @@ async function parseImagesApiResponse(payload: ImageApiResponse, mime: string, s
   if (!images.length) {
     const err = new Error('接口没有返回可识别的图片数据，请查看原始响应内容确认服务商实际返回的数据结构。如果使用的是中转或兼容接口，建议创建并使用「自定义服务商」配置。')
     ;(err as any).rawResponsePayload = JSON.stringify(payload, null, 2)
+    // 香蕉自动模式下，OpenAI 协议成功返回却没有图片，同样允许切换到 Gemini 协议重试。
+    ;(err as any).bananaFormatMismatch = true
     throw err
   }
 
@@ -804,10 +909,22 @@ async function callBananaImageApiAutomatically(opts: CallApiOptions, profile: Ap
   } catch (error) {
     if (!isBananaFormatMismatchError(error)) throw error
 
+    // 记忆的协议已经不匹配（例如站点后端换成只支持 OpenAI 的渠道），立即换另一种协议重试并更新记忆。
     const fallbackFormat: BananaApiFormat = firstFormat === 'gemini' ? 'openai' : 'gemini'
-    const result = await callBananaImageApiByFormat(opts, profile, fallbackFormat)
-    rememberBananaFormat(profile, fallbackFormat)
-    return result
+    try {
+      const result = await callBananaImageApiByFormat(opts, profile, fallbackFormat)
+      rememberBananaFormat(profile, fallbackFormat)
+      return result
+    } catch (fallbackError) {
+      // 两种协议都失败时把两次错误一起展示，方便判断是渠道问题还是协议问题。
+      const firstMessage = error instanceof Error ? error.message : String(error)
+      const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+      const label = (format: BananaApiFormat) => (format === 'gemini' ? 'Gemini' : 'OpenAI')
+      const combined = new Error(`${label(firstFormat)} 协议：${firstMessage}\n${label(fallbackFormat)} 协议：${fallbackMessage}`)
+      ;(combined as any).rawResponsePayload = (fallbackError as any)?.rawResponsePayload ?? (error as any)?.rawResponsePayload
+      ;(combined as any).status = (fallbackError as any)?.status ?? (error as any)?.status
+      throw combined
+    }
   }
 }
 
