@@ -1004,7 +1004,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                 <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden">
                     {mode === "image" ? (
                         <>
-                            <ModelPicker config={config} value={config.model} options={modelOptions} className="!min-w-[9rem] !max-w-[180px] shrink-0" onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
+                            <ModelPicker config={config} value={config.model} options={modelOptions} className="!min-w-[9rem] !max-w-[280px] shrink-0" onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
                             {isBananaModel ? (
                                 <label className="flex shrink-0 items-center gap-1.5" title="选择香蕉接口协议">
                                     <span className="sr-only">香蕉协议</span>
