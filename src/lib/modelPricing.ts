@@ -43,6 +43,8 @@ export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
 
 // 旧版无后缀模型保留原来的扩展质量选项，新版四 K 模型只允许基础三档。
 export function supportsExtendedImageQuality(model: string): boolean {
+  // 四 K 新模型只支持低、中、高，不能因请求模型映射或旧配置残留开放扩展档位。
+  if (/-4k$/i.test(model.trim())) return false
   const normalized = getFixedImageRequestModel(model).toLowerCase()
   return normalized === GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL || normalized === GPT_IMAGE_2_5_FLARE_LEGACY_MODEL
 }
