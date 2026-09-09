@@ -16,9 +16,9 @@ import { useStore } from "../../../../../store";
 const ALL_TIERS: SizeTier[] = ["1K", "2K", "4K"];
 const QUALITY_OPTIONS = [
     { value: "auto", label: "自动" },
-    { value: "high", label: "高" },
-    { value: "medium", label: "中" },
     { value: "low", label: "低" },
+    { value: "medium", label: "中" },
+    { value: "high", label: "高" },
 ];
 const RATIOS = [
     { label: "1:1", value: "1:1" },

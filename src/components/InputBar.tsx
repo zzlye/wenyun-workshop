@@ -21,9 +21,9 @@ import { CloseIcon } from './icons'
 
 const QUALITY_OPTIONS = [
   { value: 'auto', label: '自动' },
-  { value: 'high', label: '高' },
-  { value: 'medium', label: '中' },
   { value: 'low', label: '低' },
+  { value: 'medium', label: '中' },
+  { value: 'high', label: '高' },
 ]
 
 const EXTENDED_QUALITY_OPTIONS = [...QUALITY_OPTIONS, { value: 'xhigh', label: '极高' }, { value: 'max', label: '最大' }]
