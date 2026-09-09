@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback, useState, useMemo, useLayoutEffect, typ
 import { createPortal } from 'react-dom'
 import { useStore, submitTask, submitAgentMessage, stopAgentResponse, addImageFromFile, createInputImageFromFile, deleteImageIfUnreferenced, updateTaskInStore, removeMultipleTasks, getCachedImage, ensureImageCached, getActiveAgentRounds } from '../store'
 import { DEFAULT_PARAMS } from '../types'
-import { FIXED_IMAGE_MODEL_OPTIONS, allowsCustomImageRatioForProfile, getActiveApiProfile, getApiModelUnitCostText, getImageSizeTiersForProfile, isBananaImageModel, normalizeApiFormat, normalizeImageSizeForProfile, normalizeSettings } from '../lib/apiProfiles'
+import { FIXED_IMAGE_MODEL_OPTIONS, allowsCustomImageRatioForProfile, getActiveApiProfile, getApiModelUnitCostText, getImageSizeTiersForProfile, isBananaImageModel, normalizeApiFormat, normalizeImageSizeForProfile, normalizeSettings, supportsExtendedImageQuality } from '../lib/apiProfiles'
 import { getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
 import { normalizeImageSize } from '../lib/size'
@@ -25,6 +25,8 @@ const QUALITY_OPTIONS = [
   { value: 'medium', label: '中' },
   { value: 'low', label: '低' },
 ]
+
+const EXTENDED_QUALITY_OPTIONS = [...QUALITY_OPTIONS, { value: 'xhigh', label: '极高' }, { value: 'max', label: '最大' }]
 
 
 function getMentionTagTextLength(el: Element) {
@@ -1777,7 +1779,7 @@ export default function InputBar() {
         <Select
           value={params.quality}
           onChange={(quality) => setParams({ quality })}
-          options={QUALITY_OPTIONS}
+          options={supportsExtendedImageQuality(activeProfile.model) ? EXTENDED_QUALITY_OPTIONS : QUALITY_OPTIONS}
           className="px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/[0.06] focus:outline-none text-xs transition-all duration-200 shadow-sm"
         />
       </label>

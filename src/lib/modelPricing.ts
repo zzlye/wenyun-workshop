@@ -6,6 +6,8 @@ export const GPT_IMAGE_2_4K_REQUEST_MODEL = 'gpt-image-2-4k'
 export const SEEDREAM_5_PRO_MODEL = 'seedream-5-pro'
 export const GPT_IMAGE_2_5_SUNBURST_MODEL = 'gpt-image-2.5-sunburst-4k'
 export const GPT_IMAGE_2_5_FLARE_MODEL = 'gpt-image-2.5-flare-4k'
+export const GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL = 'gpt-image-2.5-sunburst'
+export const GPT_IMAGE_2_5_FLARE_LEGACY_MODEL = 'gpt-image-2.5-flare'
 export const GPT_IMAGE_2_VIP_MODEL = GPT_IMAGE_2_4K_MODEL
 export const GPT_IMAGE_2_SUPER_MODEL = GPT_IMAGE_2_4K_MODEL
 export const GPT_IMAGE_2_VIP_REQUEST_MODEL = GPT_IMAGE_2_4K_REQUEST_MODEL
@@ -33,9 +35,17 @@ export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
   { model: SEEDREAM_5_PRO_MODEL, label: SEEDREAM_5_PRO_MODEL, requestModel: SEEDREAM_5_PRO_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K' },
   { model: GPT_IMAGE_2_5_SUNBURST_MODEL, label: GPT_IMAGE_2_5_SUNBURST_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   { model: GPT_IMAGE_2_5_FLARE_MODEL, label: GPT_IMAGE_2_5_FLARE_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
+  { model: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, label: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
+  { model: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, label: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   { model: 'Nano-Banana-2', label: 'Nano Banana 2', requestModel: 'nano-banana-2', unitCostText: 'HUHN 0.09', resolutionText: '1K、2K、4K' },
   { model: 'Nano-Banana-Pro', label: 'Nano Banana Pro', requestModel: 'nano-banana-pro', unitCostText: 'HUHN 0.15', resolutionText: '1K、2K、4K' },
 ]
+
+// 旧版无后缀模型保留原来的扩展质量选项，新版四 K 模型只允许基础三档。
+export function supportsExtendedImageQuality(model: string): boolean {
+  const normalized = getFixedImageRequestModel(model).toLowerCase()
+  return normalized === GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL || normalized === GPT_IMAGE_2_5_FLARE_LEGACY_MODEL
+}
 
 export const FIXED_IMAGE_MODEL_OPTIONS = FIXED_IMAGE_MODEL_PRICING.map((item) => ({
   value: item.model,
