@@ -931,7 +931,18 @@ function InfiniteCanvasPage() {
 
     const createConnectedNode = useCallback(
         (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio, pending: PendingConnectionCreate) => {
-            const metadata = type === CanvasNodeType.Config ? { model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, count: 1 } : undefined;
+            const sourceNode = nodesRef.current.find((node) => node.id === pending.connection.nodeId);
+            const sourceMetadata = sourceNode?.metadata;
+            const metadata = type === CanvasNodeType.Config
+                ? { model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, count: 1 }
+                : type === CanvasNodeType.Image || type === CanvasNodeType.Video
+                    ? {
+                          model: sourceMetadata?.model || effectiveConfig.imageModel || effectiveConfig.model,
+                          size: sourceMetadata?.size || effectiveConfig.size,
+                          quality: sourceMetadata?.quality || effectiveConfig.quality,
+                          count: sourceMetadata?.count || 1,
+                      }
+                    : undefined;
             const newNode = createCanvasNode(type, pending.position, metadata);
             const connection = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
             if (!connection) {
@@ -1138,7 +1149,14 @@ function InfiniteCanvasPage() {
                           size: effectiveConfig.size,
                           count: 1,
                       }
-                    : undefined;
+                    : type === CanvasNodeType.Image || type === CanvasNodeType.Video
+                        ? {
+                              model: effectiveConfig.imageModel || effectiveConfig.model,
+                              size: effectiveConfig.size,
+                              quality: effectiveConfig.quality,
+                              count: effectiveConfig.count || 1,
+                          }
+                        : undefined;
             const newNode = createCanvasNode(type, targetPosition, configMetadata);
 
             setNodes((prev) => [...prev, newNode]);
