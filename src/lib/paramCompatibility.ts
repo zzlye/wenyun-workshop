@@ -1,6 +1,5 @@
 import { DEFAULT_PARAMS, type AppSettings, type TaskParams } from '../types'
 import { getActiveApiProfile, normalizeImageSizeForProfile } from './apiProfiles'
-import { supportsExtendedImageQuality } from './modelPricing'
 import { normalizeImageSize } from './size'
 
 export const DEFAULT_FAL_IMAGE_SIZE = '1360x1024'
@@ -26,10 +25,6 @@ export function normalizeParamsForSettings(
     output_format: 'png',
     output_compression: DEFAULT_PARAMS.output_compression,
     n: Math.min(outputImageLimit, Math.max(1, params.n || DEFAULT_PARAMS.n)),
-  }
-
-  if (!supportsExtendedImageQuality(activeProfile.model) && (nextParams.quality === 'xhigh' || nextParams.quality === 'max')) {
-    nextParams.quality = 'high'
   }
 
   if (activeProfile.provider === 'openai' && activeProfile.codexCli) {

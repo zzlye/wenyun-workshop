@@ -41,7 +41,6 @@ import {
   getImageModelOptionsForProfile,
   isBananaImageModel,
   normalizeFixedImageModel,
-  supportsExtendedImageQuality,
 } from './modelPricing'
 
 export {
@@ -59,7 +58,6 @@ export {
   getImageModelOptionsForProfile,
   isBananaImageModel,
   normalizeFixedImageModel,
-  supportsExtendedImageQuality,
 } from './modelPricing'
 
 export const LOCKED_WENYUN_PROFILE_ID = 'wenyun-site'

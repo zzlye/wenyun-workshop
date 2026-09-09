@@ -4,8 +4,8 @@ export const DEFAULT_IMAGES_MODEL = 'gpt-image-2'
 export const GPT_IMAGE_2_4K_MODEL = 'gpt-image-2-4k'
 export const GPT_IMAGE_2_4K_REQUEST_MODEL = 'gpt-image-2-4k'
 export const SEEDREAM_5_PRO_MODEL = 'seedream-5-pro'
-export const GPT_IMAGE_2_5_SUNBURST_MODEL = 'gpt-image-2.5-sunburst'
-export const GPT_IMAGE_2_5_FLARE_MODEL = 'gpt-image-2.5-flare'
+export const GPT_IMAGE_2_5_SUNBURST_MODEL = 'gpt-image-2.5-sunburst-4k'
+export const GPT_IMAGE_2_5_FLARE_MODEL = 'gpt-image-2.5-flare-4k'
 export const GPT_IMAGE_2_VIP_MODEL = GPT_IMAGE_2_4K_MODEL
 export const GPT_IMAGE_2_SUPER_MODEL = GPT_IMAGE_2_4K_MODEL
 export const GPT_IMAGE_2_VIP_REQUEST_MODEL = GPT_IMAGE_2_4K_REQUEST_MODEL
@@ -46,11 +46,6 @@ const FIXED_IMAGE_MODEL_VALUES = new Set<string>(FIXED_IMAGE_MODEL_PRICING.map((
 
 export function isBananaImageModel(model: string): boolean {
   return /^Nano-Banana(?:-|$)/i.test(model.trim())
-}
-
-export function supportsExtendedImageQuality(model: string): boolean {
-  const normalized = getFixedImageRequestModel(model).toLowerCase()
-  return normalized === GPT_IMAGE_2_5_SUNBURST_MODEL || normalized === GPT_IMAGE_2_5_FLARE_MODEL
 }
 
 export function getBananaPricedImageModel(model: string): string {
