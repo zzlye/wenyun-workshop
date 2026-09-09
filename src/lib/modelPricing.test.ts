@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildFixedModelPriceRows, FIXED_IMAGE_MODEL_OPTIONS, getFixedImageRequestModel, getImageSizeTiersForModel } from './modelPricing'
+import { buildFixedModelPriceRows, FIXED_IMAGE_MODEL_OPTIONS, getFixedImageRequestModel, getImageSizeTiersForModel, supportsExtendedImageQuality } from './modelPricing'
 
 describe('fixed image model pricing', () => {
   it('maps legacy vip and super-resolution names to the 4K model', () => {
@@ -23,6 +23,16 @@ describe('fixed image model pricing', () => {
     expect(rows.map((row) => row.model)).not.toContain('gpt-image-2-vip')
     expect(rows.map((row) => row.model)).not.toContain('sora-2')
     expect(FIXED_IMAGE_MODEL_OPTIONS.map((option) => option.value)).toContain('seedream-5-pro')
+    expect(FIXED_IMAGE_MODEL_OPTIONS.map((option) => option.value)).toEqual(expect.arrayContaining([
+      'gpt-image-2.5-sunburst',
+      'gpt-image-2.5-flare',
+    ]))
     expect(getImageSizeTiersForModel('seedream-5-pro')).toEqual(['1K', '2K'])
+  })
+
+  it('only enables the extended quality levels for GPT Image 2.5', () => {
+    expect(supportsExtendedImageQuality('gpt-image-2.5-sunburst')).toBe(true)
+    expect(supportsExtendedImageQuality('gpt-image-2.5-flare')).toBe(true)
+    expect(supportsExtendedImageQuality('gpt-image-2')).toBe(false)
   })
 })

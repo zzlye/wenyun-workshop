@@ -5,12 +5,19 @@ import { ConfigProvider } from "antd";
 
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import type { AiConfig } from "@/stores/use-config-store";
+import { supportsExtendedImageQuality } from "../../lib/modelPricing";
 
 const qualityOptions = [
     { value: "auto", label: "auto" },
     { value: "high", label: "高" },
     { value: "medium", label: "中" },
     { value: "low", label: "低" },
+];
+
+const extendedQualityOptions = [
+    ...qualityOptions,
+    { value: "xhigh", label: "极高" },
+    { value: "max", label: "最大" },
 ];
 
 const aspectOptions = [
@@ -40,6 +47,7 @@ type ImageSettingsPanelProps = {
 
 export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
     const quality = config.quality || "auto";
+    const availableQualityOptions = supportsExtendedImageQuality(config.imageModel || config.model) ? extendedQualityOptions : qualityOptions;
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
     const selectedAspect = aspectOptions.find((item) => (item.size || item.value) === activeSize || item.value === activeSize);
@@ -60,7 +68,7 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 <div className="space-y-2.5">
                     <SettingTitle color={theme.node.muted}>质量</SettingTitle>
                     <div className="grid grid-cols-4 gap-2.5">
-                        {qualityOptions.map((item) => (
+                        {availableQualityOptions.map((item) => (
                             <OptionPill key={item.value} selected={quality === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
                                 {item.label}
                             </OptionPill>
@@ -123,7 +131,7 @@ export function ImageSettingsTheme({ theme, children }: { theme: CanvasTheme; ch
 }
 
 export function imageQualityLabel(value: string) {
-    return ({ auto: "auto", high: "高", medium: "中", low: "低" } as Record<string, string>)[value] || value;
+    return ({ auto: "auto", high: "高", medium: "中", low: "低", xhigh: "极高", max: "最大" } as Record<string, string>)[value] || value;
 }
 
 export function imageSizeLabel(size: string) {

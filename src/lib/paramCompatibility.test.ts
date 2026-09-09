@@ -50,6 +50,26 @@ describe('parameter compatibility', () => {
     expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, quality: 'auto' }, settings).quality).toBe('auto')
   })
 
+  it('preserves xhigh and max for GPT Image 2.5 while downgrading them for older models', () => {
+    const newImageProfile = createDefaultOpenAIProfile({ apiKey: 'test-key', model: 'gpt-image-2.5-flare' })
+    const newImageSettings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [newImageProfile],
+      activeProfileId: newImageProfile.id,
+    })
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, quality: 'xhigh' }, newImageSettings).quality).toBe('xhigh')
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, quality: 'max' }, newImageSettings).quality).toBe('max')
+
+    const oldImageProfile = createDefaultOpenAIProfile({ apiKey: 'test-key', model: 'gpt-image-2' })
+    const oldImageSettings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [oldImageProfile],
+      activeProfileId: oldImageProfile.id,
+    })
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, quality: 'xhigh' }, oldImageSettings).quality).toBe('high')
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, quality: 'max' }, oldImageSettings).quality).toBe('high')
+  })
+
   it('normalizes auto size through fixed-site defaults when stale settings contain fal.ai', () => {
     const falProfile = createDefaultFalProfile({ apiKey: 'fal-key' })
     const settings = {

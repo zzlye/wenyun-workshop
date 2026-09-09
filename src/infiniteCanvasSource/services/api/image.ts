@@ -33,6 +33,8 @@ const QUALITY_BASE: Record<string, number> = {
     low: 1024,
     medium: 2048,
     high: 2880,
+    xhigh: 3840,
+    max: 3840,
     standard: 1024,
     hd: 2048,
 };
@@ -82,7 +84,7 @@ function resolveRequestSize(quality: string | undefined, size: string) {
 
 function resolveTaskQuality(config: AiConfig): TaskParams["quality"] {
     const quality = normalizeQuality(config.quality);
-    return quality === "low" || quality === "medium" || quality === "high" ? quality : DEFAULT_PARAMS.quality;
+    return quality === "low" || quality === "medium" || quality === "high" || quality === "xhigh" || quality === "max" ? quality : DEFAULT_PARAMS.quality;
 }
 
 function buildTaskParams(config: AiConfig): TaskParams {
