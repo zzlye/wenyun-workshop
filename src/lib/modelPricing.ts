@@ -35,8 +35,8 @@ export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
   { model: SEEDREAM_5_PRO_MODEL, label: SEEDREAM_5_PRO_MODEL, requestModel: SEEDREAM_5_PRO_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K' },
   { model: GPT_IMAGE_2_5_SUNBURST_MODEL, label: GPT_IMAGE_2_5_SUNBURST_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   { model: GPT_IMAGE_2_5_FLARE_MODEL, label: GPT_IMAGE_2_5_FLARE_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
-  { model: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, label: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
-  { model: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, label: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
+  { model: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, label: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K' },
+  { model: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, label: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K' },
   { model: 'Nano-Banana-2', label: 'Nano Banana 2', requestModel: 'nano-banana-2', unitCostText: 'HUHN 0.09', resolutionText: '1K、2K、4K' },
   { model: 'Nano-Banana-Pro', label: 'Nano Banana Pro', requestModel: 'nano-banana-pro', unitCostText: 'HUHN 0.15', resolutionText: '1K、2K、4K' },
 ]
@@ -94,9 +94,10 @@ export function getFixedImageRequestModel(model: string): string {
 }
 
 export function getImageSizeTiersForModel(model: string): SizeTier[] {
-  return getFixedImageRequestModel(model).toLowerCase() === SEEDREAM_5_PRO_MODEL
-    ? ['1K', '2K']
-    : ['1K', '2K', '4K']
+  const normalized = getFixedImageRequestModel(model).toLowerCase()
+  if (normalized === SEEDREAM_5_PRO_MODEL) return ['1K', '2K']
+  if (normalized === GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL || normalized === GPT_IMAGE_2_5_FLARE_LEGACY_MODEL) return ['1K']
+  return ['1K', '2K', '4K']
 }
 
 export function getFixedImageModelUnitCostText(model: string): string | null {
