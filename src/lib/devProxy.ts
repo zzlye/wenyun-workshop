@@ -20,6 +20,14 @@ const LOCKED_PROXY_TARGETS = [
     pricingPrefix: '/model-pricing-proxy/wenyun',
   },
   {
+    baseUrl: 'https://api.zzlye.site/v1',
+    origin: 'https://api.zzlye.site',
+    apiPrefix: '/api-proxy/wenyun',
+    newApiPrefix: '/newapi-proxy/wenyun',
+    performancePrefix: '/model-performance-proxy/wenyun',
+    pricingPrefix: '/model-pricing-proxy/wenyun',
+  },
+  {
     baseUrl: 'https://zzlye.xyz:60/v1',
     origin: 'https://zzlye.xyz:60',
     apiPrefix: '/api-proxy/wenyun',

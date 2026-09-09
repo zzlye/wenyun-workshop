@@ -9,13 +9,13 @@ import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { AiConfig } from "@/stores/use-config-store";
-import { allowsCustomImageRatioForProfile, getActiveApiProfile, getImageSizeTiersForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
+import { allowsCustomImageRatioForProfile, getActiveApiProfile, getImageSizeTiersForProfile, normalizeImageSizeForProfile, normalizeSettings, supportsExtendedImageQuality } from "../../../../../lib/apiProfiles";
 import { calculateImageSize, normalizeImageSize, parseRatio, type SizeTier } from "../../../../../lib/size";
 import { useStore } from "../../../../../store";
 
 const ALL_TIERS: SizeTier[] = ["1K", "2K", "4K"];
 const QUALITY_OPTIONS = [
-    { value: "auto", label: "auto" },
+    { value: "auto", label: "自动" },
     { value: "high", label: "高" },
     { value: "medium", label: "中" },
     { value: "low", label: "低" },
@@ -48,6 +48,9 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
     const activeProfile = useMemo(() => getActiveApiProfile(normalizeSettings(settings)), [settings]);
     const imageModel = config.imageModel || config.model || activeProfile.model;
     const allowedTiers = useMemo(() => getImageSizeTiersForProfile(activeProfile.id, imageModel), [activeProfile.id, imageModel]);
+    const qualityOptions = useMemo(() => supportsExtendedImageQuality(imageModel)
+        ? [...QUALITY_OPTIONS, { value: "xhigh", label: "极高" }, { value: "max", label: "最大" }]
+        : QUALITY_OPTIONS, [imageModel]);
     const allowCustomRatio = useMemo(() => allowsCustomImageRatioForProfile(activeProfile.id), [activeProfile.id]);
     const buttonRef = useRef<HTMLSpanElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
@@ -84,7 +87,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
         };
     }, [open]);
 
-    const panel = open && buttonRect ? <ImageSizePortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={normalizedConfig} allowedTiers={allowedTiers} allowCustomRatio={allowCustomRatio} onConfigChange={onConfigChange} /> : null;
+    const panel = open && buttonRect ? <ImageSizePortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={normalizedConfig} allowedTiers={allowedTiers} qualityOptions={qualityOptions} allowCustomRatio={allowCustomRatio} onConfigChange={onConfigChange} /> : null;
 
     return (
         <>
@@ -107,6 +110,7 @@ function ImageSizePortal({
     theme,
     config,
     allowedTiers,
+    qualityOptions,
     allowCustomRatio,
     onConfigChange,
 }: {
@@ -116,6 +120,7 @@ function ImageSizePortal({
     theme: CanvasTheme;
     config: AiConfig;
     allowedTiers: SizeTier[];
+    qualityOptions: Array<{ value: string; label: string }>;
     allowCustomRatio: boolean;
     onConfigChange: (key: keyof AiConfig, value: string) => void;
 }) {
@@ -151,13 +156,13 @@ function ImageSizePortal({
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
         >
-            <CanvasImageSizePanel config={config} allowedTiers={allowedTiers} allowCustomRatio={allowCustomRatio} onConfigChange={onConfigChange} theme={theme} />
+            <CanvasImageSizePanel config={config} allowedTiers={allowedTiers} qualityOptions={qualityOptions} allowCustomRatio={allowCustomRatio} onConfigChange={onConfigChange} theme={theme} />
         </div>,
         document.body,
     );
 }
 
-function CanvasImageSizePanel({ config, allowedTiers, allowCustomRatio, onConfigChange, theme }: { config: AiConfig; allowedTiers: SizeTier[]; allowCustomRatio: boolean; onConfigChange: (key: keyof AiConfig, value: string) => void; theme: CanvasTheme }) {
+function CanvasImageSizePanel({ config, allowedTiers, qualityOptions, allowCustomRatio, onConfigChange, theme }: { config: AiConfig; allowedTiers: SizeTier[]; qualityOptions: Array<{ value: string; label: string }>; allowCustomRatio: boolean; onConfigChange: (key: keyof AiConfig, value: string) => void; theme: CanvasTheme }) {
     const tiers = allowedTiers.length ? allowedTiers : ALL_TIERS;
     const tierKey = tiers.join("|");
     const currentPreset = useMemo(() => findPresetForSize(config.size || "1024x1024", tiers), [config.size, tierKey]);
@@ -218,7 +223,7 @@ function CanvasImageSizePanel({ config, allowedTiers, allowCustomRatio, onConfig
                 <div className="text-lg font-semibold">图像设置</div>
                 <SettingGroup title="品质" color={theme.node.muted}>
                     <div className="grid grid-cols-4 gap-2.5">
-                        {QUALITY_OPTIONS.map((item) => (
+                        {qualityOptions.map((item) => (
                             <OptionPill key={item.value} selected={(config.quality || "auto") === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
                                 {item.label}
                             </OptionPill>
