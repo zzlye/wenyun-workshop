@@ -61,6 +61,13 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
     const activeSize = normalizeImageSizeForProfile(normalizeImageSize(config.size || "1024x1024"), activeProfile.id, imageModel);
     const normalizedConfig = useMemo(() => activeSize === config.size ? config : { ...config, size: activeSize }, [activeSize, config]);
 
+    useEffect(() => {
+        // 切换模型后清理旧模型遗留的质量参数，避免把 xhigh/max 发给不支持的模型。
+        if (!qualityOptions.some((item) => item.value === (config.quality || "auto"))) {
+            onConfigChange("quality", "auto");
+        }
+    }, [config.quality, imageModel, onConfigChange, qualityOptions]);
+
     const updateOpen = (nextOpen: boolean) => {
         setOpen(nextOpen);
         onOpenChange?.(nextOpen);
