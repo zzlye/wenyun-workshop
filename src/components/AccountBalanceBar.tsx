@@ -47,6 +47,7 @@ export default function AccountBalanceBar({
   const apiBalanceText = useAccountKey
     ? accountSession?.balanceSource === 'user' ? accountSession.balanceText ?? '' : ''
     : getApiBalanceSnapshot(settings, activeProfile.id)?.text ?? ''
+  const displayBalanceText = apiBalanceText.replace(/\s*\/\s*已用.*$/u, '')
   const [isQueryingBalance, setIsQueryingBalance] = useState(false)
   const [showAccountLogin, setShowAccountLogin] = useState(false)
   const actionClassName = actionButtonClassName || defaultActionButtonClassName
@@ -103,7 +104,7 @@ export default function AccountBalanceBar({
         onPointerDown={(event) => event.stopPropagation()}
       >
         <span className="min-w-0 truncate">
-          {activeProfile.name}{useAccountKey ? '账号' : ''}：{apiBalanceText || '未查询'}
+          {activeProfile.name}{useAccountKey ? '账号' : ''}：{displayBalanceText || '未查询'}
         </span>
         <button
           type="button"

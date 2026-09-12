@@ -67,7 +67,7 @@ export default function Header({ onOpenCanvas, onOpenHome }: HeaderProps) {
               <button
                 type="button"
                 onClick={() => setShowAccountLogin(true)}
-                className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 shadow-none transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-900 dark:hover:text-gray-100"
+                className="home-landing-icon-button"
               >
                 {accountSession ? accountSession.username : '登录'}
               </button>
@@ -81,7 +81,7 @@ export default function Header({ onOpenCanvas, onOpenHome }: HeaderProps) {
                   dismissAllTooltips()
                   setShowHelp(true)
                 }}
-                className="p-2 rounded-lg shadow-none hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors"
+                className="home-landing-icon-button !h-9 !w-9 !justify-center !p-0"
                 aria-label="操作指南"
               >
                 <HelpCircleIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -93,7 +93,7 @@ export default function Header({ onOpenCanvas, onOpenHome }: HeaderProps) {
             <AnimatedThemeToggler
               theme={appearanceNightMode ? 'dark' : 'light'}
               onThemeChange={(theme) => setSettings({ appearanceNightMode: theme === 'dark' })}
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-600 shadow-none transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-gray-100 [&_svg]:h-5 [&_svg]:w-5"
+              className="home-landing-icon-button !h-9 !w-9 !justify-center !p-0 [&_svg]:h-5 [&_svg]:w-5"
               aria-label={appearanceNightMode ? '切换到白天模式' : '切换到夜间模式'}
               title={appearanceNightMode ? '切换到白天模式' : '切换到夜间模式'}
             />
@@ -103,7 +103,7 @@ export default function Header({ onOpenCanvas, onOpenHome }: HeaderProps) {
             >
               <button
                 onClick={() => setShowSettings(true)}
-                className="p-2 rounded-lg shadow-none hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors"
+                className="home-landing-icon-button !h-9 !w-9 !justify-center !p-0"
                 aria-label="设置"
               >
                 <SettingsIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />

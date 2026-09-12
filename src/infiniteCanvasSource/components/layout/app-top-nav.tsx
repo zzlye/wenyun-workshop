@@ -36,7 +36,7 @@ export function AppTopNav() {
                             <div className="flex shrink-0 items-center gap-2 text-sm font-semibold leading-none tracking-tight text-gray-800 dark:text-gray-100">
                                 <button
                                     type="button"
-                                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-600 shadow-none transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-gray-100"
+                                    className="home-landing-icon-button !h-9 !w-9 !justify-center !p-0"
                                     onClick={() => router.openHome()}
                                     aria-label="返回主页"
                                     title="返回主页"
@@ -73,13 +73,13 @@ export function AppTopNav() {
                                     setTheme(nextTheme);
                                     router.setAppearanceTheme(nextTheme);
                                 }}
-                                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-600 shadow-none transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-gray-100 [&_svg]:h-5 [&_svg]:w-5"
+                                className="home-landing-icon-button !h-9 !w-9 !justify-center !p-0 [&_svg]:h-5 [&_svg]:w-5"
                                 aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
                                 title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
                             />
                             <button
                                 type="button"
-                                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-600 shadow-none transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-gray-100 [&_svg]:h-5 [&_svg]:w-5"
+                                className="home-landing-icon-button !h-9 !w-9 !justify-center !p-0 [&_svg]:h-5 [&_svg]:w-5"
                                 onClick={() => router.openSettings()}
                                 aria-label="配置"
                                 title="配置"

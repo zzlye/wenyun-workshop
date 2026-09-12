@@ -39,7 +39,7 @@
 }
 
 html {
-  overflow-y: scroll;
+  overflow-y: auto;
 }
 
 body {
@@ -146,6 +146,7 @@ input[type="number"] {
 .home-landing {
   isolation: isolate;
   position: relative;
+  height: 100dvh;
 }
 
 .home-landing-background,
