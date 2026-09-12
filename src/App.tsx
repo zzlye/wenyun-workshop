@@ -26,6 +26,7 @@ import SupportPromptModal from './components/SupportPromptModal'
 import AnnouncementModal from './components/AnnouncementModal'
 import CanvasWorkshop from './components/CanvasWorkshop'
 import DataSyncManager from './components/DataSyncManager'
+import HomeLanding from './components/HomeLanding'
 import { useGlobalClickSuppression } from './lib/clickSuppression'
 import { syncInfiniteCanvasConfigFromSettings } from './lib/syncInfiniteCanvasConfig'
 
@@ -49,6 +50,7 @@ export default function App() {
   const appearanceNightMode = useStore((s) => s.settings.appearanceNightMode)
   const hasRunningGeneration = useStore((s) => s.tasks.some((task) => task.status === 'running'))
   const [workspaceMode, setWorkspaceMode] = useState<'gallery' | 'canvas'>('gallery')
+  const [showHome, setShowHome] = useState(true)
 
   useEffect(() => {
     if (workspaceMode !== 'gallery') return
@@ -242,27 +244,43 @@ export default function App() {
         </>
       )}
       <div className={`relative z-10 min-h-screen ${appearanceNightMode ? 'appearance-night' : ''}`}>
-        <div key={workspaceMode} className={`workspace-mode-view workspace-mode-view-${workspaceMode}`}>
-          {workspaceMode === 'gallery' ? (
-            <>
-              <Header onOpenCanvas={() => {
-                setAnnouncementOpen(false)
-                switchWorkspaceMode('canvas')
-              }} />
-              <main data-home-main data-drag-select-surface className="pb-48">
-                <div className="safe-area-x max-w-7xl mx-auto">
-                  <SearchBar />
-                  <TaskGrid />
-                </div>
-              </main>
-              <InputBar />
-              <DetailModal />
-              <ImageContextMenu />
-            </>
-          ) : (
-            <CanvasWorkshop onBack={() => switchWorkspaceMode('gallery')} onOpenSettings={() => setShowSettings(true)} />
-          )}
-        </div>
+        {showHome ? (
+          <HomeLanding
+            onOpenGallery={() => {
+              setShowHome(false)
+              setAnnouncementOpen(false)
+              switchWorkspaceMode('gallery')
+            }}
+            onOpenCanvas={() => {
+              setShowHome(false)
+              setAnnouncementOpen(false)
+              switchWorkspaceMode('canvas')
+            }}
+            onOpenSettings={() => setShowSettings(true)}
+          />
+        ) : (
+          <div key={workspaceMode} className={`workspace-mode-view workspace-mode-view-${workspaceMode}`}>
+            {workspaceMode === 'gallery' ? (
+              <>
+                <Header onOpenCanvas={() => {
+                  setAnnouncementOpen(false)
+                  switchWorkspaceMode('canvas')
+                }} />
+                <main data-home-main data-drag-select-surface className="pb-48">
+                  <div className="safe-area-x max-w-7xl mx-auto">
+                    <SearchBar />
+                    <TaskGrid />
+                  </div>
+                </main>
+                <InputBar />
+                <DetailModal />
+                <ImageContextMenu />
+              </>
+            ) : (
+              <CanvasWorkshop onBack={() => switchWorkspaceMode('gallery')} onOpenSettings={() => setShowSettings(true)} />
+            )}
+          </div>
+        )}
         <Lightbox />
         <MaskEditorModal />
         <SupportPromptModal />
