@@ -39,6 +39,7 @@ export function useRouter() {
     push: navigation.navigate,
     replace: navigation.navigate,
     back: navigation.backToHome,
+    backToHome: navigation.backToHome,
     openHome: navigation.openHome,
     openSettings: navigation.openSettings,
     appearanceTheme: navigation.appearanceTheme,
