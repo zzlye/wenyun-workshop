@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { flushSync } from "react-dom";
 import { useParams, useRouter } from "next/navigation";
-import { AudioLines, Home, ImageIcon, Images, List, Menu, Paintbrush, Plus, Redo2, Scissors, Settings, Settings2, Trash2, Undo2, Upload, Video } from "lucide-react";
+import { AudioLines, Home, ImageIcon, Images, List, Menu, Paintbrush, Plus, Redo2, Scissors, Settings, Settings2, Trash2, Undo2, Upload, Video, WandSparkles } from "lucide-react";
 import { saveAs } from "file-saver";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
@@ -3384,7 +3384,7 @@ function InfiniteCanvasPage() {
                     onCancelTitleEditing={() => setTitleEditing(false)}
                     canUndo={historyState.canUndo}
                     canRedo={historyState.canRedo}
-                    onHome={() => router.push("/canvas")}
+                    onHome={() => router.openHome()}
                     onProjects={() => router.push("/canvas")}
                     onCreateProject={createAndOpenProject}
                     onDeleteProject={deleteCurrentProject}
@@ -3902,6 +3902,7 @@ function CanvasTopBar({
                         menu={{
                             items: [
                                 { key: "home", icon: <Home className="size-4" />, label: "主页", onClick: onHome },
+                                { key: "wenyun", icon: <WandSparkles className="size-4" />, label: "文运工坊", onClick: () => router.openWenyun() },
                                 { key: "projects", icon: <Images className="size-4" />, label: "我的画布", onClick: onProjects },
                                 { type: "divider" },
                                 { key: "new", icon: <Plus className="size-4" />, label: "新建画布", onClick: onCreateProject },
@@ -3946,21 +3947,20 @@ function CanvasTopBar({
                     </div>
                 </div>
 
-                {/* 中间余额面板和文运工坊保持一致，展示当前固定站点名称。 */}
-                <AccountBalanceBar
-                    activeProfile={activeProfile}
-                    showLoginButton
-                    className="pointer-events-auto flex max-w-[48vw] items-center gap-2 rounded-full border py-1 pl-3 pr-1 text-xs font-medium shadow-sm backdrop-blur"
-                    style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke, color: theme.node.text }}
-                    actionButtonClassName="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
-                    actionButtonStyle={{ background: theme.node.fill, color: theme.node.text }}
-                    priceButtonClassName="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
-                    priceButtonStyle={{ background: theme.node.fill, color: theme.node.text }}
-                    loginButtonClassName="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
-                    loginButtonStyle={{ background: theme.node.fill, color: theme.node.text }}
-                />
-
                 <div className="pointer-events-auto flex items-center gap-1.5">
+                    {/* 账号操作与主题、设置放在同一侧，和画布列表页保持一致。 */}
+                    <AccountBalanceBar
+                        activeProfile={activeProfile}
+                        showLoginButton
+                        className="hidden max-w-[42vw] items-center gap-2 rounded-full border py-1 pl-3 pr-1 text-xs font-medium shadow-sm backdrop-blur sm:flex"
+                        style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke, color: theme.node.text }}
+                        actionButtonClassName="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
+                        actionButtonStyle={{ background: theme.node.fill, color: theme.node.text }}
+                        priceButtonClassName="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
+                        priceButtonStyle={{ background: theme.node.fill, color: theme.node.text }}
+                        loginButtonClassName="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
+                        loginButtonStyle={{ background: theme.node.fill, color: theme.node.text }}
+                    />
                     {/* 切换纯色背景按钮 */}
                     <button
                         type="button"

@@ -309,7 +309,7 @@ export default function App() {
               </>
             ) : (
               <Suspense fallback={<div className="min-h-screen bg-white dark:bg-gray-950" />}>
-                <CanvasWorkshop initialRoute={getInitialCanvasRoute()} onBack={() => switchWorkspaceMode('gallery')} onOpenHome={openHome} onOpenSettings={() => setShowSettings(true)} />
+                <CanvasWorkshop initialRoute={getInitialCanvasRoute()} onBack={() => switchWorkspaceMode('gallery')} onOpenHome={openHome} onOpenWenyun={() => switchWorkspaceMode('gallery')} onOpenSettings={() => setShowSettings(true)} />
               </Suspense>
             )}
           </div>

@@ -14,6 +14,7 @@ import { syncInfiniteCanvasConfigFromSettings } from '../lib/syncInfiniteCanvasC
 type CanvasWorkshopProps = {
   onBack: () => void
   onOpenHome: () => void
+  onOpenWenyun: () => void
   onOpenSettings: () => void
   initialRoute?: CanvasRoute
 }
@@ -66,7 +67,7 @@ function CanvasRoutePage({ route }: { route: CanvasRoute }) {
   return <OriginalCanvasPage />
 }
 
-export default function CanvasWorkshop({ onBack, onOpenHome, onOpenSettings, initialRoute }: CanvasWorkshopProps) {
+export default function CanvasWorkshop({ onBack, onOpenHome, onOpenWenyun, onOpenSettings, initialRoute }: CanvasWorkshopProps) {
   const setSettings = useStore((s) => s.setSettings)
   const settings = useStore((s) => s.settings)
   const normalizedSettings = normalizeSettings(settings)
@@ -129,6 +130,7 @@ export default function CanvasWorkshop({ onBack, onOpenHome, onOpenSettings, ini
       },
       backToHome: onBack,
       openHome: onOpenHome,
+      openWenyun: onOpenWenyun,
       openSettings: onOpenSettings,
       appearanceTheme,
       setAppearanceTheme: (theme: 'light' | 'dark') => {
@@ -136,7 +138,7 @@ export default function CanvasWorkshop({ onBack, onOpenHome, onOpenSettings, ini
         setSettings({ appearanceNightMode: theme === 'dark' })
       },
     }),
-    [appearanceTheme, onBack, onOpenHome, onOpenSettings, route, setSettings],
+    [appearanceTheme, onBack, onOpenHome, onOpenSettings, onOpenWenyun, route, setSettings],
   )
 
   const handleInternalLinkClick = (event: MouseEvent<HTMLDivElement>) => {
