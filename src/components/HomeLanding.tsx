@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { LogIn, Pause, Play, Settings, Sparkles, WandSparkles } from 'lucide-react'
+import { LogIn, Pause, Play, RefreshCw, Settings, Sparkles, WandSparkles } from 'lucide-react'
 import { PIXIV_RANDOM_BACKGROUND_API_URL } from '../lib/apiProfiles'
 import AccountLoginModal from './AccountLoginModal'
 
@@ -46,6 +46,10 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
     return () => window.clearInterval(timer)
   }, [isPaused])
 
+  const refreshBackground = () => {
+    loadBackground(`${PIXIV_RANDOM_BACKGROUND_API_URL}&home=${Date.now()}`)
+  }
+
   return (
     <div className="home-landing min-h-screen overflow-hidden bg-[#11131c] text-white">
       <div aria-hidden className={`home-landing-background ${backgroundReady ? 'home-landing-background-ready' : ''}`} style={{ backgroundImage: `url("${backgroundUrl}")` }} />
@@ -69,7 +73,10 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
             <button type="button" className="home-landing-entry home-landing-entry-primary" onClick={onOpenGallery}><span className="grid size-10 place-items-center rounded-xl bg-white/15"><WandSparkles className="size-5" /></span><span className="flex-1 text-left"><strong>文运工坊</strong><small>快速生成与管理图片</small></span><span className="text-xl text-white/50">›</span></button>
             <button type="button" className="home-landing-entry" onClick={onOpenCanvas}><span className="grid size-10 place-items-center rounded-xl bg-white/10"><Sparkles className="size-5 text-white/90" /></span><span className="flex-1 text-left"><strong>画布工坊</strong><small>在无限画布中组织创作</small></span><span className="text-xl text-white/50">›</span></button>
           </nav>
-          <button type="button" className="home-landing-pause" onClick={() => setIsPaused((value) => !value)}>{isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}{isPaused ? '继续轮播' : '暂停轮播'}</button>
+          <div className="mt-5 flex items-center gap-2">
+            <button type="button" className="home-landing-pause" onClick={() => setIsPaused((value) => !value)}>{isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}{isPaused ? '继续' : '暂停'}</button>
+            <button type="button" className="home-landing-pause !px-2.5" onClick={refreshBackground} aria-label="刷新背景" title="刷新背景"><RefreshCw className="size-3.5" /></button>
+          </div>
         </div>
       </main>
       <AccountLoginModal open={showLogin} onClose={() => setShowLogin(false)} />
