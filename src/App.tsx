@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { AppProviders } from './infiniteCanvasSource/components/layout/app-providers'
 import { useThemeStore } from './infiniteCanvasSource/stores/use-theme-store'
 import { getActiveApiProfile, LOCKED_WENYUN_BASE_URL, mergeImportedSettings, normalizeSettings, setApiPriceSnapshot } from './lib/apiProfiles'
@@ -23,11 +23,13 @@ import Toast from './components/Toast'
 import MaskEditorModal from './components/MaskEditorModal'
 import ImageContextMenu from './components/ImageContextMenu'
 import AnnouncementModal from './components/AnnouncementModal'
-import CanvasWorkshop from './components/CanvasWorkshop'
 import DataSyncManager from './components/DataSyncManager'
 import HomeLanding from './components/HomeLanding'
 import { useGlobalClickSuppression } from './lib/clickSuppression'
 import { syncInfiniteCanvasConfigFromSettings } from './lib/syncInfiniteCanvasConfig'
+import type { CanvasRoute } from './infiniteCanvasCompat/nextNavigation'
+
+const CanvasWorkshop = lazy(() => import('./components/CanvasWorkshop'))
 
 let customProviderConfigUrlImportStarted = false
 
@@ -39,6 +41,18 @@ function getAnnouncementHash(content: string) {
   return String(hash)
 }
 
+function getInitialLocation() {
+  const pathname = window.location.pathname.replace(/\/+$/, '') || '/'
+  if (pathname === '/wenyun') return { showHome: false, workspaceMode: 'gallery' as const }
+  if (pathname === '/canvas' || pathname.startsWith('/canvas/')) return { showHome: false, workspaceMode: 'canvas' as const }
+  return { showHome: true, workspaceMode: 'gallery' as const }
+}
+
+function getInitialCanvasRoute(): CanvasRoute {
+  const match = window.location.pathname.match(/^\/canvas\/([^/]+)$/)
+  return match ? { pathname: '/canvas/' + match[1], params: { id: match[1] } } : { pathname: '/canvas', params: {} }
+}
+
 export default function App() {
   const setSettings = useStore((s) => s.setSettings)
   const setShowSettings = useStore((s) => s.setShowSettings)
@@ -48,8 +62,19 @@ export default function App() {
   const appearanceBackgroundBlur = useStore((s) => s.settings.appearanceBackgroundBlur)
   const appearanceNightMode = useStore((s) => s.settings.appearanceNightMode)
   const hasRunningGeneration = useStore((s) => s.tasks.some((task) => task.status === 'running'))
-  const [workspaceMode, setWorkspaceMode] = useState<'gallery' | 'canvas'>('gallery')
-  const [showHome, setShowHome] = useState(true)
+  const initialLocation = getInitialLocation()
+  const [workspaceMode, setWorkspaceMode] = useState<'gallery' | 'canvas'>(initialLocation.workspaceMode)
+  const [showHome, setShowHome] = useState(initialLocation.showHome)
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const location = getInitialLocation()
+      setWorkspaceMode(location.workspaceMode)
+      setShowHome(location.showHome)
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
   useEffect(() => {
     if (workspaceMode !== 'gallery') return
@@ -181,7 +206,11 @@ export default function App() {
   const switchWorkspaceMode = useCallback((nextMode: 'gallery' | 'canvas') => {
     if (workspaceMode === nextMode) return
 
-    const applyMode = () => setWorkspaceMode(nextMode)
+    const applyMode = () => {
+      setWorkspaceMode(nextMode)
+      setShowHome(false)
+      window.history.pushState({}, '', nextMode === 'canvas' ? '/canvas' : '/wenyun')
+    }
     if (typeof document.startViewTransition !== 'function') {
       applyMode()
       return
@@ -279,10 +308,13 @@ export default function App() {
                 <ImageContextMenu />
               </>
             ) : (
-              <CanvasWorkshop onBack={() => switchWorkspaceMode('gallery')} onOpenHome={() => {
-                setAnnouncementOpen(false)
-                setShowHome(true)
-              }} onOpenSettings={() => setShowSettings(true)} />
+              <Suspense fallback={<div className="min-h-screen bg-white dark:bg-gray-950" />}>
+                <CanvasWorkshop initialRoute={getInitialCanvasRoute()} onBack={() => switchWorkspaceMode('gallery')} onOpenHome={() => {
+                  setAnnouncementOpen(false)
+                  setShowHome(true)
+                  window.history.pushState({}, '', '/')
+                }} onOpenSettings={() => setShowSettings(true)} />
+              </Suspense>
             )}
           </div>
         )}

@@ -15,6 +15,7 @@ type CanvasWorkshopProps = {
   onBack: () => void
   onOpenHome: () => void
   onOpenSettings: () => void
+  initialRoute?: CanvasRoute
 }
 
 type CanvasErrorBoundaryState = {
@@ -65,13 +66,13 @@ function CanvasRoutePage({ route }: { route: CanvasRoute }) {
   return <OriginalCanvasPage />
 }
 
-export default function CanvasWorkshop({ onBack, onOpenHome, onOpenSettings }: CanvasWorkshopProps) {
+export default function CanvasWorkshop({ onBack, onOpenHome, onOpenSettings, initialRoute }: CanvasWorkshopProps) {
   const setSettings = useStore((s) => s.setSettings)
   const settings = useStore((s) => s.settings)
   const normalizedSettings = normalizeSettings(settings)
   const appearanceTheme: 'light' | 'dark' = normalizedSettings.appearanceNightMode ? 'dark' : 'light'
   const activeAccountBoundApiKey = normalizedSettings.newApiAccountSessions[normalizedSettings.activeProfileId]?.boundApiKey ?? ''
-  const [route, setRoute] = useState<CanvasRoute>({ pathname: '/canvas', params: {} })
+  const [route, setRoute] = useState<CanvasRoute>(initialRoute ?? { pathname: '/canvas', params: {} })
 
 
 
