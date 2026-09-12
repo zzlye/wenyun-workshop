@@ -28,7 +28,7 @@ import { storeImage } from "../../../../../lib/db";
 import { normalizeCanvasVideoModel } from "../../../../../lib/videoModel";
 import { replaceAudioMentionsForApi, replaceImageMentionsForApi, replaceVideoMentionsForApi, stripImageMentionMarkers } from "../../../../../lib/promptImageMentions";
 import { primeImageCache, useStore } from "../../../../../store";
-import AccountBalanceBar from "../../../../../components/AccountBalanceBar";
+import AccountBalanceBar, { AccountLoginButton } from "../../../../../components/AccountBalanceBar";
 import { cropDataUrl, cropGridDataUrl } from "../utils/canvas-image-data";
 import { isCanvasEditableTarget } from "../utils/canvas-dom-events";
 import { clearCanvasGenerationSession, getCanvasGenerationSessionIds, hasRecoverableCanvasImageTask, isCanvasNodeGenerationLocked, markCanvasGenerationSession, resetInterruptedCanvasGenerations, withRunningCanvasNode, withoutRunningCanvasNodes } from "../utils/canvas-generation-running";
@@ -3947,19 +3947,20 @@ function CanvasTopBar({
                     </div>
                 </div>
 
+                <AccountBalanceBar
+                    activeProfile={activeProfile}
+                    className="pointer-events-auto flex max-w-[48vw] items-center gap-2 rounded-full border py-1 pl-3 pr-1 text-xs font-medium shadow-sm backdrop-blur"
+                    style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke, color: theme.node.text }}
+                    actionButtonClassName="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
+                    actionButtonStyle={{ background: theme.node.fill, color: theme.node.text }}
+                    priceButtonClassName="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
+                    priceButtonStyle={{ background: theme.node.fill, color: theme.node.text }}
+                />
+
                 <div className="pointer-events-auto flex items-center gap-1.5">
-                    {/* 账号操作与主题、设置放在同一侧，和画布列表页保持一致。 */}
-                    <AccountBalanceBar
-                        activeProfile={activeProfile}
-                        showLoginButton
-                        className="hidden max-w-[42vw] items-center gap-2 rounded-full border py-1 pl-3 pr-1 text-xs font-medium shadow-sm backdrop-blur sm:flex"
-                        style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke, color: theme.node.text }}
-                        actionButtonClassName="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
-                        actionButtonStyle={{ background: theme.node.fill, color: theme.node.text }}
-                        priceButtonClassName="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
-                        priceButtonStyle={{ background: theme.node.fill, color: theme.node.text }}
-                        loginButtonClassName="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
-                        loginButtonStyle={{ background: theme.node.fill, color: theme.node.text }}
+                    <AccountLoginButton
+                        className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
+                        style={{ background: theme.node.fill, color: theme.node.text }}
                     />
                     {/* 切换纯色背景按钮 */}
                     <button

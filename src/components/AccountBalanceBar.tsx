@@ -21,6 +21,21 @@ type AccountBalanceBarProps = {
   loginButtonStyle?: CSSProperties
 }
 
+export function AccountLoginButton({ className, style }: { className?: string; style?: CSSProperties }) {
+  const [showAccountLogin, setShowAccountLogin] = useState(false)
+  const settings = useStore((state) => state.settings)
+  const accountSession = settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] ?? null
+
+  return (
+    <>
+      <button type="button" onClick={() => setShowAccountLogin(true)} className={className} style={style} aria-label="账号登录" title="账号登录">
+        {accountSession?.username || '登录'}
+      </button>
+      <AccountLoginModal open={showAccountLogin} onClose={() => setShowAccountLogin(false)} />
+    </>
+  )
+}
+
 const defaultBarClassName = 'flex items-center gap-2 rounded-full border border-gray-200/70 bg-white/75 py-1 pl-3 pr-1 text-xs font-medium text-gray-600 shadow-none backdrop-blur dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-gray-300'
 const defaultActionButtonClassName = 'shrink-0 rounded-full border border-gray-200/70 bg-white/70 px-2 py-0.5 text-[11px] font-medium text-gray-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:border-blue-400/30 dark:hover:bg-blue-500/15 dark:hover:text-blue-200'
 
