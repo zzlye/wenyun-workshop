@@ -262,7 +262,10 @@ export default function App() {
           <div key={workspaceMode} className={`workspace-mode-view workspace-mode-view-${workspaceMode}`}>
             {workspaceMode === 'gallery' ? (
               <>
-                <Header onOpenCanvas={() => {
+                <Header onOpenHome={() => {
+                  setAnnouncementOpen(false)
+                  setShowHome(true)
+                }} onOpenCanvas={() => {
                   setAnnouncementOpen(false)
                   switchWorkspaceMode('canvas')
                 }} />
@@ -277,7 +280,10 @@ export default function App() {
                 <ImageContextMenu />
               </>
             ) : (
-              <CanvasWorkshop onBack={() => switchWorkspaceMode('gallery')} onOpenSettings={() => setShowSettings(true)} />
+              <CanvasWorkshop onBack={() => switchWorkspaceMode('gallery')} onOpenHome={() => {
+                setAnnouncementOpen(false)
+                setShowHome(true)
+              }} onOpenSettings={() => setShowSettings(true)} />
             )}
           </div>
         )}

@@ -1,4 +1,5 @@
 import { Component, useEffect, useMemo, useState, type ErrorInfo, type MouseEvent, type ReactNode } from 'react'
+import { Home } from 'lucide-react'
 import 'antd/dist/reset.css'
 import UserLayout from '../infiniteCanvasSource/app/(user)/layout'
 import OriginalCanvasPage from '../infiniteCanvasSource/app/(user)/canvas/page'
@@ -13,6 +14,7 @@ import { syncInfiniteCanvasConfigFromSettings } from '../lib/syncInfiniteCanvasC
 
 type CanvasWorkshopProps = {
   onBack: () => void
+  onOpenHome: () => void
   onOpenSettings: () => void
 }
 
@@ -64,7 +66,7 @@ function CanvasRoutePage({ route }: { route: CanvasRoute }) {
   return <OriginalCanvasPage />
 }
 
-export default function CanvasWorkshop({ onBack, onOpenSettings }: CanvasWorkshopProps) {
+export default function CanvasWorkshop({ onBack, onOpenHome, onOpenSettings }: CanvasWorkshopProps) {
   const setSettings = useStore((s) => s.setSettings)
   const settings = useStore((s) => s.settings)
   const normalizedSettings = normalizeSettings(settings)
@@ -139,6 +141,16 @@ export default function CanvasWorkshop({ onBack, onOpenSettings }: CanvasWorksho
     <CanvasNavigationProvider value={navigation}>
       <AppProviders>
         <div className="canvas-integrated-shell" onClickCapture={handleInternalLinkClick}>
+          <button
+            type="button"
+            onClick={onOpenHome}
+            className="fixed left-3 top-3 z-[1300] inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/15 bg-black/45 px-2.5 text-xs font-medium text-white/85 shadow-lg backdrop-blur-xl transition-colors hover:bg-black/65 hover:text-white"
+            aria-label="返回主页"
+            title="返回主页"
+          >
+            <Home className="h-4 w-4" />
+            <span>主页</span>
+          </button>
           <UserLayout>
             <div className="h-full overflow-hidden bg-transparent text-foreground">
               <CanvasErrorBoundary>

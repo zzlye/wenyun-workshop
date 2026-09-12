@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Home } from 'lucide-react'
 import { useStore } from '../store'
 import { useTooltip } from '../hooks/useTooltip'
 import { dismissAllTooltips } from '../lib/tooltipDismiss'
@@ -12,9 +13,10 @@ import AccountBalanceBar from './AccountBalanceBar'
 
 type HeaderProps = {
   onOpenCanvas?: () => void
+  onOpenHome?: () => void
 }
 
-export default function Header({ onOpenCanvas }: HeaderProps) {
+export default function Header({ onOpenCanvas, onOpenHome }: HeaderProps) {
   const setShowSettings = useStore((s) => s.setShowSettings)
   const setSettings = useStore((s) => s.setSettings)
   const settings = useStore((s) => s.settings)
@@ -32,6 +34,17 @@ export default function Header({ onOpenCanvas }: HeaderProps) {
       <header data-no-drag-select className="safe-area-top fixed top-0 left-0 right-0 z-40 bg-white/80 dark:bg-gray-950/80 backdrop-blur border-b border-gray-200 dark:border-white/[0.08] transition-transform duration-300 ease-in-out">
         <div className="safe-area-x safe-header-inner max-w-7xl mx-auto flex items-center justify-between relative">
           <div className="flex-1 min-w-0 pr-2 flex items-center gap-2">
+            {onOpenHome && (
+              <button
+                type="button"
+                onClick={onOpenHome}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-600 shadow-none transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-gray-100"
+                aria-label="返回主页"
+                title="返回主页"
+              >
+                <Home className="h-5 w-5" />
+              </button>
+            )}
             <h1 className="inline-flex items-start relative mr-2">
               <span className="text-[17px] sm:text-lg font-bold tracking-tight text-gray-800 dark:text-gray-100 transition-colors">
                 文运工坊
