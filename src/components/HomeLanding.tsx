@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { LogIn, Pause, Play, RefreshCw, Settings, Sparkles, WandSparkles } from 'lucide-react'
 import { LOCKED_WENYUN_PROFILE_ID, PIXIV_RANDOM_BACKGROUND_API_URL } from '../lib/apiProfiles'
 import { useStore } from '../store'
@@ -14,24 +14,39 @@ const BACKGROUND_ROTATION_MS = 90_000
 const FALLBACK_BACKGROUND_URL = 'https://www.loliapi.com/acg/pc/'
 
 export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSettings }: HomeLandingProps) {
-  const [backgroundUrl, setBackgroundUrl] = useState(FALLBACK_BACKGROUND_URL)
+  const [backgroundUrls, setBackgroundUrls] = useState<[string, string]>([FALLBACK_BACKGROUND_URL, FALLBACK_BACKGROUND_URL])
+  const [activeBackgroundIndex, setActiveBackgroundIndex] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
   const [showLogin, setShowLogin] = useState(false)
-  const [backgroundReady, setBackgroundReady] = useState(true)
+  const activeBackgroundIndexRef = useRef(0)
+  const backgroundRequestRef = useRef(0)
   const accountSession = useStore((state) => state.settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] ?? null)
 
   const loadBackground = (url: string) => {
+    const requestId = backgroundRequestRef.current + 1
+    backgroundRequestRef.current = requestId
     const preload = new Image()
     preload.onload = () => {
-      setBackgroundUrl(preload.src)
-      setBackgroundReady(true)
+      if (requestId !== backgroundRequestRef.current) return
+      const nextIndex = activeBackgroundIndexRef.current === 0 ? 1 : 0
+      setBackgroundUrls((current) => {
+        const next = [...current] as [string, string]
+        next[nextIndex] = preload.src
+        return next
+      })
+      // 先让隐藏层完成一次渲染，再切换透明度，确保浏览器能执行交叉淡入淡出。
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          activeBackgroundIndexRef.current = nextIndex
+          setActiveBackgroundIndex(nextIndex)
+        })
+      })
     }
     preload.onerror = () => {
       if (url !== FALLBACK_BACKGROUND_URL) {
         loadBackground(`${FALLBACK_BACKGROUND_URL}?home=${Date.now()}`)
         return
       }
-      setBackgroundReady(true)
     }
     preload.src = url
   }
@@ -54,7 +69,14 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
 
   return (
     <div className="home-landing min-h-screen overflow-hidden bg-[#11131c] text-white">
-      <div aria-hidden className={`home-landing-background ${backgroundReady ? 'home-landing-background-ready' : ''}`} style={{ backgroundImage: `url("${backgroundUrl}")` }} />
+      {backgroundUrls.map((url, index) => (
+        <div
+          key={index}
+          aria-hidden
+          className={`home-landing-background ${activeBackgroundIndex === index ? 'home-landing-background-active' : ''}`}
+          style={{ backgroundImage: `url("${url}")` }}
+        />
+      ))}
       <div aria-hidden className="home-landing-shade" />
       <header className="relative z-10 flex items-center justify-between px-6 py-6 sm:px-10 sm:py-8">
         <div className="text-sm font-semibold tracking-[0.18em] text-white/90">

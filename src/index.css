@@ -162,10 +162,10 @@ input[type="number"] {
   filter: saturate(0.9) contrast(1.04);
   opacity: 0;
   transform: scale(1.03);
-  transition: opacity 1.8s ease, transform 12s ease;
+  transition: opacity 900ms ease, transform 12s ease;
 }
 
-.home-landing-background-ready {
+.home-landing-background-active {
   opacity: 1;
   transform: scale(1);
 }
