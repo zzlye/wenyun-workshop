@@ -70,9 +70,9 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
           <p className="mb-5 text-xs font-semibold tracking-[0.36em] text-white/70">CREATIVE IMAGE STUDIO</p>
           <h1 className="max-w-2xl text-5xl font-semibold tracking-[0.02em] text-white drop-shadow-2xl sm:text-7xl">文运生图</h1>
           <p className="mt-5 max-w-md text-sm leading-7 text-white/70 sm:text-base">把灵感变成画面，从一个想法开始。</p>
-          <nav className="mt-10 flex max-w-sm flex-col gap-3" aria-label="工作区">
-            <button type="button" className="home-landing-entry home-landing-entry-primary" onClick={onOpenGallery}><span className="grid size-10 place-items-center rounded-xl bg-gray-900/10"><WandSparkles className="size-5 text-gray-700" /></span><span className="flex-1 text-left"><strong>文运工坊</strong><small>快速生成与管理图片</small></span><span className="text-xl text-gray-500">›</span></button>
-            <button type="button" className="home-landing-entry" onClick={onOpenCanvas}><span className="grid size-10 place-items-center rounded-xl bg-gray-900/10"><Sparkles className="size-5 text-gray-700" /></span><span className="flex-1 text-left"><strong>画布工坊</strong><small>在无限画布中组织创作</small></span><span className="text-xl text-gray-500">›</span></button>
+          <nav className="mt-10 flex max-w-xs flex-col gap-3" aria-label="工作区">
+            <button type="button" className="home-landing-entry home-landing-entry-primary" onClick={onOpenGallery}><span className="grid size-10 place-items-center rounded-xl bg-gray-900/10"><WandSparkles className="size-5 text-gray-700" /></span><span className="flex-1 text-left"><strong>文运工坊</strong><small>生成与管理图片</small></span><span className="text-xl text-gray-500">›</span></button>
+            <button type="button" className="home-landing-entry" onClick={onOpenCanvas}><span className="grid size-10 place-items-center rounded-xl bg-gray-900/10"><Sparkles className="size-5 text-gray-700" /></span><span className="flex-1 text-left"><strong>画布工坊</strong><small>组织画布创作</small></span><span className="text-xl text-gray-500">›</span></button>
           </nav>
           <div className="mt-5 flex items-center gap-2">
             <button type="button" className="home-landing-pause !px-2.5" onClick={() => setIsPaused((value) => !value)} aria-label={isPaused ? '继续轮播' : '暂停轮播'} title={isPaused ? '继续轮播' : '暂停轮播'}>{isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}</button>
