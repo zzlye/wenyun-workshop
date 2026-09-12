@@ -102,7 +102,7 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
           <p className="mb-5 text-xs font-semibold tracking-[0.36em] text-white/70">CREATIVE IMAGE STUDIO</p>
           <h1 className="max-w-2xl text-5xl font-semibold tracking-[0.02em] text-white drop-shadow-2xl sm:text-7xl">文运生图</h1>
           <p className="mt-5 max-w-md text-sm leading-7 text-white/70 sm:text-base">把灵感变成画面，从一个想法开始。</p>
-          <nav className="mt-10 flex max-w-xs flex-col gap-3" aria-label="工作区">
+          <nav className="mt-10 flex max-w-[300px] flex-col gap-3" aria-label="工作区">
             <button type="button" className="home-landing-entry home-landing-entry-primary" onClick={onOpenGallery}><span className="flex-1 text-left"><strong>文运工坊</strong><small>生成与管理图片</small></span><span className="text-xl text-gray-500">›</span></button>
             <button type="button" className="home-landing-entry" onClick={onOpenCanvas}><span className="flex-1 text-left"><strong>画布工坊</strong><small>组织画布创作</small></span><span className="text-xl text-gray-500">›</span></button>
           </nav>

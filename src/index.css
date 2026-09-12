@@ -203,6 +203,28 @@ input[type="number"] {
   transform: translateY(-1px);
 }
 
+/* 主题切换使用组件提供的裁剪动画，避免被页面切换的全局规则覆盖。 */
+html[data-magicui-theme-vt]::view-transition-new(root) {
+  animation: none;
+  clip-path: var(--magicui-theme-vt-clip-from);
+}
+
+.appearance-night .home-landing-icon-button,
+.appearance-night .home-landing-pause,
+.appearance-night .home-landing-entry {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(15, 23, 42, 0.76);
+  color: rgba(248, 250, 252, 0.94);
+}
+
+.appearance-night .home-landing-icon-button:hover,
+.appearance-night .home-landing-pause:hover,
+.appearance-night .home-landing-entry:hover {
+  border-color: rgba(255, 255, 255, 0.34);
+  background: rgba(30, 41, 59, 0.9);
+  color: #ffffff;
+}
+
 .home-landing-entry {
   display: flex;
   align-items: center;
@@ -245,6 +267,10 @@ input[type="number"] {
   margin-top: 0.18rem;
   color: rgba(75, 85, 99, 0.82);
   font-size: 0.72rem;
+}
+
+.appearance-night .home-landing-entry small {
+  color: rgba(203, 213, 225, 0.72);
 }
 
 .home-landing-pause {
