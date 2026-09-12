@@ -3959,8 +3959,8 @@ function CanvasTopBar({
 
                 <div className="pointer-events-auto flex items-center gap-1.5">
                     <AccountLoginButton
-                        className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-85"
-                        style={{ background: theme.node.fill, color: theme.node.text }}
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-medium transition hover:bg-white dark:hover:bg-white/10"
+                        style={{ background: theme.toolbar.panel, color: theme.node.text, boxShadow: "0 10px 30px rgba(28,25,23,.10)" }}
                     />
                     {/* 切换纯色背景按钮 */}
                     <button
