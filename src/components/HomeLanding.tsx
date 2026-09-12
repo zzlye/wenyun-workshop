@@ -54,9 +54,8 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
     <div className="home-landing min-h-screen overflow-hidden bg-[#11131c] text-white">
       <div aria-hidden className={`home-landing-background ${backgroundReady ? 'home-landing-background-ready' : ''}`} style={{ backgroundImage: `url("${backgroundUrl}")` }} />
       <div aria-hidden className="home-landing-shade" />
-      <header className="home-landing-header relative z-10 mx-4 mt-4 flex items-center justify-between rounded-2xl px-4 py-3 sm:mx-8 sm:mt-8 sm:px-5 sm:py-4">
-        <div className="flex items-center gap-3 text-sm font-semibold tracking-[0.18em] text-white/80">
-          <span className="grid size-9 place-items-center rounded-xl border border-white/25 bg-white/10 shadow-inner shadow-white/10 backdrop-blur-xl"><Sparkles className="size-4 text-white" /></span>
+      <header className="relative z-10 flex items-center justify-between px-6 py-6 sm:px-10 sm:py-8">
+        <div className="text-sm font-semibold tracking-[0.18em] text-white/90">
           文运生图
         </div>
         <div className="flex items-center gap-2">
