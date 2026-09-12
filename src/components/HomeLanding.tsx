@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { LogIn, Pause, Play, RefreshCw, Settings, Sparkles, WandSparkles } from 'lucide-react'
-import { PIXIV_RANDOM_BACKGROUND_API_URL } from '../lib/apiProfiles'
+import { LOCKED_WENYUN_PROFILE_ID, PIXIV_RANDOM_BACKGROUND_API_URL } from '../lib/apiProfiles'
+import { useStore } from '../store'
 import AccountLoginModal from './AccountLoginModal'
 
 type HomeLandingProps = {
@@ -17,6 +18,7 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
   const [isPaused, setIsPaused] = useState(false)
   const [showLogin, setShowLogin] = useState(false)
   const [backgroundReady, setBackgroundReady] = useState(true)
+  const accountSession = useStore((state) => state.settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] ?? null)
 
   const loadBackground = (url: string) => {
     const preload = new Image()
@@ -59,7 +61,7 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
           文运生图
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" className="home-landing-icon-button" onClick={() => setShowLogin(true)} title="登录"><LogIn className="size-4" /><span className="hidden sm:inline">登录</span></button>
+          <button type="button" className="home-landing-icon-button" onClick={() => setShowLogin(true)} title={accountSession ? '账号' : '登录'}><LogIn className="size-4" /><span className="hidden sm:inline">{accountSession?.username || '登录'}</span></button>
           <button type="button" className="home-landing-icon-button" onClick={onOpenSettings} title="设置"><Settings className="size-4" /><span className="hidden sm:inline">设置</span></button>
         </div>
       </header>
@@ -73,7 +75,7 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
             <button type="button" className="home-landing-entry" onClick={onOpenCanvas}><span className="grid size-10 place-items-center rounded-xl bg-gray-900/10"><Sparkles className="size-5 text-gray-700" /></span><span className="flex-1 text-left"><strong>画布工坊</strong><small>在无限画布中组织创作</small></span><span className="text-xl text-gray-500">›</span></button>
           </nav>
           <div className="mt-5 flex items-center gap-2">
-            <button type="button" className="home-landing-pause" onClick={() => setIsPaused((value) => !value)}>{isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}{isPaused ? '继续' : '暂停'}</button>
+            <button type="button" className="home-landing-pause !px-2.5" onClick={() => setIsPaused((value) => !value)} aria-label={isPaused ? '继续轮播' : '暂停轮播'} title={isPaused ? '继续轮播' : '暂停轮播'}>{isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}</button>
             <button type="button" className="home-landing-pause !px-2.5" onClick={refreshBackground} aria-label="刷新背景" title="刷新背景"><RefreshCw className="size-3.5" /></button>
           </div>
         </div>
