@@ -1,6 +1,6 @@
 "use client";
 
-import { Home, Menu, Settings } from "lucide-react";
+import { Home, Menu, Settings, WandSparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -33,11 +33,21 @@ export function AppTopNav() {
                 <header className="safe-area-top sticky top-0 z-20 shrink-0 border-b border-gray-200 bg-white/80 backdrop-blur dark:border-white/[0.08] dark:bg-gray-950/80">
                     <div className="safe-area-x safe-header-inner mx-auto flex max-w-7xl items-center justify-between gap-5">
                         <div className="flex min-w-0 flex-1 items-center pr-2">
-                            <div className="flex shrink-0 items-center gap-3 text-sm font-semibold leading-none tracking-tight text-gray-800 dark:text-gray-100">
+                            <div className="flex shrink-0 items-center gap-2 text-sm font-semibold leading-none tracking-tight text-gray-800 dark:text-gray-100">
+                                <button
+                                    type="button"
+                                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-600 shadow-none transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-gray-100"
+                                    onClick={() => router.openHome()}
+                                    aria-label="返回主页"
+                                    title="返回主页"
+                                >
+                                    <Home className="size-5" />
+                                </button>
                                 <span className="text-[17px] font-bold tracking-tight sm:text-lg">画布工坊</span>
-                                <button type="button" className="canvas-home-button" onClick={() => router.openHome()} aria-label="返回主页" title="返回主页">
-                                    <Home className="size-4" />
-                                    <span>主页</span>
+                                {/* 两个工坊沿用同一套切换按钮，保持顶栏结构和操作语义一致。 */}
+                                <button type="button" className="canvas-launch-button shrink-0" onClick={() => router.openHome()} aria-label="打开文运工坊" title="打开文运工坊">
+                                    <WandSparkles className="size-4" />
+                                    <span>文运工坊</span>
                                 </button>
                             </div>
 
