@@ -74,7 +74,14 @@ export default function CanvasWorkshop({ onBack, onOpenHome, onOpenSettings, ini
   const activeAccountBoundApiKey = normalizedSettings.newApiAccountSessions[normalizedSettings.activeProfileId]?.boundApiKey ?? ''
   const [route, setRoute] = useState<CanvasRoute>(initialRoute ?? { pathname: '/canvas', params: {} })
 
-
+  useEffect(() => {
+    const handlePopState = () => {
+      // 画布详情和素材页由画布内部管理，浏览器后退时也要恢复对应页面。
+      setRoute(routeFromHref(window.location.pathname))
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
   useEffect(() => {
     // 画布工坊复用文运工坊设置，避免打开画布时继续拉取原项目的后端配置。
@@ -114,7 +121,11 @@ export default function CanvasWorkshop({ onBack, onOpenHome, onOpenSettings, ini
           onBack()
           return
         }
-        setRoute(routeFromHref(href))
+        const nextRoute = routeFromHref(href)
+        setRoute(nextRoute)
+        if (window.location.pathname !== nextRoute.pathname) {
+          window.history.pushState({}, '', nextRoute.pathname)
+        }
       },
       backToHome: onBack,
       openHome: onOpenHome,

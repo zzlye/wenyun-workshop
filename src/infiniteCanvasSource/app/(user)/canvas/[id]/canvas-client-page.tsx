@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { flushSync } from "react-dom";
 import { useParams, useRouter } from "next/navigation";
-import { AudioLines, Home, ImageIcon, Images, Keyboard, List, Menu, Paintbrush, Plus, Redo2, Scissors, Settings, Settings2, Trash2, Undo2, Upload, Video } from "lucide-react";
+import { AudioLines, Home, ImageIcon, Images, List, Menu, Paintbrush, Plus, Redo2, Scissors, Settings, Settings2, Trash2, Undo2, Upload, Video } from "lucide-react";
 import { saveAs } from "file-saver";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
@@ -3978,9 +3978,6 @@ function CanvasTopBar({
                         title="快速切换纯色背景"
                     >
                         <Paintbrush className="size-5" />
-                    </button>
-                    <button type="button" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition hover:bg-white dark:hover:bg-white/10" style={{ background: theme.toolbar.panel, color: theme.node.text, boxShadow: "0 10px 30px rgba(28,25,23,.10)" }} onClick={() => setShortcutsOpen(true)} aria-label="快捷键" title="快捷键">
-                        <Keyboard className="size-5" />
                     </button>
                     <AnimatedThemeToggler
                         theme={colorTheme}

@@ -65,11 +65,10 @@ export function AppTopNav() {
                             </button>
                         </div>
 
-                        <div className="absolute left-1/2 top-1/2 hidden max-w-[48vw] -translate-x-1/2 -translate-y-1/2 sm:block">
-                            <AccountBalanceBar activeProfile={activeProfile} />
-                        </div>
-
                         <div className="flex min-w-0 items-center justify-end gap-1 justify-self-end whitespace-nowrap">
+                            <div className="hidden max-w-[42vw] sm:block">
+                                <AccountBalanceBar activeProfile={activeProfile} />
+                            </div>
                             {activeProfile.id === LOCKED_WENYUN_PROFILE_ID && (
                                 <button
                                     type="button"
