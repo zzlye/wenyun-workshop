@@ -41,7 +41,6 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
   useEffect(() => {
     if (isPaused) return
     const timer = window.setInterval(() => {
-      setBackgroundReady(false)
       loadBackground(`${PIXIV_RANDOM_BACKGROUND_API_URL}&home=${Date.now()}`)
     }, BACKGROUND_ROTATION_MS)
     return () => window.clearInterval(timer)
