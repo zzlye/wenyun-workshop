@@ -22,7 +22,6 @@ import ConfirmDialog from './components/ConfirmDialog'
 import Toast from './components/Toast'
 import MaskEditorModal from './components/MaskEditorModal'
 import ImageContextMenu from './components/ImageContextMenu'
-import SupportPromptModal from './components/SupportPromptModal'
 import AnnouncementModal from './components/AnnouncementModal'
 import CanvasWorkshop from './components/CanvasWorkshop'
 import DataSyncManager from './components/DataSyncManager'
@@ -289,7 +288,6 @@ export default function App() {
         )}
         <Lightbox />
         <MaskEditorModal />
-        <SupportPromptModal />
         <SettingsModal />
         <DataSyncManager />
         <ConfirmDialog />

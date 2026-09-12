@@ -8,6 +8,7 @@ export type CanvasRoute = {
 type CanvasNavigationValue = CanvasRoute & {
   navigate: (href: string) => void
   backToHome: () => void
+  openHome: () => void
   openSettings: () => void
   appearanceTheme: 'light' | 'dark'
   setAppearanceTheme: (theme: 'light' | 'dark') => void
@@ -38,6 +39,7 @@ export function useRouter() {
     push: navigation.navigate,
     replace: navigation.navigate,
     back: navigation.backToHome,
+    openHome: navigation.openHome,
     openSettings: navigation.openSettings,
     appearanceTheme: navigation.appearanceTheme,
     setAppearanceTheme: navigation.setAppearanceTheme,

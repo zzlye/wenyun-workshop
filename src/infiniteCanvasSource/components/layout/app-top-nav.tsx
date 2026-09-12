@@ -1,6 +1,6 @@
 "use client";
 
-import { Menu, Settings, Sparkles } from "lucide-react";
+import { Home, Menu, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -35,9 +35,9 @@ export function AppTopNav() {
                         <div className="flex min-w-0 flex-1 items-center pr-2">
                             <div className="flex shrink-0 items-center gap-3 text-sm font-semibold leading-none tracking-tight text-gray-800 dark:text-gray-100">
                                 <span className="text-[17px] font-bold tracking-tight sm:text-lg">画布工坊</span>
-                                <button type="button" className="canvas-return-button" onClick={() => router.back()} aria-label="返回文运工坊" title="返回文运工坊">
-                                    <Sparkles className="size-4" />
-                                    <span>文运工坊</span>
+                                <button type="button" className="canvas-home-button" onClick={() => router.openHome()} aria-label="返回主页" title="返回主页">
+                                    <Home className="size-4" />
+                                    <span>主页</span>
                                 </button>
                             </div>
 
