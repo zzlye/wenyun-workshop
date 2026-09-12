@@ -204,12 +204,17 @@ export default function App() {
   }, [appearanceNightMode, workspaceMode])
 
   const switchWorkspaceMode = useCallback((nextMode: 'gallery' | 'canvas') => {
-    if (workspaceMode === nextMode) return
+    const nextPath = nextMode === 'canvas' ? '/canvas' : '/wenyun'
+    // 主页也会保留上次工坊模式，必须同时判断可见页面与地址。
+    if (!showHome && workspaceMode === nextMode && window.location.pathname === nextPath) return
 
     const applyMode = () => {
+      setAnnouncementOpen(false)
       setWorkspaceMode(nextMode)
       setShowHome(false)
-      window.history.pushState({}, '', nextMode === 'canvas' ? '/canvas' : '/wenyun')
+      if (window.location.pathname !== nextPath) {
+        window.history.pushState({}, '', nextPath)
+      }
     }
     if (typeof document.startViewTransition !== 'function') {
       applyMode()
@@ -225,7 +230,16 @@ export default function App() {
       flushSync(applyMode)
     })
     transition.finished.finally(cleanup)
-  }, [workspaceMode])
+  }, [showHome, workspaceMode])
+
+  const openHome = useCallback(() => {
+    // 两个工坊共用返回入口，保证页面状态和浏览器历史同步。
+    setAnnouncementOpen(false)
+    setShowHome(true)
+    if (window.location.pathname !== '/') {
+      window.history.pushState({}, '', '/')
+    }
+  }, [])
 
   const dismissAnnouncementToday = () => {
     setSettings({
@@ -274,29 +288,15 @@ export default function App() {
       <div className={`relative z-10 min-h-screen ${appearanceNightMode ? 'appearance-night' : ''}`}>
         {showHome ? (
           <HomeLanding
-            onOpenGallery={() => {
-              setShowHome(false)
-              setAnnouncementOpen(false)
-              switchWorkspaceMode('gallery')
-            }}
-            onOpenCanvas={() => {
-              setShowHome(false)
-              setAnnouncementOpen(false)
-              switchWorkspaceMode('canvas')
-            }}
+            onOpenGallery={() => switchWorkspaceMode('gallery')}
+            onOpenCanvas={() => switchWorkspaceMode('canvas')}
             onOpenSettings={() => setShowSettings(true)}
           />
         ) : (
           <div key={workspaceMode} className={`workspace-mode-view workspace-mode-view-${workspaceMode}`}>
             {workspaceMode === 'gallery' ? (
               <>
-                <Header onOpenHome={() => {
-                  setAnnouncementOpen(false)
-                  setShowHome(true)
-                }} onOpenCanvas={() => {
-                  setAnnouncementOpen(false)
-                  switchWorkspaceMode('canvas')
-                }} />
+                <Header onOpenHome={openHome} onOpenCanvas={() => switchWorkspaceMode('canvas')} />
                 <main data-home-main data-drag-select-surface className="pb-48">
                   <div className="safe-area-x max-w-7xl mx-auto">
                     <SearchBar />
@@ -309,11 +309,7 @@ export default function App() {
               </>
             ) : (
               <Suspense fallback={<div className="min-h-screen bg-white dark:bg-gray-950" />}>
-                <CanvasWorkshop initialRoute={getInitialCanvasRoute()} onBack={() => switchWorkspaceMode('gallery')} onOpenHome={() => {
-                  setAnnouncementOpen(false)
-                  setShowHome(true)
-                  window.history.pushState({}, '', '/')
-                }} onOpenSettings={() => setShowSettings(true)} />
+                <CanvasWorkshop initialRoute={getInitialCanvasRoute()} onBack={() => switchWorkspaceMode('gallery')} onOpenHome={openHome} onOpenSettings={() => setShowSettings(true)} />
               </Suspense>
             )}
           </div>
