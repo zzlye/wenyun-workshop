@@ -15,6 +15,23 @@ const BACKGROUND_ROTATION_MS = 90_000
 const FALLBACK_BACKGROUND_URL = 'https://www.loliapi.com/acg/pc/'
 const HOME_BACKGROUND_STORAGE_KEY = 'wenyun-home-background-url'
 
+function findImageUrl(value: unknown): string | null {
+  if (typeof value === 'string' && /^(https?:\/\/|\/i\/)/i.test(value.trim()) && !value.includes('/random')) return value.trim()
+  if (!value || typeof value !== 'object') return null
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const result = findImageUrl(item)
+      if (result) return result
+    }
+  } else {
+    for (const item of Object.values(value)) {
+      const result = findImageUrl(item)
+      if (result) return result
+    }
+  }
+  return null
+}
+
 function getSavedHomeBackgroundUrl() {
   try {
     return window.localStorage.getItem(HOME_BACKGROUND_STORAGE_KEY)?.trim() ?? ''
@@ -38,6 +55,16 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
   const accountSession = useStore((state) => state.settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] ?? null)
 
   const resolveFinalImageUrl = async (url: string) => {
+    if (url.includes('/random')) {
+      try {
+        const apiUrl = `${url}${url.includes('?') ? '&' : '?'}format=simple_json&t=${Date.now()}`
+        const response = await fetch(apiUrl, { cache: 'no-store' })
+        const imageUrl = findImageUrl(await response.json())
+        if (imageUrl) return imageUrl.startsWith('/') ? `https://i.mukyu.ru${imageUrl}` : imageUrl
+      } catch {
+        // JSON 接口不可用时继续尝试原图片地址。
+      }
+    }
     try {
       const response = await fetch(url, { cache: 'no-store', redirect: 'follow' })
       if (response.ok && response.url && !response.url.includes('/random')) return response.url
