@@ -173,7 +173,8 @@ input[type="number"] {
 
 .home-landing-shade {
   z-index: -1;
-  background: linear-gradient(90deg, rgba(8, 11, 22, 0.34) 0%, rgba(12, 15, 29, 0.16) 38%, rgba(11, 13, 25, 0.02) 78%), linear-gradient(0deg, rgba(6, 8, 16, 0.2), transparent 42%);
+  /* 只保护左侧文案和入口按钮的可读性，右侧图片保持原生亮度。 */
+  background: radial-gradient(ellipse 34% 48% at 10% 52%, rgba(8, 11, 22, 0.34) 0%, rgba(8, 11, 22, 0.14) 48%, transparent 78%);
 }
 
 .home-landing-icon-button,
