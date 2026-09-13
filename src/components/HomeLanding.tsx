@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { LogIn, Pause, Play, RefreshCw, Settings } from 'lucide-react'
+import { Copy, Link, LogIn, Pause, Play, RefreshCw, Settings, X } from 'lucide-react'
 import { LOCKED_WENYUN_PROFILE_ID, PIXIV_RANDOM_BACKGROUND_API_URL } from '../lib/apiProfiles'
 import { useStore } from '../store'
 import AccountLoginModal from './AccountLoginModal'
@@ -13,14 +13,24 @@ type HomeLandingProps = {
 
 const BACKGROUND_ROTATION_MS = 90_000
 const FALLBACK_BACKGROUND_URL = 'https://www.loliapi.com/acg/pc/'
+const HOME_BACKGROUND_STORAGE_KEY = 'wenyun-home-background-url'
+
+function getSavedHomeBackgroundUrl() {
+  try {
+    return window.localStorage.getItem(HOME_BACKGROUND_STORAGE_KEY)?.trim() ?? ''
+  } catch {
+    return ''
+  }
+}
 
 export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSettings }: HomeLandingProps) {
-  const savedBackgroundUrl = useStore((state) => state.settings.appearanceBackgroundImageUrl.trim())
+  const savedBackgroundUrl = getSavedHomeBackgroundUrl()
   const [backgroundUrls, setBackgroundUrls] = useState<[string, string]>(() => [savedBackgroundUrl, ''])
   const [activeBackgroundIndex, setActiveBackgroundIndex] = useState(0)
   const [isBackgroundReady, setIsBackgroundReady] = useState(Boolean(savedBackgroundUrl))
   const [isPaused, setIsPaused] = useState(false)
   const [showLogin, setShowLogin] = useState(false)
+  const [showBackgroundUrl, setShowBackgroundUrl] = useState(false)
   const appearanceNightMode = useStore((state) => state.settings.appearanceNightMode)
   const setSettings = useStore((state) => state.setSettings)
   const activeBackgroundIndexRef = useRef(0)
@@ -40,8 +50,12 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
         return next
       })
       setIsBackgroundReady(true)
-      // 保存最后一次成功加载的地址，网络较差时下一次进入可以先恢复上一张图。
-      setSettings({ appearanceBackgroundImageUrl: preload.src })
+      // 主页背景单独保存，不能写入工坊共用的外观设置。
+      try {
+        window.localStorage.setItem(HOME_BACKGROUND_STORAGE_KEY, preload.src)
+      } catch {
+        // 浏览器禁止本地存储时仍保留当前页面的背景显示。
+      }
       // 先让隐藏层完成一次渲染，再切换透明度，确保浏览器能执行交叉淡入淡出。
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
@@ -114,6 +128,21 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
           <div className="mt-5 flex items-center gap-2">
             <button type="button" className="home-landing-pause !px-2.5" onClick={() => setIsPaused((value) => !value)} aria-label={isPaused ? '继续轮播' : '暂停轮播'} title={isPaused ? '继续轮播' : '暂停轮播'}>{isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}</button>
             <button type="button" className="home-landing-pause !px-2.5" onClick={refreshBackground} aria-label="刷新背景" title="刷新背景"><RefreshCw className="size-3.5" /></button>
+          </div>
+          <div className="relative mt-3">
+            <button type="button" className="home-landing-pause !px-2.5" onClick={() => setShowBackgroundUrl((value) => !value)} aria-label="查看主页背景地址" title="查看主页背景地址"><Link className="size-3.5" /></button>
+            {showBackgroundUrl && (
+              <div className="absolute bottom-10 left-0 z-20 w-[min(420px,calc(100vw-2rem))] rounded-xl border border-white/50 bg-white/90 p-3 text-gray-700 shadow-xl backdrop-blur-xl">
+                <div className="mb-2 flex items-center justify-between text-xs font-semibold">
+                  <span>当前主页背景 URL</span>
+                  <button type="button" onClick={() => setShowBackgroundUrl(false)} aria-label="关闭背景地址"><X className="size-3.5" /></button>
+                </div>
+                <div className="flex items-start gap-2">
+                  <code className="min-w-0 flex-1 break-all text-[11px] leading-5 text-gray-500">{backgroundUrls[activeBackgroundIndex] || '背景尚未加载'}</code>
+                  <button type="button" className="shrink-0 rounded-md p-1.5 text-gray-500 transition hover:bg-gray-200" onClick={() => void navigator.clipboard?.writeText(backgroundUrls[activeBackgroundIndex] || '')} aria-label="复制背景地址" title="复制背景地址"><Copy className="size-3.5" /></button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </main>
