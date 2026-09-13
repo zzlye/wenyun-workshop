@@ -11,7 +11,7 @@ type HomeLandingProps = {
   onOpenSettings: () => void
 }
 
-const BACKGROUND_ROTATION_MS = 90_000
+const BACKGROUND_ROTATION_MS = 60_000
 const FALLBACK_BACKGROUND_URL = 'https://www.loliapi.com/acg/pc/'
 const HOME_BACKGROUND_STORAGE_KEY = 'wenyun-home-background-url'
 
