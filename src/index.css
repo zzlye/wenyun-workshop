@@ -173,7 +173,7 @@ input[type="number"] {
 
 .home-landing-shade {
   z-index: -1;
-  background: linear-gradient(90deg, rgba(8, 11, 22, 0.5) 0%, rgba(12, 15, 29, 0.28) 38%, rgba(11, 13, 25, 0.06) 78%), linear-gradient(0deg, rgba(6, 8, 16, 0.42), transparent 42%);
+  background: linear-gradient(90deg, rgba(8, 11, 22, 0.34) 0%, rgba(12, 15, 29, 0.16) 38%, rgba(11, 13, 25, 0.02) 78%), linear-gradient(0deg, rgba(6, 8, 16, 0.2), transparent 42%);
 }
 
 .home-landing-icon-button,

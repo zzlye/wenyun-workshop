@@ -191,10 +191,11 @@ export default function App() {
 
   useEffect(() => {
     if (announcementAutoOpenAttemptedRef.current) return
+    if (showHome) return
     if (hasRunningGeneration) return
     announcementAutoOpenAttemptedRef.current = true
     void loadAnnouncement(true)
-  }, [hasRunningGeneration, loadAnnouncement])
+  }, [hasRunningGeneration, loadAnnouncement, showHome])
 
   useEffect(() => {
     if (workspaceMode !== 'gallery') return
@@ -320,14 +321,14 @@ export default function App() {
         <DataSyncManager />
         <ConfirmDialog />
         <Toast />
-        <button
+        {!showHome && <button
           type="button"
           onClick={openAnnouncement}
           className="fixed bottom-4 left-4 z-50 rounded-full border border-gray-200/70 bg-white/85 px-3 py-2 text-xs font-medium text-gray-700 shadow-lg backdrop-blur transition hover:bg-white hover:text-gray-900 dark:border-white/[0.08] dark:bg-gray-900/85 dark:text-gray-200 dark:hover:bg-gray-800"
         >
           公告
-        </button>
-        {announcementOpen && (
+        </button>}
+        {!showHome && announcementOpen && (
           <AnnouncementModal
             content={announcementContent}
             dismissForever={settings.announcementDismissedForever}

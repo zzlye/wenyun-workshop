@@ -15,8 +15,10 @@ const BACKGROUND_ROTATION_MS = 90_000
 const FALLBACK_BACKGROUND_URL = 'https://www.loliapi.com/acg/pc/'
 
 export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSettings }: HomeLandingProps) {
-  const [backgroundUrls, setBackgroundUrls] = useState<[string, string]>([FALLBACK_BACKGROUND_URL, FALLBACK_BACKGROUND_URL])
+  const savedBackgroundUrl = useStore((state) => state.settings.appearanceBackgroundImageUrl.trim())
+  const [backgroundUrls, setBackgroundUrls] = useState<[string, string]>(() => [savedBackgroundUrl, ''])
   const [activeBackgroundIndex, setActiveBackgroundIndex] = useState(0)
+  const [isBackgroundReady, setIsBackgroundReady] = useState(Boolean(savedBackgroundUrl))
   const [isPaused, setIsPaused] = useState(false)
   const [showLogin, setShowLogin] = useState(false)
   const appearanceNightMode = useStore((state) => state.settings.appearanceNightMode)
@@ -37,6 +39,9 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
         next[nextIndex] = preload.src
         return next
       })
+      setIsBackgroundReady(true)
+      // 保存最后一次成功加载的地址，网络较差时下一次进入可以先恢复上一张图。
+      setSettings({ appearanceBackgroundImageUrl: preload.src })
       // 先让隐藏层完成一次渲染，再切换透明度，确保浏览器能执行交叉淡入淡出。
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
@@ -56,22 +61,22 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
 
   useEffect(() => {
     loadBackground(`${PIXIV_RANDOM_BACKGROUND_API_URL}&home=${Date.now()}`)
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (isPaused) return
+    if (isPaused || !isBackgroundReady) return
     const timer = window.setInterval(() => {
       loadBackground(`${PIXIV_RANDOM_BACKGROUND_API_URL}&home=${Date.now()}`)
     }, BACKGROUND_ROTATION_MS)
     return () => window.clearInterval(timer)
-  }, [isPaused])
+  }, [isPaused, isBackgroundReady])
 
   const refreshBackground = () => {
     loadBackground(`${PIXIV_RANDOM_BACKGROUND_API_URL}&home=${Date.now()}`)
   }
 
   return (
-    <div className="home-landing min-h-screen overflow-hidden bg-[#11131c] text-white">
+    <div className="home-landing min-h-screen overflow-hidden bg-[#20242d] text-white">
       {backgroundUrls.map((url, index) => (
         <div
           key={index}
