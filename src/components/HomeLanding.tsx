@@ -125,14 +125,15 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
             <button type="button" className="home-landing-entry home-landing-entry-primary" onClick={onOpenGallery}><span className="flex-1 text-left"><strong>文运工坊</strong><small>生成与管理图片</small></span><span className="text-xl text-gray-500">›</span></button>
             <button type="button" className="home-landing-entry" onClick={onOpenCanvas}><span className="flex-1 text-left"><strong>画布工坊</strong><small>组织画布创作</small></span><span className="text-xl text-gray-500">›</span></button>
           </nav>
-          <div className="mt-5 flex items-center gap-2">
-            <button type="button" className="home-landing-pause !px-2.5" onClick={() => setIsPaused((value) => !value)} aria-label={isPaused ? '继续轮播' : '暂停轮播'} title={isPaused ? '继续轮播' : '暂停轮播'}>{isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}</button>
-            <button type="button" className="home-landing-pause !px-2.5" onClick={refreshBackground} aria-label="刷新背景" title="刷新背景"><RefreshCw className="size-3.5" /></button>
-          </div>
-          <div className="relative mt-3">
-            <button type="button" className="home-landing-pause !px-2.5" onClick={() => setShowBackgroundUrl((value) => !value)} aria-label="查看主页背景地址" title="查看主页背景地址"><Link className="size-3.5" /></button>
-            {showBackgroundUrl && (
-              <div className="absolute bottom-10 left-0 z-20 w-[min(420px,calc(100vw-2rem))] rounded-xl border border-white/50 bg-white/90 p-3 text-gray-700 shadow-xl backdrop-blur-xl">
+        </div>
+      </main>
+      <div className="fixed bottom-5 right-5 z-20 flex items-center gap-2 sm:bottom-7 sm:right-7">
+        <button type="button" className="home-landing-pause !px-2.5" onClick={() => setIsPaused((value) => !value)} aria-label={isPaused ? '继续轮播' : '暂停轮播'} title={isPaused ? '继续轮播' : '暂停轮播'}>{isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}</button>
+        <button type="button" className="home-landing-pause !px-2.5" onClick={refreshBackground} aria-label="刷新背景" title="刷新背景"><RefreshCw className="size-3.5" /></button>
+        <div className="relative">
+          <button type="button" className="home-landing-pause !px-2.5" onClick={() => setShowBackgroundUrl((value) => !value)} aria-label="查看主页背景地址" title="查看主页背景地址"><Link className="size-3.5" /></button>
+          {showBackgroundUrl && (
+              <div className="absolute bottom-10 right-0 z-20 w-[min(420px,calc(100vw-2rem))] rounded-xl border border-white/50 bg-white/90 p-3 text-gray-700 shadow-xl backdrop-blur-xl">
                 <div className="mb-2 flex items-center justify-between text-xs font-semibold">
                   <span>当前主页背景 URL</span>
                   <button type="button" onClick={() => setShowBackgroundUrl(false)} aria-label="关闭背景地址"><X className="size-3.5" /></button>
@@ -142,10 +143,9 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
                   <button type="button" className="shrink-0 rounded-md p-1.5 text-gray-500 transition hover:bg-gray-200" onClick={() => void navigator.clipboard?.writeText(backgroundUrls[activeBackgroundIndex] || '')} aria-label="复制背景地址" title="复制背景地址"><Copy className="size-3.5" /></button>
                 </div>
               </div>
-            )}
+          )}
           </div>
-        </div>
-      </main>
+      </div>
       <AccountLoginModal open={showLogin} onClose={() => setShowLogin(false)} />
     </div>
   )
