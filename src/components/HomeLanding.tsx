@@ -58,9 +58,18 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
     if (url.includes('/random')) {
       try {
         const apiUrl = `${url}${url.includes('?') ? '&' : '?'}format=simple_json&t=${Date.now()}`
-        const response = await fetch(apiUrl, { cache: 'no-store' })
-        const imageUrl = findImageUrl(await response.json())
-        if (imageUrl) return imageUrl.startsWith('/') ? `https://i.mukyu.ru${imageUrl}` : imageUrl
+        const parsedUrl = new URL(apiUrl)
+        const proxyUrl = `/wy-public/mukyu${parsedUrl.pathname}${parsedUrl.search}`
+        for (const requestUrl of [proxyUrl, apiUrl]) {
+          try {
+            const response = await fetch(requestUrl, { cache: 'no-store' })
+            if (!response.ok) continue
+            const imageUrl = findImageUrl(await response.json())
+            if (imageUrl) return imageUrl.startsWith('/') ? `https://i.mukyu.ru${imageUrl}` : imageUrl
+          } catch {
+            // 继续尝试下一个地址。
+          }
+        }
       } catch {
         // JSON 接口不可用时继续尝试原图片地址。
       }
