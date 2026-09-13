@@ -2378,6 +2378,21 @@ export default function SettingsModal() {
 
             {activeTab === 'textApi' && (
               <div className="space-y-5">
+                <div className="block">
+                  <div className="mb-1.5 flex items-center justify-between gap-3">
+                    <span className="block text-sm text-gray-600 dark:text-gray-300">当前背景</span>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button type="button" onClick={randomizeBackgroundFromApi} disabled={isRandomizingBackground} className="rounded-xl bg-blue-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50">
+                        {isRandomizingBackground ? '获取中...' : '随机'}
+                      </button>
+                      <button type="button" onClick={() => backgroundFileInputRef.current?.click()} className="rounded-xl bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1]">上传</button>
+                      <button type="button" onClick={() => commitSettings({ ...draft, appearanceBackgroundImageUrl: '' })} className="rounded-xl bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1]">清空</button>
+                    </div>
+                  </div>
+                  <input value={draft.appearanceBackgroundImageUrl} onChange={(e) => setDraft({ ...draft, appearanceBackgroundImageUrl: e.target.value })} onBlur={(e) => commitSettings({ ...draft, appearanceBackgroundImageUrl: e.target.value })} type="text" placeholder="随机后自动填入，也可以手动粘贴图片地址" className="w-full rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50" />
+                  <input ref={backgroundFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleBackgroundUpload} />
+                </div>
+
                 <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-500/15 dark:bg-blue-500/[0.08]">
                   <h4 className="text-sm font-bold text-blue-700 dark:text-blue-300">文字 API 配置</h4>
                   <p data-selectable-text className="mt-1 text-xs leading-relaxed text-blue-600/80 dark:text-blue-200/70">
@@ -2447,6 +2462,18 @@ export default function SettingsModal() {
             
             {activeTab === 'appearance' && (
               <div className="space-y-5">
+                <div className="block">
+                  <div className="mb-1.5 flex items-center justify-between gap-3">
+                    <span className="block text-sm text-gray-600 dark:text-gray-300">当前背景</span>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button type="button" onClick={randomizeBackgroundFromApi} disabled={isRandomizingBackground} className="rounded-xl bg-blue-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50">{isRandomizingBackground ? '获取中...' : '随机'}</button>
+                      <button type="button" onClick={() => backgroundFileInputRef.current?.click()} className="rounded-xl bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1]">上传</button>
+                      <button type="button" onClick={() => commitSettings({ ...draft, appearanceBackgroundImageUrl: '' })} className="rounded-xl bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1]">清空</button>
+                    </div>
+                  </div>
+                  <input value={draft.appearanceBackgroundImageUrl} onChange={(e) => setDraft({ ...draft, appearanceBackgroundImageUrl: e.target.value })} onBlur={(e) => commitSettings({ ...draft, appearanceBackgroundImageUrl: e.target.value })} type="text" placeholder="随机后自动填入，也可以手动粘贴图片地址" className="w-full rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50" />
+                  <input ref={backgroundFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleBackgroundUpload} />
+                </div>
                 <label className="block">
                   <div className="mb-2 flex items-center justify-between">
                     <span className="block text-sm text-gray-600 dark:text-gray-300">背景透明度</span>
@@ -2484,6 +2511,12 @@ export default function SettingsModal() {
                     className="w-full accent-blue-500"
                   />
                 </label>
+
+                {draft.appearanceBackgroundImageUrl.trim() && (
+                  <div className="aspect-video overflow-hidden rounded-2xl border border-gray-200/70 bg-gray-100 dark:border-white/[0.08] dark:bg-white/[0.03]">
+                    <img src={draft.appearanceBackgroundImageUrl} alt="" className="h-full w-full object-cover" />
+                  </div>
+                )}
 
               </div>
             )}
@@ -3004,6 +3037,12 @@ export default function SettingsModal() {
                     className="flex-1 min-h-[150px] w-full resize-none rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2 font-mono text-xs leading-relaxed text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50 custom-scrollbar"
                   />
                 </label>
+
+                {draft.appearanceBackgroundImageUrl.trim() && (
+                  <div className="aspect-video overflow-hidden rounded-2xl border border-gray-200/70 bg-gray-100 dark:border-white/[0.08] dark:bg-white/[0.03]">
+                    <img src={draft.appearanceBackgroundImageUrl} alt="" className="h-full w-full object-cover" />
+                  </div>
+                )}
               </div>
 
                 {customProviderImportError && (
