@@ -37,10 +37,25 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
   const backgroundRequestRef = useRef(0)
   const accountSession = useStore((state) => state.settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] ?? null)
 
+  const resolveFinalImageUrl = async (url: string) => {
+    try {
+      const response = await fetch(url, { cache: 'no-store', redirect: 'follow' })
+      if (response.ok && response.url && !response.url.includes('/random')) return response.url
+    } catch {
+      // 图片请求本身仍可继续尝试，避免解析请求失败时主页完全没有背景。
+    }
+    return url
+  }
+
   const loadBackground = (url: string) => {
     const requestId = backgroundRequestRef.current + 1
     backgroundRequestRef.current = requestId
     const preload = new Image()
+    const loadResolvedImage = async () => {
+      const resolvedUrl = await resolveFinalImageUrl(url)
+      if (requestId !== backgroundRequestRef.current) return
+      preload.src = resolvedUrl
+    }
     preload.onload = () => {
       if (requestId !== backgroundRequestRef.current) return
       const nextIndex = activeBackgroundIndexRef.current === 0 ? 1 : 0
@@ -70,7 +85,7 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
         return
       }
     }
-    preload.src = url
+    void loadResolvedImage()
   }
 
   useEffect(() => {
