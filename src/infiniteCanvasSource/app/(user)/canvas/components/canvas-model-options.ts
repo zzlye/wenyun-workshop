@@ -6,7 +6,7 @@ import { getImageModelOptionsForProfile } from "../../../../../lib/apiProfiles";
 import { buildApiUrl, type AiConfig } from "@/stores/use-config-store";
 import type { CanvasGenerationMode } from "../types";
 import { parseModelListPayload } from "../../../../../lib/modelList";
-import { CANVAS_VIDEO_MODELS, normalizeCanvasVideoModel } from "../../../../../lib/videoModel";
+import { normalizeCanvasVideoModel } from "../../../../../lib/videoModel";
 
 type ModelOption = string | { value: string; label: string };
 type ExternalModelTarget = "text";
@@ -50,7 +50,8 @@ export function useCanvasModelOptions(config: AiConfig, mode: CanvasGenerationMo
 
     return useMemo(() => {
         if (mode === "image") return getImageModelOptionsForProfile(activeProfileId);
-        if (mode === "video") return [...CANVAS_VIDEO_MODELS];
+        // 视频列表由选择器按视频 API 获取，不能传入固定选项覆盖远端结果。
+        if (mode === "video") return undefined;
         return externalOptions.length ? externalOptions : currentModel ? [currentModel] : undefined;
     }, [activeProfileId, currentModel, externalOptions, mode]);
 }

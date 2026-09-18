@@ -6,6 +6,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { AiConfig } from "@/stores/use-config-store";
+import { useVideoModels } from "../../hooks/useVideoModels";
 
 type ModelPickerProps = {
     config: AiConfig;
@@ -16,19 +17,26 @@ type ModelPickerProps = {
     fullWidth?: boolean;
     placeholder?: string;
     onMissingConfig?: () => void;
+    modelType?: "video";
 };
 
-export function ModelPicker({ config, value, onChange, options: fixedOptions, className, fullWidth = false, placeholder = "选择模型", onMissingConfig }: ModelPickerProps) {
+export function ModelPicker({ config, value, onChange, options: fixedOptions, className, fullWidth = false, placeholder = "选择模型", onMissingConfig, modelType }: ModelPickerProps) {
     const pickerId = useId();
     const [open, setOpen] = useState(false);
+    const isVideo = modelType === "video";
+    const videoModels = useVideoModels(config.videoApiKey, config.videoApiProxy, isVideo);
     const options = useMemo(() => {
+        if (isVideo) {
+            // 保留当前节点的已选值，接口暂时失败或模型下架时也不自动替换节点配置。
+            return Array.from(new Set([value, ...(videoModels.data || [])].filter(Boolean))).map((model) => ({ value: model, label: model }));
+        }
         if (fixedOptions?.length) {
             return fixedOptions
                 .map((item) => (typeof item === "string" ? { value: item, label: item } : item))
                 .filter((item) => item.value);
         }
         return Array.from(new Set([...(config.channelMode === "local" ? [value] : []), ...config.models].filter(Boolean))).map((model) => ({ value: model, label: model }));
-    }, [config.channelMode, config.models, fixedOptions, value]);
+    }, [config.channelMode, config.models, fixedOptions, value, isVideo, videoModels.data]);
     const current = value || "";
     const currentLabel = options.find((item) => item.value === current)?.label || current;
 
@@ -45,7 +53,7 @@ export function ModelPicker({ config, value, onChange, options: fixedOptions, cl
             open={open}
             value={current}
             onOpenChange={(nextOpen) => {
-                if (nextOpen && !options.length && config.channelMode === "local") {
+                if (nextOpen && !isVideo && !options.length && config.channelMode === "local") {
                     onMissingConfig?.();
                     return;
                 }
@@ -77,6 +85,16 @@ export function ModelPicker({ config, value, onChange, options: fixedOptions, cl
                 onPointerDown={(event) => event.stopPropagation()}
                 onMouseDown={(event) => event.stopPropagation()}
             >
+                {isVideo && (
+                    <div className="border-b border-border/60 p-2">
+                        <button type="button" className="w-full rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50" disabled={videoModels.isFetching || !config.videoApiKey.trim()} onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            void videoModels.refetch();
+                        }}>{videoModels.isFetching ? "获取中…" : "获取模型"}</button>
+                        {!config.videoApiKey.trim() ? <p className="mt-2 text-xs text-muted-foreground">请先在设置里填写视频 API Key</p> : videoModels.isError ? <p role="alert" className="mt-2 text-xs text-red-500">{videoModels.error.message}</p> : null}
+                    </div>
+                )}
                 {options.length ? (
                     options.map((item) => (
                         <SelectItem key={item.value} value={item.value} textValue={item.label}>

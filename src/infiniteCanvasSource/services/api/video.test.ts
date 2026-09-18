@@ -35,7 +35,7 @@ describe("画布视频异步接口", () => {
             ...defaultConfig,
             videoBaseUrl: "https://api.example.com/v1",
             videoApiKey: "video-key",
-            videoModel: "旧模型会被忽略",
+            videoModel: "api-video-model-v3",
             videoSeconds: "4",
             vquality: "1080",
             size: "1280x720",
@@ -44,7 +44,7 @@ describe("画布视频异步接口", () => {
         expect(axios.post).toHaveBeenCalledWith(
             `${VIDEO_API_PROXY_BASE}/videos`,
             {
-                model: CANVAS_VIDEO_MODEL,
+                model: "api-video-model-v3",
                 prompt: "雨夜霓虹街道，镜头缓慢推进",
                 aspect_ratio: "16:9",
                 duration: 4,

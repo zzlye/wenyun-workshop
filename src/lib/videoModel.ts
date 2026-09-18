@@ -2,35 +2,17 @@
 export const CANVAS_VIDEO_BASE_URL = "https://api.zzlye.xyz/v1";
 export const CANVAS_VIDEO_TIMEOUT = 900;
 
-// 红框中的两个 sd-2.0-933 模型不加入画布，其余文档模型保持可选。
-export const CANVAS_VIDEO_MODELS = [
-    "seedance-2.0-mini-431-720p",
-    "seedance-2.0-mini-431-480p",
-    "seedance-2.0-1080p",
-    "seedance-2.0-720p",
-    "seedance-2.0-fast-720p",
-    "sd-2.5-720p",
-    "seedance-2.5-720p",
-    "seedance-2.5-480p",
-    "kling-3.0-omni-720p",
-    "kling-3.0-omni-1080p",
-] as const;
-
-export type CanvasVideoModel = (typeof CANVAS_VIDEO_MODELS)[number];
-
-export const CANVAS_VIDEO_MODEL: CanvasVideoModel = "seedance-2.0-720p";
+// 默认值只用于空配置，不作为 API 模型列表的白名单。
+export const CANVAS_VIDEO_MODEL = "seedance-2.0-720p";
 export const CANVAS_VIDEO_SECONDS = ["4", "5", "6", "8", "10", "15"] as const;
 export const CANVAS_VIDEO_25_SECONDS = ["4", "5", "6", "8", "10", "15", "20", "25", "29"] as const;
 export const CANVAS_VIDEO_KLING_SECONDS = ["5", "10", "15"] as const;
 export const CANVAS_VIDEO_ASPECT_RATIOS = ["16:9", "9:16", "4:3", "3:4", "1:1", "21:9"] as const;
 
-export function isCanvasVideoModel(value: string): value is CanvasVideoModel {
-    return (CANVAS_VIDEO_MODELS as readonly string[]).includes(value);
-}
-
-export function normalizeCanvasVideoModel(value: string | undefined | null): CanvasVideoModel {
+export function normalizeCanvasVideoModel(value: string | undefined | null): string {
     const normalized = (value || "").trim();
-    return isCanvasVideoModel(normalized) ? normalized : CANVAS_VIDEO_MODEL;
+    // API 新增模型及历史节点中的模型名必须原样保留，避免提交时悄悄换成默认模型。
+    return normalized || CANVAS_VIDEO_MODEL;
 }
 
 export function isCanvasVideo25Model(model: string) {

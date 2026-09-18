@@ -1,3 +1,4 @@
+import { useVideoModels } from '../hooks/useVideoModels'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Cloud, CloudDownload, CloudUpload, HardDrive, RefreshCw } from 'lucide-react'
@@ -35,7 +36,7 @@ import { DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type AppSettings, type 
 import { useCloseOnEscape } from '../hooks/useCloseOnEscape'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
 import { DEFAULT_DROPDOWN_MAX_HEIGHT, getDropdownMaxHeight } from '../lib/dropdown'
-import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_MODELS, CANVAS_VIDEO_TIMEOUT, normalizeCanvasVideoModel } from '../lib/videoModel'
+import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_TIMEOUT, normalizeCanvasVideoModel } from '../lib/videoModel'
 import { useCanvasStore } from '../infiniteCanvasSource/app/(user)/canvas/stores/use-canvas-store'
 import { useAssetStore } from '../infiniteCanvasSource/stores/use-asset-store'
 import Select from './Select'
@@ -678,9 +679,10 @@ export default function SettingsModal() {
   const [isRandomizingBackground, setIsRandomizingBackground] = useState(false)
   const [isQueryingBalance, setIsQueryingBalance] = useState(false)
   const [isFetchingTextModels, setIsFetchingTextModels] = useState(false)
-  const [isFetchingVideoModels, setIsFetchingVideoModels] = useState(false)
   const [textModelOptions, setTextModelOptions] = useState<string[]>([])
-  const [videoModelOptions, setVideoModelOptions] = useState<string[]>(() => [...CANVAS_VIDEO_MODELS])
+  const videoModelsQuery = useVideoModels(draft.videoApiKey, draft.videoApiProxy, showSettings && activeTab === 'videoApi')
+  const videoModelOptions = videoModelsQuery.data ?? []
+  const isFetchingVideoModels = videoModelsQuery.isFetching
   const [exportTasks, setExportTasks] = useState(true)
   const [exportCanvasProjects, setExportCanvasProjects] = useState(false)
   const [exportAssets, setExportAssets] = useState(false)
@@ -1604,8 +1606,6 @@ export default function SettingsModal() {
     const isText = target === 'text'
     const baseUrl = isText ? draft.textBaseUrl : draft.videoBaseUrl
     const apiKey = isText ? draft.textApiKey : draft.videoApiKey
-    const setLoading = isText ? setIsFetchingTextModels : setIsFetchingVideoModels
-    const setOptions = isText ? setTextModelOptions : setVideoModelOptions
     const currentModel = isText ? draft.textModel : draft.videoModel
 
     if (!baseUrl.trim()) {
@@ -1613,8 +1613,14 @@ export default function SettingsModal() {
       return
     }
 
-    setLoading(true)
+    if (isText) setIsFetchingTextModels(true)
     try {
+      if (!isText) {
+        const result = await videoModelsQuery.refetch()
+        if (result.error) throw result.error
+        showToast(`已获取 ${result.data?.length ?? 0} 个模型`, 'success')
+        return
+      }
       const response = await fetch(buildApiUrl(baseUrl, 'models'), {
         headers: apiKey.trim() ? { Authorization: `Bearer ${apiKey.trim()}` } : undefined,
         cache: 'no-store',
@@ -1625,7 +1631,7 @@ export default function SettingsModal() {
       const models = parseModelListPayload(payload)
 
       if (models.length === 0) throw new Error('接口没有返回模型列表')
-      setOptions(models)
+      setTextModelOptions(models)
 
       if (!currentModel.trim()) {
         const patch = isText ? { textModel: models[0] } : { videoModel: models[0] }
@@ -1635,7 +1641,7 @@ export default function SettingsModal() {
     } catch (err) {
       showToast(err instanceof Error ? err.message : '读取模型失败', 'error')
     } finally {
-      setLoading(false)
+      if (isText) setIsFetchingTextModels(false)
     }
   }
 
@@ -2429,7 +2435,7 @@ export default function SettingsModal() {
                 <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-500/15 dark:bg-blue-500/[0.08]">
                   <h4 className="text-sm font-bold text-blue-700 dark:text-blue-300">视频 API 配置</h4>
                   <p data-selectable-text className="mt-1 text-xs leading-relaxed text-blue-600/80 dark:text-blue-200/70">
-                    用于画布工坊里的视频生成。URL 固定为 {CANVAS_VIDEO_BASE_URL}，模型从文档支持列表中选择。
+                    用于画布工坊里的视频生成。模型列表从视频 API 获取，选择后用于视频节点生成。
                   </p>
                 </div>
                 <ExternalApiConfigSection
@@ -2452,10 +2458,9 @@ export default function SettingsModal() {
                   onTimeoutDraftChange={() => undefined}
                   onTimeoutCommit={() => undefined}
                   onToggleShowApiKey={() => setShowApiKey((value) => !value)}
-                  onFetchModels={() => undefined}
+                  onFetchModels={() => void fetchExternalApiModels('video')}
                   fixedBaseUrl={CANVAS_VIDEO_BASE_URL}
                   fixedTimeout={CANVAS_VIDEO_TIMEOUT}
-                  modelOptionsLocked
                 />
               </div>
             )}
