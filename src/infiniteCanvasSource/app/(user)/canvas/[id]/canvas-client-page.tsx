@@ -2943,7 +2943,7 @@ function InfiniteCanvasPage() {
                         position: isEmptyVideoNode ? sourceNode.position : { x: parent.x + (sourceNode?.width || spec.width) + 96, y: parent.y },
                         width: isEmptyVideoNode ? sourceNode.width : spec.width,
                         height: isEmptyVideoNode ? sourceNode.height : spec.height,
-                        metadata: { prompt: sourcePrompt, generationPrompt: effectivePrompt, status: NODE_STATUS_LOADING, generationStartedAt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, references: generationContext.referenceImages.map(referenceUrl).filter((url): url is string => Boolean(url)) },
+                        metadata: { prompt: sourcePrompt, generationPrompt: effectivePrompt, status: NODE_STATUS_LOADING, generationStartedAt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, videoGenerateAudio: generationConfig.videoGenerateAudio, vquality: generationConfig.vquality, references: generationContext.referenceImages.map(referenceUrl).filter((url): url is string => Boolean(url)) },
                     };
                     pendingChildIds = [videoId];
                     if (videoId !== nodeId) markCanvasNodeRunning(videoId);
@@ -2955,7 +2955,7 @@ function InfiniteCanvasPage() {
                     if (!isEmptyVideoNode) commitGenerationConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: videoId }]);
                     const video = await uploadMediaFile(await requestVideoGeneration(generationConfig, effectivePrompt, generationContext.referenceImages, generationContext.referenceAudios, generationContext.referenceVideos), "video");
                     const videoSize = fitNodeSize(video.width || spec.width, video.height || spec.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
-                    commitGenerationNodes((prev) => prev.map((node) => (node.id === videoId ? { ...node, ...getGeneratedMediaSizePatch(node, videoSize), metadata: { ...node.metadata, ...videoMetadata(video), prompt: sourcePrompt, generationPrompt: effectivePrompt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, references: generationContext.referenceImages.map(referenceUrl).filter((url): url is string => Boolean(url)), ...timing() } } : node)));
+                    commitGenerationNodes((prev) => prev.map((node) => (node.id === videoId ? { ...node, ...getGeneratedMediaSizePatch(node, videoSize), metadata: { ...node.metadata, ...videoMetadata(video), prompt: sourcePrompt, generationPrompt: effectivePrompt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, videoGenerateAudio: generationConfig.videoGenerateAudio, vquality: generationConfig.vquality, references: generationContext.referenceImages.map(referenceUrl).filter((url): url is string => Boolean(url)), ...timing() } } : node)));
                     return;
                 }
 
@@ -3088,7 +3088,7 @@ function InfiniteCanvasPage() {
                 if (node.type === CanvasNodeType.Video) {
                     const video = await uploadMediaFile(await requestVideoGeneration(generationConfig, requestPrompt, retryReferenceImages || [], context?.referenceAudios || [], context?.referenceVideos || []), "video");
                     const videoSize = fitNodeSize(video.width || node.width, video.height || node.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
-                    commitGenerationNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, ...getGeneratedMediaSizePatch(item, videoSize), metadata: { ...item.metadata, ...videoMetadata(video), prompt: sourcePrompt, generationPrompt: requestPrompt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, ...timing() } } : item)));
+                    commitGenerationNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, ...getGeneratedMediaSizePatch(item, videoSize), metadata: { ...item.metadata, ...videoMetadata(video), prompt: sourcePrompt, generationPrompt: requestPrompt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, videoGenerateAudio: generationConfig.videoGenerateAudio, vquality: generationConfig.vquality, ...timing() } } : item)));
                     return;
                 }
 
@@ -4305,6 +4305,7 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
         quality: node?.metadata?.quality || config.quality || defaultConfig.quality,
         size: normalizeImageSizeForProfile(node?.metadata?.size || config.size || defaultConfig.size, activeProfileId, resolvedModel),
         videoSeconds: node?.metadata?.seconds || config.videoSeconds || defaultConfig.videoSeconds,
+        videoGenerateAudio: node?.metadata?.videoGenerateAudio ?? config.videoGenerateAudio ?? defaultConfig.videoGenerateAudio,
         vquality: node?.metadata?.vquality || config.vquality || defaultConfig.vquality,
         count: String(node?.metadata?.count || (mode === "image" ? 1 : config.count) || defaultConfig.count),
     };

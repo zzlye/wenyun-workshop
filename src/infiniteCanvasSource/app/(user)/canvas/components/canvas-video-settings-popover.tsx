@@ -5,14 +5,14 @@ import { createPortal } from "react-dom";
 import { Settings2 } from "lucide-react";
 import { Button } from "antd";
 
-import { VideoSettingsPanel, videoResolutionLabel, videoSecondsLabel, videoSizeLabel } from "@/components/video-settings-panel";
+import { VideoSettingsPanel, videoResolutionLabel, videoSecondsLabel, videoSizeLabel, type VideoSettingsChange } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { AiConfig } from "@/stores/use-config-store";
 
 type CanvasVideoSettingsPopoverProps = {
     config: AiConfig;
-    onConfigChange: (key: keyof AiConfig, value: string) => void;
+    onConfigChange: VideoSettingsChange;
     buttonClassName?: string;
     placement?: "topLeft" | "top" | "topRight" | "bottomLeft" | "bottom" | "bottomRight";
 };
@@ -75,9 +75,9 @@ function VideoSettingsPortal({
     placement: CanvasVideoSettingsPopoverProps["placement"];
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     config: AiConfig;
-    onConfigChange: (key: keyof AiConfig, value: string) => void;
+    onConfigChange: VideoSettingsChange;
 }) {
-    const width = 356;
+    const width = Math.min(356, window.innerWidth - 24);
     const gap = 8;
     const margin = 12;
     const alignRight = placement?.endsWith("Right");
@@ -109,7 +109,7 @@ function VideoSettingsPortal({
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
         >
-            <VideoSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" />
+            <VideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} className="space-y-4" />
         </div>,
         document.body,
     );

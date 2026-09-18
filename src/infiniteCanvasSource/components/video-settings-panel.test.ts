@@ -2,33 +2,28 @@ import { describe, expect, it } from "vitest";
 
 import { normalizeVideoResolutionValue, normalizeVideoSecondsForModel, normalizeVideoSizeValue } from "./video-settings-panel";
 
-describe("Seedance 视频参数", () => {
-    it("按照模型固定清晰度并限制时长范围", () => {
-        expect(normalizeVideoResolutionValue("720", "seedance-2.0-1080p")).toBe("1080");
-        expect(normalizeVideoResolutionValue("720", "seedance-2.0-mini-431-480p")).toBe("480");
-        expect(normalizeVideoSecondsForModel("6", "seedance-2.0-720p")).toBe("6");
-        expect(normalizeVideoSecondsForModel("15", "旧模型")).toBe("15");
-        expect(normalizeVideoSecondsForModel("29", "seedance-2.5-720p")).toBe("29");
-        expect(normalizeVideoSecondsForModel("30", "seedance-2.5-720p")).toBe("29");
+describe("统一视频参数", () => {
+    it.each(["wan-3.0", "seedance-2.0-1080p", "seedance-2.0-mini-431-480p", "seedance-2.5-720p", "kling-3.0-omni-1080p", "api-new-model"])("%s 保留用户清晰度、时长和比例", (model) => {
+        for (const resolution of ["480", "720", "1080"]) {
+            expect(normalizeVideoResolutionValue(resolution, model)).toBe(resolution);
+        }
+        for (const seconds of ["1", "4", "8", "23", "30"]) {
+            expect(normalizeVideoSecondsForModel(seconds, model)).toBe(seconds);
+        }
+        expect(normalizeVideoSizeValue("4:3", model)).toBe("1024x768");
+        expect(normalizeVideoSizeValue("21:9", model)).toBe("1680x720");
     });
 
-    it("只保留接口文档支持的六种画面比例", () => {
+    it("沿用六种画面比例并兼容历史像素尺寸", () => {
         expect(normalizeVideoSizeValue("16:9")).toBe("1280x720");
         expect(normalizeVideoSizeValue("9:16")).toBe("720x1280");
         expect(normalizeVideoSizeValue("4:3", "seedance-2.0-720p")).toBe("1024x768");
         expect(normalizeVideoSizeValue("3:4", "seedance-2.0-720p")).toBe("768x1024");
         expect(normalizeVideoSizeValue("1:1", "seedance-2.0-720p")).toBe("1024x1024");
         expect(normalizeVideoSizeValue("21:9", "seedance-2.0-720p")).toBe("1680x720");
-        expect(normalizeVideoSizeValue("4:3", "seedance-2.5-720p")).toBe("1280x720");
+        expect(normalizeVideoSizeValue("4:3", "seedance-2.5-720p")).toBe("1024x768");
+        expect(normalizeVideoSizeValue("1920x1080")).toBe("1280x720");
+        expect(normalizeVideoSizeValue("0x0")).toBe("1280x720");
         expect(normalizeVideoSizeValue("auto", "seedance-2.0-720p")).toBe("1280x720");
-    });
-
-    it("Kling 只显示 16:9、9:16 和 5/10/15 秒", () => {
-        expect(normalizeVideoSecondsForModel("4", "kling-3.0-omni-720p")).toBe("5");
-        expect(normalizeVideoSecondsForModel("8", "kling-3.0-omni-1080p")).toBe("10");
-        expect(normalizeVideoSecondsForModel("20", "kling-3.0-omni-1080p")).toBe("15");
-        expect(normalizeVideoSizeValue("16:9", "kling-3.0-omni-720p")).toBe("1280x720");
-        expect(normalizeVideoSizeValue("9:16", "kling-3.0-omni-720p")).toBe("720x1280");
-        expect(normalizeVideoSizeValue("4:3", "kling-3.0-omni-720p")).toBe("1280x720");
     });
 });

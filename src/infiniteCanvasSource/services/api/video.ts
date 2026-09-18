@@ -11,11 +11,10 @@ import { buildApiUrl as buildDevApiUrl, getLockedAssetProxyUrl, readClientDevPro
 import { sanitizeApiErrorMessage } from "../../../lib/imageApiShared";
 import {
     CANVAS_VIDEO_BASE_URL,
-    CANVAS_VIDEO_MODEL,
     CANVAS_VIDEO_TIMEOUT,
-    isCanvasVideo25Model,
-    isCanvasVideoKlingModel,
-    normalizeCanvasVideoKlingSeconds,
+    normalizeCanvasVideoAspectRatio,
+    normalizeCanvasVideoDuration,
+    normalizeCanvasVideoResolution,
     normalizeCanvasVideoModel,
 } from "../../../lib/videoModel";
 
@@ -57,10 +56,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     const payload = await buildCanvasVideoPayload(config, prompt, references, audioReferences, videoReferences);
 
     try {
-        const created = unwrapVideoTask((await axios.post<VideoApiResponse>(videoApiUrl(source, "/videos"), payload, {
-            headers: { ...videoApiHeaders(source), "Content-Type": "application/json" },
-            timeout: requestTimeout(source),
-        })).data);
+        const created = unwrapVideoTask(await createVideoTask(source, payload));
         const result = await waitForVideoResult(source, created);
         refreshRemoteUser(config);
         return result;
@@ -69,56 +65,68 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     }
 }
 
+async function createVideoTask(source: VideoApiSource, payload: Record<string, unknown>) {
+    const post = async (body: Record<string, unknown>) => (await axios.post<VideoApiResponse>(videoApiUrl(source, "/videos"), body, {
+        headers: { ...videoApiHeaders(source), "Content-Type": "application/json" },
+        timeout: requestTimeout(source),
+    })).data;
+    try {
+        return await post(payload);
+    } catch (error) {
+        const currentField = "seconds" in payload ? "seconds" : "duration";
+        const alternateField = currentField === "seconds" ? "duration" : "seconds";
+        // 只有明确拒绝创建任务的缺字段错误才转换一次，超时或服务端异常不重发付费请求。
+        if (!axios.isAxiosError(error) || ![400, 422].includes(error.response?.status)
+            || hasVideoTaskId(error.response?.data) || !isMissingDurationField(error.response?.data, alternateField)) throw error;
+        const converted = { ...payload, [alternateField]: payload[currentField] };
+        delete converted[currentField];
+        return post(converted);
+    }
+}
+
+function hasVideoTaskId(value: unknown): boolean {
+    if (!value || typeof value !== "object") return false;
+    const record = value as Record<string, unknown>;
+    return Boolean(record.id || record.task_id || record.taskId) || Object.values(record).some(hasVideoTaskId);
+}
+
+function isMissingDurationField(value: unknown, field: "seconds" | "duration") {
+    if (!value || typeof value !== "object") return false;
+    const record = value as Record<string, unknown>;
+    const error = record.error && typeof record.error === "object" ? record.error as Record<string, unknown> : record;
+    if (error.param === field && ["missing_required_parameter", "field_required", "missing"].includes(String(error.code))) return true;
+    // 兼容结构化校验响应，仅识别请求体顶层的时长字段，不误判参考素材自身的时长。
+    if (Array.isArray(record.detail) && record.detail.some((item) => Array.isArray(item?.loc)
+        && item.loc.length === 2 && item.loc[0] === "body" && item.loc[1] === field
+        && ["missing", "value_error.missing"].includes(item.type))) return true;
+    const message = extractApiErrorMessage(value);
+    return new RegExp(`\\b${field}\\b[\\s'\"\x60:：]*(?:(?:field|parameter)\\s+)?(?:is\\s+)?(?:required|missing)\\b|\\b(?:missing|required)\\s+(?:(?:field|parameter)\\s*[:：]?\\s*)?['\"\x60]?${field}\\b|(?:缺少|缺失|必填)(?:参数|字段)?\\s*[:：]?\\s*['\"\x60]?${field}\\b|\\b${field}\\b[\\s'\"\x60:：]*(?:参数|字段)?(?:为必填|不能为空|是必填)`, "i").test(message);
+}
+
 async function buildCanvasVideoPayload(config: AiConfig, prompt: string, references: ReferenceImage[], audioReferences: ReferenceAudio[], videoReferences: ReferenceVideo[]) {
     const normalizedPrompt = prompt.trim();
     if (!normalizedPrompt) throw new Error("请输入视频提示词");
     const model = normalizeCanvasVideoModel(config.videoModel || config.model);
-    assertReferenceLimits(references, audioReferences, videoReferences, model);
     const payload: Record<string, unknown> = {
         model,
         prompt: normalizedPrompt,
-        aspect_ratio: normalizeVideoAspectRatio(config.size, model),
-        duration: normalizeVideoDuration(config.videoSeconds, model),
+        aspect_ratio: normalizeCanvasVideoAspectRatio(config.size),
+        duration: normalizeCanvasVideoDuration(config.videoSeconds),
+        resolution: `${normalizeCanvasVideoResolution(config.vquality)}p`,
+        generate_audio: config.videoGenerateAudio ?? true,
     };
-    if (isCanvasVideoKlingModel(model)) payload.generate_audio = true;
 
-    const images = (await Promise.all(references.map(imageToVideoReferenceUrl))).filter(Boolean);
-    if (images.length) {
-        if (isCanvasVideoKlingModel(model) && images.length === 1) {
-            payload.image_url = images[0];
-        } else {
-            // 文档规定两张图用 image_urls 表示首帧和尾帧。
-            payload.image_urls = images;
-        }
-    }
-
-    if (!isCanvasVideoKlingModel(model)) {
-        const audios = (await Promise.all(audioReferences.map(audioToVideoReferenceUrl))).filter(Boolean);
-        if (audios.length) {
-            appendAudioReferences(payload, model, audios);
-        }
-    }
-
-    const videoUrl = videoReferences.map(videoToReferenceUrl).find(Boolean);
-    if (videoUrl) payload.reference_video = videoUrl;
+    // 参考素材只发送统一数组字段，供应商别名及首尾帧规则由中转适配。
+    // 本地图片和音频沿用现有 data URL 传输，接收方若要求公网地址需在中转落存储。
+    const videos = videoReferences.map(videoToReferenceUrl);
+    const images = await Promise.all(references.map(imageToVideoReferenceUrl));
+    const audios = await Promise.all(audioReferences.map(audioToVideoReferenceUrl));
+    if (images.some((url) => !url) || audios.some((url) => !url)) throw new Error("参考媒体读取失败，请重新添加");
+    if (images.length) payload.image_urls = images;
+    if (audios.length) payload.audio_urls = audios;
+    if (videos.length) payload.video_urls = videos;
 
     return payload;
-}
-
-function assertReferenceLimits(references: ReferenceImage[], audioReferences: ReferenceAudio[], videoReferences: ReferenceVideo[], modelValue: string) {
-    const model = normalizeCanvasVideoModel(modelValue || CANVAS_VIDEO_MODEL);
-    if (isCanvasVideoKlingModel(model) && audioReferences.length) throw new Error("Kling 模型不支持参考音频，请移除音频节点后重试");
-    const imageLimit = isCanvasVideoKlingModel(model) ? 2 : isCanvasVideo25Model(model) ? 30 : 9;
-    const audioLimit = model === "sd-2.5-720p" ? 1 : isCanvasVideo25Model(model) ? 10 : 3;
-    const totalLimit = model === "sd-2.5-720p" ? 41 : isCanvasVideo25Model(model) ? 50 : 9;
-    if (references.length > imageLimit) throw new Error(`视频参考图最多连接 ${imageLimit} 张`);
-    if (audioReferences.length > audioLimit) throw new Error(`视频参考音频最多连接 ${audioLimit} 个`);
-    if (videoReferences.length > 1) throw new Error("视频参考视频最多连接 1 个");
-    if (references.length + audioReferences.length > totalLimit) throw new Error(`视频参考文件总数最多 ${totalLimit} 个`);
-    if (audioReferences.length && !references.length) throw new Error("视频参考音频必须同时连接至少一张参考图");
-
-    const invalidDuration = audioReferences.find((audio) => typeof audio.duration === "number" && (audio.duration <= 2 || audio.duration >= 15));
-    if (invalidDuration) throw new Error("视频参考音频时长需要大于 2 秒且小于 15 秒");
 }
 
 async function waitForVideoResult(source: VideoApiSource, created: VideoTask) {
@@ -229,50 +237,6 @@ function refreshRemoteUser(config: AiConfig) {
     if (config.channelMode === "remote") void useUserStore.getState().hydrateUser();
 }
 
-function normalizeVideoDuration(value: string, model: string) {
-    if (isCanvasVideoKlingModel(model)) return normalizeCanvasVideoKlingSeconds(value);
-    const max = isCanvasVideo25Model(model) ? 29 : 15;
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return 10;
-    return Math.min(max, Math.max(4, Math.round(numeric)));
-}
-
-function normalizeVideoAspectRatio(value: string, model: string) {
-    const ratio = readVideoAspectRatio(value);
-    const supported = isCanvasVideoKlingModel(model) ? ["16:9", "9:16"] : isCanvasVideo25Model(model) ? ["16:9", "9:16", "1:1"] : ["16:9", "9:16", "4:3", "3:4", "1:1", "21:9"];
-    return supported.includes(ratio) ? ratio : "16:9";
-}
-
-function appendAudioReferences(payload: Record<string, unknown>, model: string, audios: string[]) {
-    if (model === "sd-2.5-720p") {
-        payload.audio_urls = audios;
-        return;
-    }
-    if (isCanvasVideo25Model(model)) {
-        payload.audio_reference = audios.map((url) => ({ url }));
-        return;
-    }
-    payload.audio_url = audios[0];
-    if (audios.length > 1) payload.audio_reference = audios.map((url) => ({ url }));
-}
-
-function readVideoAspectRatio(value: string) {
-    const trimmed = (value || "").trim();
-    if (["16:9", "9:16", "4:3", "3:4", "1:1", "21:9"].includes(trimmed)) return trimmed;
-    if (!/^\d+x\d+$/.test(trimmed)) return "16:9";
-
-    const [width, height] = trimmed.split("x").map(Number);
-    if (!width || !height) return "16:9";
-    if (Math.abs(width - height) / Math.max(width, height) < 0.02) return "1:1";
-    const ratio = width / height;
-    if (ratio >= 2) return "21:9";
-    if (ratio >= 1.5) return "16:9";
-    if (ratio >= 1.15) return "4:3";
-    if (ratio <= 0.65) return "9:16";
-    if (ratio <= 0.85) return "3:4";
-    return "16:9";
-}
-
 async function imageToVideoReferenceUrl(image: ReferenceImage) {
     const directUrl = (image.url || "").trim();
     if (/^https?:\/\//i.test(directUrl)) return directUrl;
@@ -287,37 +251,34 @@ async function audioToVideoReferenceUrl(audio: ReferenceAudio) {
     const dataUrl = await mediaToDataUrl(audio);
     if (!dataUrl) return "";
     if (!dataUrl.startsWith("data:audio/")) throw new Error("参考音频格式不正确，请上传 MP3 或 WAV 音频");
-    return normalizeVideoReferenceAudioDataUrl(dataUrl, audio.duration);
+    return normalizeVideoReferenceAudioDataUrl(dataUrl);
 }
 
 function videoToReferenceUrl(video: ReferenceVideo) {
     const directUrl = (video.url || "").trim();
     // 上游只接受公网 HTTP(S) 视频地址，浏览器的 blob 地址只用于本地预览，不能直接提交。
-    return /^https?:\/\//i.test(directUrl) ? directUrl : "";
+    try {
+        const parsed = new URL(directUrl);
+        if (["http:", "https:"].includes(parsed.protocol)) return parsed.href;
+    } catch {
+        // 无效地址与本地 blob 均在创建任务前报告，避免静默丢弃参考后扣费。
+    }
+    throw new Error("参考视频需要可访问的 HTTP(S) 地址，请先上传到可访问的存储");
 }
 
-async function normalizeVideoReferenceAudioDataUrl(dataUrl: string, knownDuration?: number) {
+async function normalizeVideoReferenceAudioDataUrl(dataUrl: string) {
     const audioContextType = typeof AudioContext !== "undefined" ? AudioContext : typeof webkitAudioContext !== "undefined" ? webkitAudioContext : null;
-    if (!audioContextType) {
-        assertVideoReferenceAudioDuration(knownDuration);
-        return dataUrl;
-    }
+    if (!audioContextType) return dataUrl;
 
     const blob = await (await fetch(dataUrl)).blob();
     const context = new audioContextType();
     try {
         const buffer = await context.decodeAudioData(await blob.arrayBuffer());
-        assertVideoReferenceAudioDuration(buffer.duration);
         // 本地音频统一转换为 WAV，减少浏览器录音格式被上游拒绝的情况。
         return audioBufferToWavDataUrl(buffer);
     } finally {
         void context.close?.();
     }
-}
-
-function assertVideoReferenceAudioDuration(duration?: number) {
-    if (typeof duration !== "number" || !Number.isFinite(duration)) return;
-    if (duration <= 2 || duration >= 15) throw new Error("视频参考音频时长需要大于 2 秒且小于 15 秒");
 }
 
 function audioBufferToWavDataUrl(buffer: AudioBuffer) {

@@ -1032,7 +1032,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                     ) : mode === "video" ? (
                         <>
                             <ModelPicker config={config} value={config.model} options={modelOptions} modelType="video" onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
-                            <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, key === "videoSeconds" ? { seconds: value } : { [key]: value })} />
+                            <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, key === "videoSeconds" ? { seconds: String(value) } : { [key]: value })} />
                         </>
                     ) : (
                         <ModelPicker config={config} value={config.model} options={modelOptions} onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
@@ -1344,6 +1344,7 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         quality: node.metadata?.quality || globalConfig.quality || defaultConfig.quality,
         size: normalizeImageSizeForProfile(node.metadata?.size || globalConfig.size || defaultConfig.size, activeProfileId, resolvedModel),
         videoSeconds: node.metadata?.seconds || globalConfig.videoSeconds || defaultConfig.videoSeconds,
+        videoGenerateAudio: node.metadata?.videoGenerateAudio ?? globalConfig.videoGenerateAudio ?? defaultConfig.videoGenerateAudio,
         vquality: node.metadata?.vquality || globalConfig.vquality || defaultConfig.vquality,
         count: String(node.metadata?.count || (mode === "image" ? 1 : globalConfig.count) || defaultConfig.count),
     };

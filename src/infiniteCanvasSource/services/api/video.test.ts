@@ -48,6 +48,8 @@ describe("画布视频异步接口", () => {
                 prompt: "雨夜霓虹街道，镜头缓慢推进",
                 aspect_ratio: "16:9",
                 duration: 4,
+                resolution: "1080p",
+                generate_audio: true,
             },
             expect.objectContaining({
                 headers: { Authorization: "Bearer video-key", "Content-Type": "application/json" },
@@ -59,19 +61,7 @@ describe("画布视频异步接口", () => {
         expect(result.type).toBe("video/mp4");
     });
 
-    it("Kling 单图使用 image_url，并限制时长、比例和音频字段", async () => {
-        await expect(requestVideoGeneration({
-            ...defaultConfig,
-            videoApiKey: "video-key",
-            videoModel: "kling-3.0-omni-1080p",
-            videoSeconds: "8",
-            size: "4:3",
-        }, "人物在雨中回头", [
-            { id: "character", name: "角色", type: "image/png", dataUrl: "data:image/png;base64,Y2hhcmFjdGVy" },
-        ], [
-            { id: "ignored-audio", name: "不支持的音频", type: "audio/mpeg", url: "https://cdn.example.com/music.mp3" },
-        ])).rejects.toThrow("Kling 模型不支持参考音频，请移除音频节点后重试");
-
+    it("Kling 使用统一图像音频数组，保留用户时长、比例和清晰度", async () => {
         (axios.post as Mock).mockResolvedValueOnce({ data: { id: "kling-task-2", status: "completed" } });
         (axios.get as Mock).mockResolvedValueOnce({ data: videoBlob() });
 
@@ -80,9 +70,12 @@ describe("画布视频异步接口", () => {
             videoApiKey: "video-key",
             videoModel: "kling-3.0-omni-1080p",
             videoSeconds: "8",
+            vquality: "480",
             size: "4:3",
         }, "人物在雨中回头", [
             { id: "character", name: "角色", type: "image/png", dataUrl: "data:image/png;base64,Y2hhcmFjdGVy" },
+        ], [
+            { id: "audio", name: "参考音频", type: "audio/mpeg", url: "https://cdn.example.com/music.mp3" },
         ]);
 
         expect(axios.post).toHaveBeenCalledWith(
@@ -90,10 +83,12 @@ describe("画布视频异步接口", () => {
             {
                 model: "kling-3.0-omni-1080p",
                 prompt: "人物在雨中回头",
-                aspect_ratio: "16:9",
-                duration: 10,
+                aspect_ratio: "4:3",
+                duration: 8,
+                resolution: "480p",
                 generate_audio: true,
-                image_url: "data:image/png;base64,Y2hhcmFjdGVy",
+                image_urls: ["data:image/png;base64,Y2hhcmFjdGVy"],
+                audio_urls: ["https://cdn.example.com/music.mp3"],
             },
             expect.any(Object),
         );
@@ -101,7 +96,7 @@ describe("画布视频异步接口", () => {
         expect((axios.post as Mock).mock.calls[0][1]).not.toHaveProperty("audio_reference");
     });
 
-    it("Kling 双图使用 image_urls 作为首尾帧", async () => {
+    it("Kling 多图使用 image_urls，保持参考顺序", async () => {
         (axios.post as Mock).mockResolvedValueOnce({ data: { id: "kling-task-3", status: "completed" } });
         (axios.get as Mock).mockResolvedValueOnce({ data: videoBlob() });
 
@@ -153,13 +148,13 @@ describe("画布视频异步接口", () => {
                 aspect_ratio: "4:3",
                 duration: 15,
                 image_urls: ["data:image/png;base64,bWFpbg==", "data:image/png;base64,cmVm"],
-                audio_url: "https://cdn.example.com/music.mp3",
+                audio_urls: ["https://cdn.example.com/music.mp3"],
             }),
             expect.any(Object),
         );
     });
 
-    it("按选中的 Seedance 2.5 模型使用对应时长和参考音频字段", async () => {
+    it("Seedance 2.5 保留对应时长并使用统一音频数组字段", async () => {
         (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-25", status: "completed" } });
         (axios.get as Mock).mockResolvedValueOnce({ data: videoBlob() });
 
@@ -180,8 +175,8 @@ describe("画布视频异步接口", () => {
             expect.objectContaining({
                 model: "seedance-2.5-720p",
                 duration: 29,
-                aspect_ratio: "16:9",
-                audio_reference: [{ url: "https://cdn.example.com/beat.mp3" }],
+                aspect_ratio: "4:3",
+                audio_urls: ["https://cdn.example.com/beat.mp3"],
             }),
             expect.any(Object),
         );
@@ -230,7 +225,7 @@ describe("画布视频异步接口", () => {
         expect(result.type).toBe("video/mp4");
     });
 
-    it("连接公网视频时提交 reference_video 字段", async () => {
+    it("连接公网视频时提交 video_urls 数组", async () => {
         (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-reference-video", status: "completed" } });
         (axios.get as Mock).mockResolvedValueOnce({ data: videoBlob() });
 
@@ -244,16 +239,19 @@ describe("画布视频异步接口", () => {
 
         expect(axios.post).toHaveBeenCalledWith(
             `${VIDEO_API_PROXY_BASE}/videos`,
-            expect.objectContaining({ reference_video: "https://cdn.example.com/reference.mp4" }),
+            expect.objectContaining({ video_urls: ["https://cdn.example.com/reference.mp4"] }),
             expect.any(Object),
         );
     });
 
-    it("拒绝只连接音频或超过文档限制的参考文件", async () => {
+    it("不再强制音频配图或限制 Seedance 图片数量", async () => {
         const config = { ...defaultConfig, videoBaseUrl: "https://api.example.com/v1", videoApiKey: "video-key" };
-        await expect(requestVideoGeneration(config, "测试视频", [], [
+        (axios.post as Mock).mockResolvedValue({ data: { id: "task-references", status: "completed" } });
+        (axios.get as Mock).mockResolvedValue({ data: videoBlob() });
+        await requestVideoGeneration(config, "测试视频", [], [
             { id: "audio-1", name: "音乐", type: "audio/mpeg", url: "https://cdn.example.com/music.mp3" },
-        ])).rejects.toThrow("必须同时连接至少一张参考图");
+        ]);
+        expect((axios.post as Mock).mock.calls[0][1].audio_urls).toEqual(["https://cdn.example.com/music.mp3"]);
 
         const images = Array.from({ length: 10 }, (_, index) => ({
             id: `image-${index}`,
@@ -261,11 +259,13 @@ describe("画布视频异步接口", () => {
             type: "image/png",
             dataUrl: "data:image/png;base64,dGVzdA==",
         }));
-        await expect(requestVideoGeneration(config, "测试视频", images)).rejects.toThrow("最多连接 9 张");
-        expect(axios.post).not.toHaveBeenCalled();
+        await requestVideoGeneration(config, "测试视频", images);
+        expect((axios.post as Mock).mock.calls[1][1].image_urls).toEqual(images.map((image) => image.dataUrl));
     });
 
-    it("Kling 最多接受两张参考图", async () => {
+    it("Kling 不再套用旧的两张参考图限制", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { id: "task-images", status: "completed" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: videoBlob() });
         const images = Array.from({ length: 3 }, (_, index) => ({
             id: `kling-image-${index}`,
             name: `图片${index}`,
@@ -273,12 +273,12 @@ describe("画布视频异步接口", () => {
             dataUrl: "data:image/png;base64,dGVzdA==",
         }));
 
-        await expect(requestVideoGeneration({
+        await requestVideoGeneration({
             ...defaultConfig,
             videoApiKey: "video-key",
             videoModel: "kling-3.0-omni-720p",
-        }, "测试视频", images)).rejects.toThrow("最多连接 2 张");
-        expect(axios.post).not.toHaveBeenCalled();
+        }, "测试视频", images);
+        expect((axios.post as Mock).mock.calls[0][1].image_urls).toEqual(images.map((image) => image.dataUrl));
     });
 
     it("缺少 Key 时直接提示配置", async () => {

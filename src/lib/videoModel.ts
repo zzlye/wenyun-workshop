@@ -4,9 +4,11 @@ export const CANVAS_VIDEO_TIMEOUT = 900;
 
 // 默认值只用于空配置，不作为 API 模型列表的白名单。
 export const CANVAS_VIDEO_MODEL = "seedance-2.0-720p";
-export const CANVAS_VIDEO_SECONDS = ["4", "5", "6", "8", "10", "15"] as const;
-export const CANVAS_VIDEO_25_SECONDS = ["4", "5", "6", "8", "10", "15", "20", "25", "29"] as const;
-export const CANVAS_VIDEO_KLING_SECONDS = ["5", "10", "15"] as const;
+// 所有模型共用中转协议参数，不再从模型名称推断或限制能力。
+export const CANVAS_VIDEO_MIN_SECONDS = 1;
+export const CANVAS_VIDEO_MAX_SECONDS = 30;
+export const CANVAS_VIDEO_SECONDS = ["5", "10", "15", "20", "25", "30"] as const;
+export const CANVAS_VIDEO_RESOLUTIONS = ["480", "720", "1080"] as const;
 export const CANVAS_VIDEO_ASPECT_RATIOS = ["16:9", "9:16", "4:3", "3:4", "1:1", "21:9"] as const;
 
 export function normalizeCanvasVideoModel(value: string | undefined | null): string {
@@ -15,22 +17,26 @@ export function normalizeCanvasVideoModel(value: string | undefined | null): str
     return normalized || CANVAS_VIDEO_MODEL;
 }
 
-export function isCanvasVideo25Model(model: string) {
-    return model.startsWith("seedance-2.5-") || model.startsWith("sd-2.5-");
+export function normalizeCanvasVideoDuration(value: string) {
+    if (!value?.trim() || !Number.isFinite(Number(value))) return 10;
+    return Math.min(CANVAS_VIDEO_MAX_SECONDS, Math.max(CANVAS_VIDEO_MIN_SECONDS, Math.round(Number(value))));
 }
 
-export function isCanvasVideoKlingModel(model: string) {
-    return model.startsWith("kling-3.0-omni-");
+export function normalizeCanvasVideoAspectRatio(value: string) {
+    const trimmed = (value || "").trim();
+    let ratio = trimmed;
+    // 历史画布以宽高像素保存比例，提交和设置面板共用同一转换，防止显示与请求不一致。
+    if (/^\d+x\d+$/.test(trimmed)) {
+        const [width, height] = trimmed.split("x").map(Number);
+        const numeric = width / height;
+        ratio = !width || !height ? "16:9" : Math.abs(width - height) / Math.max(width, height) < 0.02 ? "1:1"
+            : numeric >= 2 ? "21:9" : numeric >= 1.5 ? "16:9" : numeric >= 1.15 ? "4:3"
+                : numeric <= 0.65 ? "9:16" : numeric <= 0.85 ? "3:4" : "16:9";
+    }
+    return CANVAS_VIDEO_ASPECT_RATIOS.find((option) => option === ratio) || "16:9";
 }
 
-export function normalizeCanvasVideoKlingSeconds(value: string | number | undefined | null) {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return 10;
-    return [5, 10, 15].reduce((closest, option) => Math.abs(option - numeric) < Math.abs(closest - numeric) ? option : closest, 10);
-}
-
-export function getCanvasVideoResolution(model: string) {
-    if (model.includes("1080p")) return "1080";
-    if (model.includes("480p")) return "480";
-    return "720";
+export function normalizeCanvasVideoResolution(value: string) {
+    const normalized = (value || "").trim().replace(/p$/i, "");
+    return CANVAS_VIDEO_RESOLUTIONS.find((option) => option === normalized) || "720";
 }

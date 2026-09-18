@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Switch } from "antd";
 
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import type { AiConfig } from "@/stores/use-config-store";
-import { CANVAS_VIDEO_25_SECONDS, CANVAS_VIDEO_KLING_SECONDS, CANVAS_VIDEO_SECONDS, getCanvasVideoResolution, isCanvasVideo25Model, isCanvasVideoKlingModel, normalizeCanvasVideoKlingSeconds, normalizeCanvasVideoModel } from "../../lib/videoModel";
+import { CANVAS_VIDEO_MIN_SECONDS, CANVAS_VIDEO_MAX_SECONDS, CANVAS_VIDEO_RESOLUTIONS, CANVAS_VIDEO_SECONDS, normalizeCanvasVideoAspectRatio, normalizeCanvasVideoDuration, normalizeCanvasVideoResolution, normalizeCanvasVideoModel } from "../../lib/videoModel";
 
 const VIDEO_SIZE_OPTIONS = [
     { value: "1280x720", label: "16:9 横屏", width: 1280, height: 720 },
@@ -16,9 +17,12 @@ const VIDEO_SIZE_OPTIONS = [
     { value: "1680x720", label: "21:9 宽屏", width: 1680, height: 720 },
 ];
 
+type VideoSettingsValues = Pick<AiConfig, "vquality" | "size" | "videoSeconds" | "videoGenerateAudio">;
+export type VideoSettingsChange = <K extends keyof VideoSettingsValues>(key: K, value: VideoSettingsValues[K]) => void;
+
 type VideoSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "vquality" | "size" | "videoSeconds", value: string) => void;
+    onConfigChange: VideoSettingsChange;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
@@ -29,8 +33,6 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const seconds = normalizeVideoSecondsForModel(config.videoSeconds, videoModel);
     const size = normalizeVideoSizeValue(config.size, videoModel);
     const resolution = normalizeVideoResolutionValue(config.vquality, videoModel);
-    const sizeOptions = getVideoSizeOptions(videoModel);
-    const secondsOptions = isCanvasVideoKlingModel(videoModel) ? CANVAS_VIDEO_KLING_SECONDS : isCanvasVideo25Model(videoModel) ? CANVAS_VIDEO_25_SECONDS : CANVAS_VIDEO_SECONDS;
 
     useEffect(() => {
         if ((config.videoSeconds || "") === seconds) return;
@@ -57,15 +59,17 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     </div>
                 ) : null}
                 <SettingGroup title="清晰度" color={theme.node.muted}>
-                    <div className="grid grid-cols-1 gap-2.5">
-                        <div className="flex h-9 items-center justify-center rounded-full border px-2 text-sm" style={{ borderColor: theme.node.text, color: theme.node.text }}>
-                            {resolution}p
-                        </div>
+                    <div className="grid grid-cols-3 gap-2.5">
+                        {CANVAS_VIDEO_RESOLUTIONS.map((value) => (
+                            <OptionPill key={value} selected={resolution === value} theme={theme} onClick={() => onConfigChange("vquality", value)}>
+                                {value}p
+                            </OptionPill>
+                        ))}
                     </div>
                 </SettingGroup>
                 <SettingGroup title="画面比例" color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
-                        {sizeOptions.map((item) => (
+                        {VIDEO_SIZE_OPTIONS.map((item) => (
                             <button
                                 key={item.value}
                                 type="button"
@@ -81,38 +85,39 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     </div>
                 </SettingGroup>
                 <SettingGroup title="秒数" color={theme.node.muted}>
+                    <DurationInput value={seconds} onChange={(value) => onConfigChange("videoSeconds", value)} />
                     <div className="grid grid-cols-2 gap-2.5">
-                        {secondsOptions.map((value) => (
+                        {CANVAS_VIDEO_SECONDS.map((value) => (
                             <OptionPill key={value} selected={seconds === value} theme={theme} onClick={() => onConfigChange("videoSeconds", value)}>
                                 {value}s
                             </OptionPill>
                         ))}
                     </div>
                 </SettingGroup>
+                <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-medium" style={{ color: theme.node.muted }}>生成音频</span>
+                    <Switch aria-label="生成音频" checked={config.videoGenerateAudio ?? true} onChange={(checked) => onConfigChange("videoGenerateAudio", checked)} />
+                </div>
             </div>
         </ImageSettingsTheme>
     );
 }
 
-export function videoResolutionLabel(_value: string, model?: string) {
-    return `${normalizeVideoResolutionValue(_value, model)}p`;
+export function videoResolutionLabel(value: string, model?: string) {
+    return `${normalizeVideoResolutionValue(value, model)}p`;
 }
 
 export function videoSizeLabel(value: string, model?: string) {
-    const normalizedModel = normalizeCanvasVideoModel(model);
-    const size = normalizeVideoSizeValue(value, normalizedModel);
-    return getVideoSizeOptions(normalizedModel).find((item) => item.value === size)?.label || "16:9 横屏";
+    const size = normalizeVideoSizeValue(value, model);
+    return VIDEO_SIZE_OPTIONS.find((item) => item.value === size)?.label || "16:9 横屏";
 }
 
 export function videoSecondsLabel(value: string, model?: string) {
     return `${normalizeVideoSecondsForModel(value, model)}s`;
 }
 
-export function normalizeVideoSizeValue(value: string, model?: string) {
-    const normalizedModel = normalizeCanvasVideoModel(model);
-    const ratio = readAspectRatio(value);
-    if (isCanvasVideoKlingModel(normalizedModel) && !["16:9", "9:16"].includes(ratio)) return "1280x720";
-    if (isCanvasVideo25Model(normalizedModel) && !["16:9", "9:16", "1:1"].includes(ratio)) return "1280x720";
+export function normalizeVideoSizeValue(value: string, _model?: string) {
+    const ratio = normalizeCanvasVideoAspectRatio(value);
     if (ratio === "9:16") return "720x1280";
     if (ratio === "4:3") return "1024x768";
     if (ratio === "3:4") return "768x1024";
@@ -121,44 +126,38 @@ export function normalizeVideoSizeValue(value: string, model?: string) {
     return "1280x720";
 }
 
-export function normalizeVideoResolutionValue(_value: string, model?: string) {
-    return getCanvasVideoResolution(normalizeCanvasVideoModel(model));
+export function normalizeVideoResolutionValue(value: string, _model?: string) {
+    return normalizeCanvasVideoResolution(value);
 }
 
-export function normalizeVideoSecondsForModel(value: string, model?: string) {
-    const normalizedModel = normalizeCanvasVideoModel(model);
-    if (isCanvasVideoKlingModel(normalizedModel)) return String(normalizeCanvasVideoKlingSeconds(value));
-    const max = isCanvasVideo25Model(normalizedModel) ? 29 : 15;
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return "10";
-    return String(Math.min(max, Math.max(4, Math.round(numeric))));
+export function normalizeVideoSecondsForModel(value: string, _model?: string) {
+    return String(normalizeCanvasVideoDuration(value));
 }
 
-function getVideoSizeOptions(model: string) {
-    if (isCanvasVideoKlingModel(model)) return VIDEO_SIZE_OPTIONS.filter((item) => ["1280x720", "720x1280"].includes(item.value));
-    return isCanvasVideo25Model(model) ? VIDEO_SIZE_OPTIONS.filter((item) => ["1280x720", "720x1280", "1024x1024"].includes(item.value)) : VIDEO_SIZE_OPTIONS;
-}
-
-function readAspectRatio(value: string) {
-    const trimmed = (value || "").trim();
-    if (["16:9", "9:16", "4:3", "3:4", "1:1", "21:9"].includes(trimmed)) return trimmed;
-    if (!/^\d+x\d+$/.test(trimmed)) return "16:9";
-
-    const [width, height] = trimmed.split("x").map(Number);
-    if (!width || !height) return "16:9";
-    if (Math.abs(width - height) / Math.max(width, height) < 0.02) return "1:1";
-    const ratio = width / height;
-    if (ratio >= 2) return "21:9";
-    if (ratio >= 1.5) return "16:9";
-    if (ratio >= 1.15) return "4:3";
-    if (ratio <= 0.65) return "9:16";
-    if (ratio <= 0.85) return "3:4";
-    return "16:9";
+function DurationInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+    const [draft, setDraft] = useState(value);
+    useEffect(() => setDraft(value), [value]);
+    // 编辑期间允许暂时清空，失焦时再校验，避免输入两位秒数时被立即改回默认值。
+    return <input aria-label="视频时长（秒）" type="number" min={CANVAS_VIDEO_MIN_SECONDS} max={CANVAS_VIDEO_MAX_SECONDS} step={1} value={draft}
+        className="h-9 w-full rounded-lg border border-current bg-transparent px-3 text-sm"
+        onChange={(event) => {
+            const next = event.target.value;
+            setDraft(next);
+            // 有效秒数立即保存，避免点击面板外生成按钮时先卸载输入框而漏掉失焦更新。
+            const numeric = Number(next);
+            if (next.trim() && Number.isInteger(numeric) && numeric >= CANVAS_VIDEO_MIN_SECONDS && numeric <= CANVAS_VIDEO_MAX_SECONDS) onChange(next);
+        }}
+        onBlur={() => {
+            const next = String(normalizeCanvasVideoDuration(draft));
+            setDraft(next);
+            onChange(next);
+        }}
+        onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />;
 }
 
 function OptionPill({ selected, theme, onClick, children }: { selected: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
     return (
-        <button type="button" className="h-9 cursor-pointer rounded-full border px-2 text-sm transition hover:opacity-80" style={{ background: "transparent", borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onClick={onClick}>
+        <button type="button" aria-pressed={selected} className="h-9 cursor-pointer rounded-full border px-2 text-sm transition hover:opacity-80" style={{ background: "transparent", borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onClick={onClick}>
             {children}
         </button>
     );

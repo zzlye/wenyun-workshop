@@ -30,6 +30,7 @@ export type AiConfig = {
     videoModel: string;
     textModel: string;
     videoSeconds: string;
+    videoGenerateAudio: boolean;
     vquality: string;
     systemPrompt: string;
     models: string[];
@@ -65,6 +66,7 @@ export const defaultConfig: AiConfig = {
     videoModel: DEFAULT_VIDEO_MODEL,
     textModel: "gpt-5.5",
     videoSeconds: "10",
+    videoGenerateAudio: true,
     vquality: "720",
     systemPrompt: "",
     models: [],

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_MODEL, isCanvasVideoKlingModel, normalizeCanvasVideoKlingSeconds, normalizeCanvasVideoModel } from "./videoModel";
+import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_MODEL, normalizeCanvasVideoDuration, normalizeCanvasVideoResolution, normalizeCanvasVideoModel } from "./videoModel";
 
 describe("画布视频模型列表", () => {
     it("固定使用站点 NewAPI 地址", () => {
@@ -19,11 +19,17 @@ describe("画布视频模型列表", () => {
         }
     });
 
-    it("识别 Kling Omni 并只允许文档规定的时长", () => {
-        expect(isCanvasVideoKlingModel("kling-3.0-omni-720p")).toBe(true);
-        expect(isCanvasVideoKlingModel("seedance-2.0-720p")).toBe(false);
-        expect(normalizeCanvasVideoKlingSeconds("4")).toBe(5);
-        expect(normalizeCanvasVideoKlingSeconds("8")).toBe(10);
-        expect(normalizeCanvasVideoKlingSeconds("20")).toBe(15);
+    it.each([
+        ["", 10], ["NaN", 10], ["Infinity", 10], ["0", 1], ["-10", 1],
+        ["1", 1], ["8", 8], ["23", 23], ["29.8", 30], ["30", 30], ["31", 30],
+    ])("统一校验时长 %s 为 %s 秒", (value, expected) => {
+        expect(normalizeCanvasVideoDuration(value)).toBe(expected);
+    });
+
+    it.each([
+        ["480", "480"], ["720", "720"], ["1080", "1080"], [" 1080P ", "1080"],
+        ["", "720"], ["2160", "720"],
+    ])("统一校验清晰度 %s 为 %s", (value, expected) => {
+        expect(normalizeCanvasVideoResolution(value)).toBe(expected);
     });
 });
