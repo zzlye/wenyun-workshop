@@ -11,25 +11,20 @@ import { getCustomProviderConfigUrl, loadCustomProviderSettingsFromUrl } from '.
 import { fetchNewApiNotice, queryNewApiPriceTable, type NewApiNoticeItem } from './lib/newApi'
 import { requestPersistentStorage } from './lib/persistentStorage'
 import { useDockerApiUrlMigrationNotice } from './hooks/useDockerApiUrlMigrationNotice'
-import Header from './components/Header'
-import SearchBar from './components/SearchBar'
-import TaskGrid from './components/TaskGrid'
-import InputBar from './components/InputBar'
-import DetailModal from './components/DetailModal'
-import Lightbox from './components/Lightbox'
-import SettingsModal from './components/SettingsModal'
 import ConfirmDialog from './components/ConfirmDialog'
 import Toast from './components/Toast'
-import MaskEditorModal from './components/MaskEditorModal'
-import ImageContextMenu from './components/ImageContextMenu'
 import AnnouncementModal from './components/AnnouncementModal'
-import DataSyncManager from './components/DataSyncManager'
 import HomeLanding from './components/HomeLanding'
 import { useGlobalClickSuppression } from './lib/clickSuppression'
 import { syncInfiniteCanvasConfigFromSettings } from './lib/syncInfiniteCanvasConfig'
 import type { CanvasRoute } from './infiniteCanvasCompat/nextNavigation'
 
 const CanvasWorkshop = lazy(() => import('./components/CanvasWorkshop'))
+const WenyunWorkshop = lazy(() => import('./components/WenyunWorkshop'))
+const SettingsModal = lazy(() => import('./components/SettingsModal'))
+const Lightbox = lazy(() => import('./components/Lightbox'))
+const MaskEditorModal = lazy(() => import('./components/MaskEditorModal'))
+const DataSyncManager = lazy(() => import('./components/DataSyncManager'))
 
 let customProviderConfigUrlImportStarted = false
 
@@ -57,6 +52,9 @@ export default function App() {
   const setSettings = useStore((s) => s.setSettings)
   const setShowSettings = useStore((s) => s.setShowSettings)
   const settings = useStore((s) => s.settings)
+  const showSettings = useStore((s) => s.showSettings)
+  const lightboxImageId = useStore((s) => s.lightboxImageId)
+  const maskEditorImageId = useStore((s) => s.maskEditorImageId)
   const appearanceBackgroundImageUrl = useStore((s) => s.settings.appearanceBackgroundImageUrl)
   const appearanceBackgroundOpacity = useStore((s) => s.settings.appearanceBackgroundOpacity)
   const appearanceBackgroundBlur = useStore((s) => s.settings.appearanceBackgroundBlur)
@@ -65,6 +63,22 @@ export default function App() {
   const initialLocation = getInitialLocation()
   const [workspaceMode, setWorkspaceMode] = useState<'gallery' | 'canvas'>(initialLocation.workspaceMode)
   const [showHome, setShowHome] = useState(initialLocation.showHome)
+  const storeInitStartedRef = useRef(false)
+  const [storeReady, setStoreReady] = useState(false)
+  const [storeError, setStoreError] = useState(false)
+  const [storeRetry, setStoreRetry] = useState(0)
+
+  useEffect(() => {
+    if ((showHome && !showSettings) || storeInitStartedRef.current) return
+    // 首次进入工坊或设置时才恢复历史；恢复完成前禁止编辑，避免覆盖本地记录。
+    storeInitStartedRef.current = true
+    setStoreError(false)
+    void initStore().then(() => setStoreReady(true)).catch((error) => {
+      console.error('本地创作记录加载失败:', error)
+      setStoreError(true)
+    })
+  }, [showHome, showSettings, storeRetry])
+
 
   useEffect(() => {
     const handlePopState = () => {
@@ -103,6 +117,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (showHome && !showSettings) return
     const normalizedSettings = normalizeSettings(settings)
     const configuredProfile = getActiveApiProfile(normalizedSettings)
     const activeProfile = getEffectiveImageApiProfile(normalizedSettings, configuredProfile)
@@ -111,7 +126,7 @@ export default function App() {
     if (automaticPriceSyncAttemptedRef.current.has(syncKey)) return
     automaticPriceSyncAttemptedRef.current.add(syncKey)
 
-    // 首次进入页面即同步当前站点价格，避免用户必须先打开模型列表。
+    // 进入工坊或设置后再同步价格，主页不提前请求工坊数据。
     void queryNewApiPriceTable(activeProfile).then((priceTable) => {
       if (!priceTable.found) return
       const state = useStore.getState()
@@ -121,7 +136,7 @@ export default function App() {
         found: priceTable.found,
       }))
     })
-  }, [settings])
+  }, [settings, showHome, showSettings])
 
   const loadAnnouncement = useCallback(async (autoOpen = false) => {
     setAnnouncementLoading(true)
@@ -175,7 +190,6 @@ export default function App() {
         })
     }
 
-    initStore()
   }, [setSettings])
 
   useEffect(() => {
@@ -191,11 +205,11 @@ export default function App() {
 
   useEffect(() => {
     if (announcementAutoOpenAttemptedRef.current) return
-    if (showHome) return
+    if (showHome || !storeReady) return
     if (hasRunningGeneration) return
     announcementAutoOpenAttemptedRef.current = true
     void loadAnnouncement(true)
-  }, [hasRunningGeneration, loadAnnouncement, showHome])
+  }, [hasRunningGeneration, loadAnnouncement, showHome, storeReady])
 
   useEffect(() => {
     if (workspaceMode !== 'gallery') return
@@ -262,11 +276,25 @@ export default function App() {
     if (!hasRunningGeneration) void loadAnnouncement(false)
   }
 
+  const renderStoreLoading = () => (
+    <div role="status" className="p-8 text-center">
+      {storeError ? (
+        <>
+          <p>本地创作记录加载失败，请重试。</p>
+          <button type="button" className="mt-3 rounded-lg border px-4 py-2" onClick={() => {
+            storeInitStartedRef.current = false
+            setStoreRetry((value) => value + 1)
+          }}>重新加载</button>
+        </>
+      ) : '正在加载创作记录…'}
+    </div>
+  )
+
   return (
     <AppProviders>
       <>
       <div aria-hidden className="pointer-events-none fixed inset-0 z-0 bg-white dark:bg-gray-950" />
-      {appearanceBackgroundImageUrl.trim() && (
+      {!showHome && appearanceBackgroundImageUrl.trim() && (
         <>
           <div
             aria-hidden
@@ -295,30 +323,27 @@ export default function App() {
           />
         ) : (
           <div key={workspaceMode} className={`workspace-mode-view workspace-mode-view-${workspaceMode}`}>
-            {workspaceMode === 'gallery' ? (
-              <>
-                <Header onOpenHome={openHome} onOpenCanvas={() => switchWorkspaceMode('canvas')} />
-                <main data-home-main data-drag-select-surface className="pb-48">
-                  <div className="safe-area-x max-w-7xl mx-auto">
-                    <SearchBar />
-                    <TaskGrid />
-                  </div>
-                </main>
-                <InputBar />
-                <DetailModal />
-                <ImageContextMenu />
-              </>
-            ) : (
-              <Suspense fallback={<div className="min-h-screen bg-white dark:bg-gray-950" />}>
-                <CanvasWorkshop initialRoute={getInitialCanvasRoute()} onBack={() => switchWorkspaceMode('gallery')} onOpenHome={openHome} onOpenWenyun={() => switchWorkspaceMode('gallery')} onOpenSettings={() => setShowSettings(true)} />
+            {!storeReady ? renderStoreLoading() : (
+              <Suspense fallback={<div role="status" className="p-8 text-center">正在加载工坊…</div>}>
+                {workspaceMode === 'gallery' ? (
+                  <WenyunWorkshop onOpenHome={openHome} onOpenCanvas={() => switchWorkspaceMode('canvas')} />
+                ) : (
+                  <CanvasWorkshop initialRoute={getInitialCanvasRoute()} onBack={() => switchWorkspaceMode('gallery')} onOpenHome={openHome} onOpenWenyun={() => switchWorkspaceMode('gallery')} onOpenSettings={() => setShowSettings(true)} />
+                )}
               </Suspense>
             )}
           </div>
         )}
-        <Lightbox />
-        <MaskEditorModal />
-        <SettingsModal />
-        <DataSyncManager />
+        <Suspense fallback={null}>
+          {lightboxImageId && <Lightbox />}
+          {maskEditorImageId && <MaskEditorModal />}
+          {showSettings && (storeReady ? <SettingsModal /> : (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-white/95 dark:bg-gray-950/95">
+              {renderStoreLoading()}
+            </div>
+          ))}
+          {storeReady && settings.cloudSync.enabled && settings.cloudSync.autoSync && <DataSyncManager />}
+        </Suspense>
         <ConfirmDialog />
         <Toast />
         {!showHome && <button

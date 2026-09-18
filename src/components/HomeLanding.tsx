@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Copy, Link, LogIn, Pause, Play, RefreshCw, Settings, X } from 'lucide-react'
-import { LOCKED_WENYUN_PROFILE_ID, PIXIV_RANDOM_BACKGROUND_API_URL } from '../lib/apiProfiles'
+import { LOCKED_WENYUN_PROFILE_ID } from '../lib/apiProfiles'
 import { useStore } from '../store'
+import { createHomeBackgroundLoader } from '../lib/homeBackground'
 import AccountLoginModal from './AccountLoginModal'
 import { AnimatedThemeToggler } from '../infiniteCanvasSource/components/ui/animated-theme-toggler'
 
@@ -12,132 +13,55 @@ type HomeLandingProps = {
 }
 
 const BACKGROUND_ROTATION_MS = 60_000
-const FALLBACK_BACKGROUND_URL = 'https://www.loliapi.com/acg/pc/'
-const HOME_BACKGROUND_STORAGE_KEY = 'wenyun-home-background-url'
-
-function findImageUrl(value: unknown): string | null {
-  if (typeof value === 'string' && /^(https?:\/\/|\/i\/)/i.test(value.trim()) && !value.includes('/random')) return value.trim()
-  if (!value || typeof value !== 'object') return null
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const result = findImageUrl(item)
-      if (result) return result
-    }
-  } else {
-    for (const item of Object.values(value)) {
-      const result = findImageUrl(item)
-      if (result) return result
-    }
-  }
-  return null
-}
-
-function getSavedHomeBackgroundUrl() {
-  try {
-    return window.localStorage.getItem(HOME_BACKGROUND_STORAGE_KEY)?.trim() ?? ''
-  } catch {
-    return ''
-  }
-}
-
 export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSettings }: HomeLandingProps) {
-  const savedBackgroundUrl = getSavedHomeBackgroundUrl()
-  const [backgroundUrls, setBackgroundUrls] = useState<[string, string]>(() => [savedBackgroundUrl, ''])
+  const [backgroundUrls, setBackgroundUrls] = useState<[string, string]>(['', ''])
   const [activeBackgroundIndex, setActiveBackgroundIndex] = useState(0)
-  const [isBackgroundReady, setIsBackgroundReady] = useState(Boolean(savedBackgroundUrl))
+  const [isBackgroundReady, setIsBackgroundReady] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
   const [showLogin, setShowLogin] = useState(false)
   const [showBackgroundUrl, setShowBackgroundUrl] = useState(false)
   const appearanceNightMode = useStore((state) => state.settings.appearanceNightMode)
   const setSettings = useStore((state) => state.setSettings)
   const activeBackgroundIndexRef = useRef(0)
-  const backgroundRequestRef = useRef(0)
+  const backgroundLoaderRef = useRef<ReturnType<typeof createHomeBackgroundLoader> | null>(null)
   const accountSession = useStore((state) => state.settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] ?? null)
 
-  const resolveFinalImageUrl = async (url: string) => {
-    if (url.includes('/random')) {
-      try {
-        const apiUrl = `${url}${url.includes('?') ? '&' : '?'}format=simple_json&t=${Date.now()}`
-        const parsedUrl = new URL(apiUrl)
-        const proxyUrl = `/wy-public/mukyu${parsedUrl.pathname}${parsedUrl.search}`
-        for (const requestUrl of [proxyUrl, apiUrl]) {
-          try {
-            const response = await fetch(requestUrl, { cache: 'no-store' })
-            if (!response.ok) continue
-            const imageUrl = findImageUrl(await response.json())
-            if (imageUrl) return imageUrl.startsWith('/') ? `https://i.mukyu.ru${imageUrl}` : imageUrl
-          } catch {
-            // 继续尝试下一个地址。
-          }
-        }
-      } catch {
-        // JSON 接口不可用时继续尝试原图片地址。
-      }
-    }
-    try {
-      const response = await fetch(url, { cache: 'no-store', redirect: 'follow' })
-      if (response.ok && response.url && !response.url.includes('/random')) return response.url
-    } catch {
-      // 图片请求本身仍可继续尝试，避免解析请求失败时主页完全没有背景。
-    }
-    return url
-  }
-
-  const loadBackground = (url: string) => {
-    const requestId = backgroundRequestRef.current + 1
-    backgroundRequestRef.current = requestId
-    const preload = new Image()
-    const loadResolvedImage = async () => {
-      const resolvedUrl = await resolveFinalImageUrl(url)
-      if (requestId !== backgroundRequestRef.current) return
-      preload.src = resolvedUrl
-    }
-    preload.onload = () => {
-      if (requestId !== backgroundRequestRef.current) return
-      const nextIndex = activeBackgroundIndexRef.current === 0 ? 1 : 0
-      setBackgroundUrls((current) => {
-        const next = [...current] as [string, string]
-        next[nextIndex] = preload.src
-        return next
-      })
-      setIsBackgroundReady(true)
-      // 主页背景单独保存，不能写入工坊共用的外观设置。
-      try {
-        window.localStorage.setItem(HOME_BACKGROUND_STORAGE_KEY, preload.src)
-      } catch {
-        // 浏览器禁止本地存储时仍保留当前页面的背景显示。
-      }
-      // 先让隐藏层完成一次渲染，再切换透明度，确保浏览器能执行交叉淡入淡出。
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          activeBackgroundIndexRef.current = nextIndex
-          setActiveBackgroundIndex(nextIndex)
-        })
-      })
-    }
-    preload.onerror = () => {
-      if (url !== FALLBACK_BACKGROUND_URL) {
-        loadBackground(`${FALLBACK_BACKGROUND_URL}?home=${Date.now()}`)
-        return
-      }
-    }
-    void loadResolvedImage()
-  }
-
   useEffect(() => {
-    loadBackground(`${PIXIV_RANDOM_BACKGROUND_API_URL}&home=${Date.now()}`)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    const loader = createHomeBackgroundLoader({
+      prepare: (url) => {
+        const nextIndex = activeBackgroundIndexRef.current === 0 ? 1 : 0
+        setBackgroundUrls((current) => {
+          const next = [...current] as [string, string]
+          next[nextIndex] = url
+          return next
+        })
+      },
+      commit: () => {
+        const nextIndex = activeBackgroundIndexRef.current === 0 ? 1 : 0
+        activeBackgroundIndexRef.current = nextIndex
+        setActiveBackgroundIndex(nextIndex)
+        setIsBackgroundReady(true)
+      },
+    })
+    backgroundLoaderRef.current = loader
+    void loader.start()
+    return () => {
+      // 返回工坊或开发模式重复挂载时，旧加载器不得再切图或写入缓存。
+      loader.dispose()
+      backgroundLoaderRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     if (isPaused || !isBackgroundReady) return
     const timer = window.setInterval(() => {
-      loadBackground(`${PIXIV_RANDOM_BACKGROUND_API_URL}&home=${Date.now()}`)
+      void backgroundLoaderRef.current?.rotate()
     }, BACKGROUND_ROTATION_MS)
     return () => window.clearInterval(timer)
   }, [isPaused, isBackgroundReady])
 
   const refreshBackground = () => {
-    loadBackground(`${PIXIV_RANDOM_BACKGROUND_API_URL}&home=${Date.now()}`)
+    void backgroundLoaderRef.current?.refresh()
   }
 
   return (
@@ -147,7 +71,7 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
           key={index}
           aria-hidden
           className={`home-landing-background ${activeBackgroundIndex === index ? 'home-landing-background-active' : ''}`}
-          style={{ backgroundImage: `url("${url}")` }}
+          style={{ backgroundImage: url ? `url(${JSON.stringify(url)})` : undefined }}
         />
       ))}
       <div aria-hidden className="home-landing-shade" />
