@@ -1736,10 +1736,10 @@ export default function InputBar() {
     )
   }
 
-  // 参数按内容分配宽度，新增背景选项时不再把数量挤到单独一行。
+  // 参数按内容设置基础宽度，再按比例伸缩铺满每行，保持紧凑间距。
   const renderParams = (mobile = false) => (
-    <div className={`${mobile ? 'grid grid-cols-2' : 'flex flex-wrap items-end'} gap-2 text-xs`}>
-      <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? 'col-span-2' : 'w-60'}`}>
+    <div className={`${mobile ? 'grid grid-cols-2 [&>label:last-child:nth-child(even)]:col-span-2' : 'flex flex-wrap items-end'} gap-2 text-xs`}>
+      <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? 'col-span-2' : 'flex-[2_1_15rem]'}`}>
         <span className="text-gray-400 dark:text-gray-500 ml-1">模型</span>
         <Select
           value={selectedModelOption?.value ?? FIXED_IMAGE_MODEL_OPTIONS[0].value}
@@ -1749,7 +1749,7 @@ export default function InputBar() {
         />
       </label>
       {isBananaModel && (
-        <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'w-28'}`}>
+        <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1_1_7rem]'}`}>
           <span className="text-gray-400 dark:text-gray-500 ml-1">香蕉协议</span>
           <Select
             value={normalizeApiFormat(activeProfile.apiFormat)}
@@ -1764,7 +1764,7 @@ export default function InputBar() {
         </label>
       )}
       <label
-        className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'w-36'}`}
+        className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1.2_1_9rem]'}`}
       >
         <span className="text-gray-400 dark:text-gray-500 ml-1">尺寸</span>
         <button
@@ -1776,7 +1776,7 @@ export default function InputBar() {
           {displaySize}
         </button>
       </label>
-      <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'w-20'}`}>
+      <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1_1_5rem]'}`}>
         <span className="text-gray-400 dark:text-gray-500 ml-1">品质</span>
         <Select
           value={params.quality}
@@ -1786,7 +1786,7 @@ export default function InputBar() {
         />
       </label>
       {supportsTransparentImageBackground(activeProfile.model) && (
-        <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'w-28'}`}>
+        <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1_1_7rem]'}`}>
           <span className="text-gray-400 dark:text-gray-500 ml-1">背景</span>
           <Select
             value={params.background || 'auto'}
@@ -1797,7 +1797,7 @@ export default function InputBar() {
         </label>
       )}
       <label
-        className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'w-[4.5rem]'}`}
+        className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1_1_4.5rem]'}`}
         onMouseEnter={showAgentNHint}
         onMouseLeave={hideNLimitHint}
         onTouchStart={startAgentNHintTouch}
