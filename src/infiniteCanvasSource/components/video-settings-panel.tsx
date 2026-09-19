@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Switch } from "antd";
 
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
@@ -17,7 +16,8 @@ const VIDEO_SIZE_OPTIONS = [
     { value: "1680x720", label: "21:9 宽屏", width: 1680, height: 720 },
 ];
 
-type VideoSettingsValues = Pick<AiConfig, "vquality" | "size" | "videoSeconds" | "videoGenerateAudio">;
+// 音频生成字段由请求层携带，设置面板只呈现用户可选的画面参数。
+type VideoSettingsValues = Pick<AiConfig, "vquality" | "size" | "videoSeconds">;
 export type VideoSettingsChange = <K extends keyof VideoSettingsValues>(key: K, value: VideoSettingsValues[K]) => void;
 
 type VideoSettingsPanelProps = {
@@ -94,10 +94,6 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         ))}
                     </div>
                 </SettingGroup>
-                <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs font-medium" style={{ color: theme.node.muted }}>生成音频</span>
-                    <Switch aria-label="生成音频" checked={config.videoGenerateAudio ?? true} onChange={(checked) => onConfigChange("videoGenerateAudio", checked)} />
-                </div>
             </div>
         </ImageSettingsTheme>
     );
