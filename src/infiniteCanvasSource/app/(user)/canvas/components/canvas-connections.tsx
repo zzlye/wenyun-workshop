@@ -10,10 +10,11 @@ type ConnectionPathProps = {
     from: CanvasNodeData;
     to: CanvasNodeData;
     active: boolean;
+    flowReversed: boolean;
     onSelect: (connectionId: string) => void;
 };
 
-export const ConnectionPath = memo(function ConnectionPath({ connection, from, to, active, onSelect }: ConnectionPathProps) {
+export const ConnectionPath = memo(function ConnectionPath({ connection, from, to, active, flowReversed, onSelect }: ConnectionPathProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const pathD = getConnectionPathGeometry(from, to, connection).path;
 
@@ -42,7 +43,7 @@ export const ConnectionPath = memo(function ConnectionPath({ connection, from, t
             {active ? (
                 <path
                     d={pathD}
-                    className="canvas-connection-flow is-active"
+                    className={`canvas-connection-flow is-active${flowReversed ? " is-reversed" : ""}`}
                     stroke={theme.node.flowStroke}
                     strokeWidth="3.5"
                     strokeOpacity="0.95"

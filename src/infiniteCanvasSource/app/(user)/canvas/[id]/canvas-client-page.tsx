@@ -3421,6 +3421,8 @@ function InfiniteCanvasPage() {
                                     from={from}
                                     to={to}
                                     active={selectedConnectionId === connection.id || relatedHighlight.connectionIds.has(connection.id)}
+                                    // 选中节点在连线起点时反向播放，让所有相邻连线都汇聚到选中节点。
+                                    flowReversed={activeNodeId === connection.fromNodeId}
                                     onSelect={handleConnectionSelect}
                                 />
                             );

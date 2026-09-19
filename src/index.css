@@ -801,6 +801,10 @@ header :where(button, [role="button"]) {
   animation-duration: 1.2s;
 }
 
+.canvas-connection-flow.is-reversed {
+  animation-name: canvas-connection-flow-reversed;
+}
+
 @keyframes canvas-connection-flow {
   from {
     stroke-dashoffset: 0;
@@ -810,9 +814,19 @@ header :where(button, [role="button"]) {
   }
 }
 
+@keyframes canvas-connection-flow-reversed {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: 168;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .canvas-connection-flow,
-  .canvas-connection-flow.is-active {
+  .canvas-connection-flow.is-active,
+  .canvas-connection-flow.is-reversed {
     animation: none;
     stroke-dashoffset: 0;
   }
