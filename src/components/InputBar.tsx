@@ -1736,9 +1736,10 @@ export default function InputBar() {
     )
   }
 
-  const renderParams = (cols: string) => (
-    <div className={`grid ${cols} gap-2 text-xs flex-1`}>
-      <label className="relative flex flex-col gap-0.5">
+  // 参数按内容分配宽度，新增背景选项时不再把数量挤到单独一行。
+  const renderParams = (mobile = false) => (
+    <div className={`${mobile ? 'grid grid-cols-2' : 'flex flex-wrap items-end'} gap-2 text-xs`}>
+      <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? 'col-span-2' : 'w-60'}`}>
         <span className="text-gray-400 dark:text-gray-500 ml-1">模型</span>
         <Select
           value={selectedModelOption?.value ?? FIXED_IMAGE_MODEL_OPTIONS[0].value}
@@ -1748,7 +1749,7 @@ export default function InputBar() {
         />
       </label>
       {isBananaModel && (
-        <label className="relative flex flex-col gap-0.5">
+        <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'w-28'}`}>
           <span className="text-gray-400 dark:text-gray-500 ml-1">香蕉协议</span>
           <Select
             value={normalizeApiFormat(activeProfile.apiFormat)}
@@ -1763,7 +1764,7 @@ export default function InputBar() {
         </label>
       )}
       <label
-        className="relative flex flex-col gap-0.5"
+        className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'w-36'}`}
       >
         <span className="text-gray-400 dark:text-gray-500 ml-1">尺寸</span>
         <button
@@ -1775,7 +1776,7 @@ export default function InputBar() {
           {displaySize}
         </button>
       </label>
-      <label className="relative flex flex-col gap-0.5">
+      <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'w-20'}`}>
         <span className="text-gray-400 dark:text-gray-500 ml-1">品质</span>
         <Select
           value={params.quality}
@@ -1785,7 +1786,7 @@ export default function InputBar() {
         />
       </label>
       {supportsTransparentImageBackground(activeProfile.model) && (
-        <label className="relative flex flex-col gap-0.5">
+        <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'w-28'}`}>
           <span className="text-gray-400 dark:text-gray-500 ml-1">背景</span>
           <Select
             value={params.background || 'auto'}
@@ -1796,7 +1797,7 @@ export default function InputBar() {
         </label>
       )}
       <label
-        className="relative flex flex-col gap-0.5"
+        className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'w-[4.5rem]'}`}
         onMouseEnter={showAgentNHint}
         onMouseLeave={hideNLimitHint}
         onTouchStart={startAgentNHintTouch}
@@ -1830,7 +1831,7 @@ export default function InputBar() {
           type={agentAutoImageCount ? 'text' : 'number'}
           min={agentAutoImageCount ? undefined : 1}
           max={agentAutoImageCount ? undefined : outputImageLimit}
-          className={`px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] focus:outline-none text-xs transition-all duration-200 shadow-sm ${
+          className={`min-w-0 w-full px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] focus:outline-none text-xs transition-all duration-200 shadow-sm ${
             agentAutoImageCount
               ? 'bg-gray-100/50 dark:bg-white/[0.05] opacity-50 cursor-not-allowed'
               : 'bg-white/50 dark:bg-white/[0.03]'
@@ -2120,7 +2121,7 @@ export default function InputBar() {
             {/* 桌面端布局 */}
             <div className="hidden sm:flex flex-wrap items-end gap-3">
               <div className="min-w-0 flex-1 basis-[28rem]">
-                {renderParams(isBananaModel ? 'grid-cols-2 lg:grid-cols-5' : 'grid-cols-2 lg:grid-cols-4')}
+                {renderParams()}
               </div>
 
               <div className="ml-auto flex shrink-0 gap-2 mb-0.5">
@@ -2185,7 +2186,7 @@ export default function InputBar() {
             <div className="sm:hidden flex flex-col gap-2">
               <div className={`collapse-section${mobileCollapsed ? ' collapsed' : ''}`}>
                 <div className="collapse-inner">
-                  {renderParams(isBananaModel ? 'grid-cols-2' : 'grid-cols-4')}
+                  {renderParams(true)}
                   <div className="h-2" />
                 </div>
               </div>

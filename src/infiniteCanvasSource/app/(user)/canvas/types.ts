@@ -103,10 +103,15 @@ export type CanvasGroupData = {
     padding: number;
 };
 
+export type ConnectionSide = "left" | "right";
+
 export type CanvasConnection = {
     id: string;
     fromNodeId: string;
     toNodeId: string;
+    // 数据流向与物理连接侧分开保存，避免反向拖线后端点翻到背面。
+    fromSide?: ConnectionSide;
+    toSide?: ConnectionSide;
 };
 
 export type CanvasAssistantReference = {

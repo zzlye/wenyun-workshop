@@ -15,7 +15,7 @@ type ConnectionPathProps = {
 
 export const ConnectionPath = memo(function ConnectionPath({ connection, from, to, active, onSelect }: ConnectionPathProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
-    const pathD = getConnectionPathGeometry(from, to).path;
+    const pathD = getConnectionPathGeometry(from, to, connection).path;
 
     return (
         <g data-connection-id={connection.id}>
@@ -42,16 +42,17 @@ export const ConnectionPath = memo(function ConnectionPath({ connection, from, t
     );
 });
 
-export function ActiveConnectionPath({ node, handle, mouseWorld }: { node?: CanvasNodeData; handle: ConnectionHandle; mouseWorld: Position }) {
+export function ActiveConnectionPath({ node, targetNode, handle, mouseWorld }: { node?: CanvasNodeData; targetNode?: CanvasNodeData; handle: ConnectionHandle; mouseWorld: Position }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     if (!node) return null;
 
-    const startX = handle.handleType === "source" ? node.position.x + node.width : mouseWorld.x;
-    const startY = handle.handleType === "source" ? node.position.y + node.height / 2 : mouseWorld.y;
-    const endX = handle.handleType === "source" ? mouseWorld.x : node.position.x;
-    const endY = handle.handleType === "source" ? mouseWorld.y : node.position.y + node.height / 2;
-    const distance = Math.abs(endX - startX);
-    const pathD = `M ${startX} ${startY} C ${startX + distance * 0.5} ${startY}, ${endX - distance * 0.5} ${endY}, ${endX} ${endY}`;
+    const fromSide = handle.handleType === "source" ? "right" : "left";
+    const toSide = targetNode
+        ? targetNode.type === "config" || mouseWorld.x <= targetNode.position.x + targetNode.width / 2 ? "left" : "right"
+        : fromSide === "right" ? "left" : "right";
+    // 吸附预览与落点后的曲线共用端点算法，松开鼠标时不再跳到另一侧。
+    const target = targetNode ?? { ...node, position: mouseWorld, width: 0, height: 0 };
+    const pathD = getConnectionPathGeometry(node, target, { fromSide, toSide }).path;
 
     return <path d={pathD} stroke={theme.node.activeStroke} strokeWidth="2" fill="none" strokeDasharray="5,5" />;
 }

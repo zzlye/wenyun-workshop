@@ -1,4 +1,4 @@
-import type { CanvasConnection, CanvasNodeData, ViewportTransform } from "../types";
+import type { CanvasConnection, CanvasNodeData, Position, ViewportTransform } from "../types";
 
 export type CanvasViewportSize = {
     width: number;
@@ -15,6 +15,10 @@ export type CanvasWorldBounds = {
 export type ConnectionPathGeometry = {
     path: string;
     bounds: CanvasWorldBounds;
+    start: Position;
+    end: Position;
+    controlStart: Position;
+    controlEnd: Position;
 };
 
 export const CANVAS_VIEWPORT_PADDING = 280;
@@ -40,16 +44,24 @@ export function getVisibleCanvasNodes(nodes: CanvasNodeData[], bounds: CanvasWor
     return nodes.filter((node) => !isHidden?.(node) && isCanvasNodeVisible(node, bounds));
 }
 
-export function getConnectionPathGeometry(from: CanvasNodeData, to: CanvasNodeData): ConnectionPathGeometry {
-    const startX = from.position.x + from.width;
+export function getConnectionPathGeometry(from: CanvasNodeData, to: CanvasNodeData, connection?: Pick<CanvasConnection, "fromSide" | "toSide">): ConnectionPathGeometry {
+    // 新连线尊重用户选择；旧数据和自动生成的连线使用相邻侧，兼容已有画布。
+    const forward = from.position.x + from.width / 2 <= to.position.x + to.width / 2;
+    const fromSide = connection?.fromSide ?? (forward ? "right" : "left");
+    const toSide = connection?.toSide ?? (to.type === "config" || forward ? "left" : "right");
+    const startX = from.position.x + (fromSide === "right" ? from.width : 0);
     const startY = from.position.y + from.height / 2;
-    const endX = to.position.x;
+    const endX = to.position.x + (toSide === "right" ? to.width : 0);
     const endY = to.position.y + to.height / 2;
     const curvature = Math.max(Math.abs(endX - startX) * 0.5, 50);
-    const controlStartX = startX + curvature;
-    const controlEndX = endX - curvature;
+    const controlStartX = startX + (fromSide === "right" ? curvature : -curvature);
+    const controlEndX = endX + (toSide === "right" ? curvature : -curvature);
 
     return {
+        start: { x: startX, y: startY },
+        end: { x: endX, y: endY },
+        controlStart: { x: controlStartX, y: startY },
+        controlEnd: { x: controlEndX, y: endY },
         path: `M ${startX} ${startY} C ${controlStartX} ${startY}, ${controlEndX} ${endY}, ${endX} ${endY}`,
         bounds: {
             left: Math.min(startX, endX, controlStartX, controlEndX),
@@ -60,8 +72,8 @@ export function getConnectionPathGeometry(from: CanvasNodeData, to: CanvasNodeDa
     };
 }
 
-export function isCanvasConnectionVisible(from: CanvasNodeData, to: CanvasNodeData, bounds: CanvasWorldBounds, hitPadding = 30) {
-    const connectionBounds = getConnectionPathGeometry(from, to).bounds;
+export function isCanvasConnectionVisible(from: CanvasNodeData, to: CanvasNodeData, bounds: CanvasWorldBounds, hitPadding = 30, connection?: Pick<CanvasConnection, "fromSide" | "toSide">) {
+    const connectionBounds = getConnectionPathGeometry(from, to, connection).bounds;
     return connectionBounds.right + hitPadding > bounds.left && connectionBounds.left - hitPadding < bounds.right && connectionBounds.bottom + hitPadding > bounds.top && connectionBounds.top - hitPadding < bounds.bottom;
 }
 
@@ -75,6 +87,6 @@ export function getVisibleCanvasConnections(
         const from = nodeById.get(connection.fromNodeId);
         const to = nodeById.get(connection.toNodeId);
         if (!from || !to || isHiddenEndpoint?.(from) || isHiddenEndpoint?.(to)) return false;
-        return isCanvasConnectionVisible(from, to, bounds);
+        return isCanvasConnectionVisible(from, to, bounds, 30, connection);
     });
 }

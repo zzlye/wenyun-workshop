@@ -36,6 +36,7 @@ import { cloneNodeMetadataForDuplicate } from "../utils/canvas-node-copy";
 import { layoutDroppedCanvasNodes } from "../utils/canvas-file-drop";
 import { fitNodeSize, nodeSizeFromRatio } from "../utils/canvas-node-size";
 import { getCanvasViewportBounds, getConnectionPathGeometry, getVisibleCanvasConnections, getVisibleCanvasNodes } from "../utils/canvas-viewport";
+import { normalizeConnection } from "../utils/canvas-connections";
 import { App, Button, Dropdown, Input, Modal } from "antd";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "../constants";
 import { ActiveConnectionPath, ConnectionPath } from "../components/canvas-connections";
@@ -114,7 +115,7 @@ type CanvasDragVisualState = {
     draggedNodeIds: Set<string>;
     nodeElements: Array<{ node: CanvasNodeData; element: HTMLElement }>;
     groupElements: HTMLElement[];
-    connections: Array<{ from: CanvasNodeData; to: CanvasNodeData; paths: SVGPathElement[] }>;
+    connections: Array<{ from: CanvasNodeData; to: CanvasNodeData; connection: CanvasConnection; paths: SVGPathElement[] }>;
 };
 
 const VIDEO_NODE_MAX_WIDTH = 420;
@@ -911,10 +912,12 @@ function InfiniteCanvasPage() {
     }, []);
 
     const connectNodes = useCallback(
-        (current: ConnectionHandle, targetNodeId: string) => {
+        (current: ConnectionHandle, targetNodeId: string, targetPoint: Position) => {
             if (current.nodeId === targetNodeId) return;
 
-            const connection = normalizeConnection(current.nodeId, targetNodeId, nodesRef.current, current.handleType);
+            const targetNode = nodesRef.current.find((node) => node.id === targetNodeId);
+            const targetSide = targetNode && targetPoint.x > targetNode.position.x + targetNode.width / 2 ? "right" : "left";
+            const connection = normalizeConnection(current.nodeId, targetNodeId, nodesRef.current, current.handleType, targetSide);
             if (!connection) {
                 message.warning("配置节点之间不能连接");
                 return;
@@ -922,7 +925,10 @@ function InfiniteCanvasPage() {
             const { fromNodeId, toNodeId } = connection;
             const exists = connectionsRef.current.some((conn) => conn.fromNodeId === fromNodeId && conn.toNodeId === toNodeId);
             if (!exists) {
-                setConnections((prev) => [...prev, { id: `conn-${Date.now()}`, fromNodeId, toNodeId }]);
+                setConnections((prev) => [...prev, { id: nanoid(), ...connection }]);
+            } else {
+                // 同一数据连接重新拖线时更新端点，不新增重复的上游引用。
+                setConnections((prev) => prev.map((item) => item.fromNodeId === fromNodeId && item.toNodeId === toNodeId ? { ...item, ...connection } : item));
             }
             setContextMenu(null);
         },
@@ -1033,18 +1039,8 @@ function InfiniteCanvasPage() {
         const to = nodeById.get(connection.toNodeId);
         if (!from || !to || isHiddenBatchConnectionEndpoint(from, nodes) || isHiddenBatchConnectionEndpoint(to, nodes)) return null;
 
-        const startX = from.position.x + from.width;
-        const startY = from.position.y + from.height / 2;
-        const endX = to.position.x;
-        const endY = to.position.y + to.height / 2;
-        const curvature = Math.max(Math.abs(endX - startX) * 0.5, 50);
-        return cubicPoint(
-            { x: startX, y: startY },
-            { x: startX + curvature, y: startY },
-            { x: endX - curvature, y: endY },
-            { x: endX, y: endY },
-            0.5,
-        );
+        const geometry = getConnectionPathGeometry(from, to, connection);
+        return cubicPoint(geometry.start, geometry.controlStart, geometry.controlEnd, geometry.end, 0.5);
     }, [connections, nodeById, nodes, selectedConnectionId]);
     const toolbarNode = toolbarNodeId ? nodeById.get(toolbarNodeId) || null : null;
     const infoNode = infoNodeId ? nodeById.get(infoNodeId) || null : null;
@@ -1664,7 +1660,7 @@ function InfiniteCanvasPage() {
             const from = currentNodeById.get(connection.fromNodeId);
             const to = currentNodeById.get(connection.toNodeId);
             if (!from || !to) return [];
-            return [{ from, to, paths: Array.from(element.querySelectorAll<SVGPathElement>("path")) }];
+            return [{ from, to, connection, paths: Array.from(element.querySelectorAll<SVGPathElement>("path")) }];
         });
         const fullyDraggedGroupIds = new Set(groupsRef.current.filter((group) => group.nodeIds.length > 0 && group.nodeIds.every((nodeId) => draggedNodeIds.has(nodeId))).map((group) => group.id));
         const groupElements = Array.from(container.querySelectorAll<HTMLElement>("[data-canvas-group-visual-id]")).filter((element) => {
@@ -1690,10 +1686,10 @@ function InfiniteCanvasPage() {
         visuals.groupElements.forEach((element) => {
             element.style.transform = `translate(${dx}px, ${dy}px)`;
         });
-        visuals.connections.forEach(({ from, to, paths }) => {
+        visuals.connections.forEach(({ from, to, connection, paths }) => {
             const previewFrom = visuals.draggedNodeIds.has(from.id) ? { ...from, position: { x: from.position.x + dx, y: from.position.y + dy } } : from;
             const previewTo = visuals.draggedNodeIds.has(to.id) ? { ...to, position: { x: to.position.x + dx, y: to.position.y + dy } } : to;
-            const path = getConnectionPathGeometry(previewFrom, previewTo).path;
+            const path = getConnectionPathGeometry(previewFrom, previewTo, connection).path;
             paths.forEach((element) => element.setAttribute("d", path));
         });
     }, []);
@@ -1932,7 +1928,7 @@ function InfiniteCanvasPage() {
             if (currentConnection) {
                 const targetNodeId = getConnectableNodeAtPoint(event.clientX, event.clientY, currentConnection) || connectionTargetNodeIdRef.current;
                 if (targetNodeId) {
-                    connectNodes(currentConnection, targetNodeId);
+                    connectNodes(currentConnection, targetNodeId, screenToCanvas(event.clientX, event.clientY));
                     setConnecting(null);
                 } else {
                     setNodeHandlePointer(null);
@@ -3429,7 +3425,7 @@ function InfiniteCanvasPage() {
                                 />
                             );
                         })}
-                        {connectingParams ? <ActiveConnectionPath node={nodeById.get(connectingParams.nodeId)} handle={connectingParams} mouseWorld={mouseWorld} /> : null}
+                        {connectingParams ? <ActiveConnectionPath node={nodeById.get(connectingParams.nodeId)} targetNode={connectionTargetNodeId ? nodeById.get(connectionTargetNodeId) : undefined} handle={connectingParams} mouseWorld={mouseWorld} /> : null}
                     </svg>
 
                     {selectedConnectionActionPosition ? (
@@ -4274,17 +4270,6 @@ function applyNodeConfigPatch(node: CanvasNodeData, patch: Partial<CanvasNodeDat
     const spec = node.type === CanvasNodeType.Video ? NODE_DEFAULT_SIZE[CanvasNodeType.Video] : NODE_DEFAULT_SIZE[CanvasNodeType.Image];
     const size = typeof patch.size === "string" && !node.metadata?.content ? nodeSizeFromRatio(patch.size, spec.width, spec.height) : null;
     return size && (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video) ? { ...next, ...size, position: { x: node.position.x + node.width / 2 - size.width / 2, y: node.position.y + node.height / 2 - size.height / 2 } } : next;
-}
-
-function normalizeConnection(firstNodeId: string, secondNodeId: string, nodes: CanvasNodeData[], firstHandleType: "source" | "target") {
-    const first = nodes.find((node) => node.id === firstNodeId);
-    const second = nodes.find((node) => node.id === secondNodeId);
-    if (!first || !second || first.id === second.id) return null;
-    if (first.type === CanvasNodeType.Config && second.type === CanvasNodeType.Config) return null;
-    if (second.type === CanvasNodeType.Config) return { fromNodeId: first.id, toNodeId: second.id };
-    if (first.type === CanvasNodeType.Config && firstHandleType === "target") return { fromNodeId: second.id, toNodeId: first.id };
-    if (first.type === CanvasNodeType.Config) return { fromNodeId: first.id, toNodeId: second.id };
-    return { fromNodeId: first.id, toNodeId: second.id };
 }
 
 function getInputSummary(inputs: NodeGenerationInput[]) {
