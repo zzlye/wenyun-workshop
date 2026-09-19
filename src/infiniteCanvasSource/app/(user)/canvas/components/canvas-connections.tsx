@@ -43,13 +43,13 @@ export const ConnectionPath = memo(function ConnectionPath({ connection, from, t
                 <path
                     d={pathD}
                     className="canvas-connection-flow is-active"
-                    stroke={theme.node.activeStroke}
+                    stroke={theme.node.flowStroke}
                     strokeWidth="3.5"
                     strokeOpacity="0.95"
                     strokeDasharray="18 150"
                     strokeLinecap="round"
                     fill="none"
-                    style={{ filter: `drop-shadow(0 0 5px ${theme.node.activeStroke}bb)`, pointerEvents: "none" }}
+                    style={{ filter: `drop-shadow(0 0 5px ${theme.node.flowStroke}bb)`, pointerEvents: "none" }}
                 />
             ) : null}
         </g>
