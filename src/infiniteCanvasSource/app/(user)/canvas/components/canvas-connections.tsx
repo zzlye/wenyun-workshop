@@ -38,6 +38,18 @@ export const ConnectionPath = memo(function ConnectionPath({ connection, from, t
                 fill="none"
                 style={{ filter: active ? `drop-shadow(0 0 8px ${theme.node.activeStroke}66)` : undefined, pointerEvents: "none" }}
             />
+            {/* 高亮光带沿数据流向移动，底层连线仍保持稳定，避免动画影响选中和点击。 */}
+            <path
+                d={pathD}
+                className={`canvas-connection-flow${active ? " is-active" : ""}`}
+                stroke={active ? theme.node.activeStroke : theme.node.activeStroke}
+                strokeWidth={active ? 3.5 : 2.5}
+                strokeOpacity={active ? 0.95 : 0.78}
+                strokeDasharray="18 150"
+                strokeLinecap="round"
+                fill="none"
+                style={{ filter: `drop-shadow(0 0 5px ${theme.node.activeStroke}bb)`, pointerEvents: "none" }}
+            />
         </g>
     );
 });

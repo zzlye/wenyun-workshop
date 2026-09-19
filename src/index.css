@@ -792,6 +792,32 @@ header :where(button, [role="button"]) {
   pointer-events: none;
 }
 
+/* 连线上的短光带持续向终点移动，模拟节点之间的数据流动。 */
+.canvas-connection-flow {
+  animation: canvas-connection-flow 1.8s linear infinite;
+}
+
+.canvas-connection-flow.is-active {
+  animation-duration: 1.2s;
+}
+
+@keyframes canvas-connection-flow {
+  from {
+    stroke-dashoffset: 168;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-connection-flow,
+  .canvas-connection-flow.is-active {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
 .canvas-node {
   position: absolute;
   overflow: hidden;
