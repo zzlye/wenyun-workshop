@@ -30,4 +30,19 @@ describe('fixed image model pricing', () => {
     expect(getImageSizeTiersForModel('seedream-5-pro')).toEqual(['1K', '2K'])
   })
 
+  it('allows all supported resolutions for every GPT Image 2.5 route', () => {
+    const models = [
+      'gpt-image-2.5-flare',
+      'gpt-image-2.5-sunburst',
+      'gpt-image-2.5-flare-4k',
+      'gpt-image-2.5-sunburst-4k',
+      'gpt-image-2.5-flare-满血',
+      'gpt-image-2.5-sunburst-满血',
+    ]
+
+    for (const model of models) {
+      expect(getImageSizeTiersForModel(model)).toEqual(['1K', '2K', '4K'])
+    }
+  })
+
 })
