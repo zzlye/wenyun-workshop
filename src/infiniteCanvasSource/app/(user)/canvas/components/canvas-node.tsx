@@ -631,7 +631,25 @@ function VideoNodeContent({ node, theme }: NodeContentRendererProps) {
 
     return (
         <div className="h-full w-full overflow-hidden rounded-3xl bg-black">
-            <video ref={videoRef} src={videoUrl} controls playsInline preload="metadata" autoPlay={false} className="h-full w-full bg-black object-contain" data-canvas-no-zoom />
+            <video
+                ref={videoRef}
+                src={videoUrl}
+                controls
+                playsInline
+                preload="metadata"
+                autoPlay={false}
+                className="h-full w-full bg-black object-contain"
+                data-canvas-no-zoom
+                onClick={(event) => {
+                    const video = event.currentTarget;
+                    const rect = video.getBoundingClientRect();
+                    // 点击节点画面只负责选中，不触发浏览器原生的点击播放；底部控制条仍可正常使用。
+                    if (event.clientY < rect.bottom - 48) {
+                        event.preventDefault();
+                        video.pause();
+                    }
+                }}
+            />
         </div>
     );
 }
