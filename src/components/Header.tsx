@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Home } from 'lucide-react'
+import { Home, WandSparkles } from 'lucide-react'
 import { useStore } from '../store'
 import { useTooltip } from '../hooks/useTooltip'
 import { dismissAllTooltips } from '../lib/tooltipDismiss'
@@ -7,7 +7,7 @@ import { LOCKED_WENYUN_PROFILE_ID, getActiveApiProfile } from '../lib/apiProfile
 import { AnimatedThemeToggler } from '../infiniteCanvasSource/components/ui/animated-theme-toggler'
 import ViewportTooltip from './ViewportTooltip'
 import HelpModal from './HelpModal'
-import { HelpCircleIcon, SettingsIcon, SparklesIcon } from './icons'
+import { HelpCircleIcon, SettingsIcon } from './icons'
 import AccountLoginModal from './AccountLoginModal'
 import AccountBalanceBar from './AccountBalanceBar'
 
@@ -45,7 +45,8 @@ export default function Header({ onOpenCanvas, onOpenHome }: HeaderProps) {
                 <Home className="h-5 w-5" />
               </button>
             )}
-            <h1 className="inline-flex items-start relative mr-2">
+            {/* 标题不保留额外外边距，与相邻按钮共用同一条垂直中心线。 */}
+            <h1 className="!m-0 inline-flex items-center">
               <span className="text-[17px] sm:text-lg font-bold tracking-tight text-gray-800 dark:text-gray-100 transition-colors">
                 文运工坊
               </span>
@@ -55,7 +56,7 @@ export default function Header({ onOpenCanvas, onOpenHome }: HeaderProps) {
               onClick={onOpenCanvas}
               className="canvas-launch-button"
             >
-              <SparklesIcon className="h-4 w-4" />
+              <WandSparkles className="h-4 w-4" />
               <span>画布工坊</span>
             </button>
           </div>

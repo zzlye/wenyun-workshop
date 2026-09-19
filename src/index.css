@@ -563,6 +563,11 @@ html[data-workspace-vt]::view-transition-new(root) {
 }
 
 .canvas-launch-button {
+  /* 两个工坊的导航使用固定高度和行高，避免继承样式及浮动动画造成错位。 */
+  height: 2.25rem;
+  flex-shrink: 0;
+  line-height: 1;
+  letter-spacing: 0;
   overflow: hidden;
   border: 1px solid rgba(168, 85, 247, 0.35);
   border-radius: 9999px;
@@ -572,7 +577,6 @@ html[data-workspace-vt]::view-transition-new(root) {
   color: #f5f3ff;
   background: linear-gradient(135deg, rgba(168, 85, 247, 0.98), rgba(79, 70, 229, 0.96));
   box-shadow: none;
-  animation: canvas-float 2.8s ease-in-out infinite;
 }
 
 .canvas-launch-button:hover {
