@@ -7,7 +7,6 @@ import { AudioLines, ChevronRight, Clock, Image as ImageIcon, Plus, RefreshCw, S
 import { canvasThemes } from "@/lib/canvas-theme";
 import { resolveImageUrl } from "@/services/image-storage";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { formatImageRatioWithRequestedSize } from "../../../../../lib/size";
 import { CanvasNodeType, type CanvasNodeData, type Position } from "../types";
 
 type ResizeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
@@ -400,7 +399,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                     </button>
                 ) : null}
 
-                {showImageInfo && data.type === CanvasNodeType.Image ? <ImageInfoBar node={data} /> : null}
+                {showImageInfo && (data.type === CanvasNodeType.Image || data.type === CanvasNodeType.Video) ? <NodeInfoBar node={data} /> : null}
 
                 {!hasImageContent && !hasVideoContent && !hasAudioContent ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ background: `linear-gradient(to top, ${theme.canvas.background}66, transparent)` }} /> : null}
 
@@ -788,7 +787,7 @@ function ImageContent({
     );
 }
 
-function ImageInfoBar({ node }: { node: CanvasNodeData }) {
+function NodeInfoBar({ node }: { node: CanvasNodeData }) {
     const [now, setNow] = useState(Date.now());
     const isLoading = node.metadata?.status === "loading";
 
@@ -799,23 +798,25 @@ function ImageInfoBar({ node }: { node: CanvasNodeData }) {
         return () => window.clearInterval(timer);
     }, [isLoading, node.id]);
 
-    const width = Math.round(node.metadata?.naturalWidth || node.width);
-    const height = Math.round(node.metadata?.naturalHeight || node.height);
-    const hasFinalSize = Boolean(node.metadata?.content && width > 0 && height > 0);
+    const width = Math.round(node.metadata?.naturalWidth || 0);
+    const height = Math.round(node.metadata?.naturalHeight || 0);
+    const hasResolution = Boolean(node.metadata?.naturalWidth && node.metadata?.naturalHeight);
+    const hasFinalSize = Boolean(node.metadata?.content);
     const elapsed = isLoading ? Math.max(0, now - (node.metadata?.generationStartedAt || now)) : node.metadata?.generationElapsedMs;
 
     if (!isLoading && !hasFinalSize) return null;
 
     return (
         <div className="pointer-events-none absolute left-3 top-3 z-40 flex max-w-[calc(100%-24px)] items-center gap-1.5">
-            {isLoading || !hasFinalSize ? (
+            {isLoading ? (
                 <span className="flex items-center gap-1 rounded bg-black/50 px-1.5 py-0.5 font-mono text-[11px] leading-none text-white backdrop-blur-sm">
                     <Clock className="size-3" />
                     {formatDuration(elapsed)}
                 </span>
+            ) : !hasResolution ? (
+                <span className="rounded bg-black/50 px-1.5 py-0.5 text-[11px] font-medium leading-none text-white/90 backdrop-blur-sm">分辨率待获取</span>
             ) : (
                 <>
-                    <span className="rounded bg-black/50 px-1.5 py-0.5 font-mono text-[11px] leading-none text-white backdrop-blur-sm">{formatImageRatioWithRequestedSize(width, height, node.metadata?.size)}</span>
                     <span className="rounded bg-black/50 px-1.5 py-0.5 text-[11px] font-medium leading-none text-white/90 backdrop-blur-sm">{width}×{height}</span>
                 </>
             )}

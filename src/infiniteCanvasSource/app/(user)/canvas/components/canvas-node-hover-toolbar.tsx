@@ -204,7 +204,12 @@ export function CanvasNodeInfoModal({ node, inputs = [], open, onClose }: { node
     const imageBytes = node?.type === CanvasNodeType.Image && node.metadata?.content ? getDataUrlByteSize(node.metadata.content) : 0;
     const batchCount = node?.type === CanvasNodeType.Image ? node.metadata?.batchChildIds?.length || 0 : 0;
     const generationDuration = formatGenerationDuration(node?.metadata?.generationElapsedMs);
-    const imageSize = node?.type === CanvasNodeType.Image && (node.metadata?.naturalWidth || node.metadata?.naturalHeight) ? `${Math.round(node.metadata?.naturalWidth || node.width)} x ${Math.round(node.metadata?.naturalHeight || node.height)}` : `${Math.round(node?.width || 0)} x ${Math.round(node?.height || 0)}`;
+    const isMedia = node?.type === CanvasNodeType.Image || node?.type === CanvasNodeType.Video;
+    const mediaResolution = isMedia
+        ? node?.metadata?.naturalWidth && node?.metadata?.naturalHeight
+            ? `${Math.round(node.metadata.naturalWidth)} x ${Math.round(node.metadata.naturalHeight)}`
+            : "待获取"
+        : `${Math.round(node?.width || 0)} x ${Math.round(node?.height || 0)}`;
     const connectedPromptText = useMemo(() => buildConnectedPromptText(inputs), [inputs]);
     const displayPrompt = useMemo(() => {
         const savedGenerationPrompt = node?.metadata?.generationPrompt?.trim() || "";
@@ -256,7 +261,7 @@ export function CanvasNodeInfoModal({ node, inputs = [], open, onClose }: { node
                         <div className="thin-scrollbar h-full space-y-3 overflow-auto pr-1">
                             <InfoRow label="ID" value={node.id} />
                             <InfoRow label="类型" value={node.type === CanvasNodeType.Text ? "文本" : node.type === CanvasNodeType.Image ? "图片" : node.type === CanvasNodeType.Video ? "视频" : "生成配置"} />
-                            <InfoRow label="尺寸" value={imageSize} />
+                            <InfoRow label={isMedia ? "分辨率" : "尺寸"} value={mediaResolution} />
                             <InfoRow label="位置" value={`${Math.round(node.position.x)}, ${Math.round(node.position.y)}`} />
                             <InfoRow label="状态" value={node.metadata?.status || "idle"} />
                             {generationDuration ? <InfoRow label="生成用时" value={generationDuration} /> : null}

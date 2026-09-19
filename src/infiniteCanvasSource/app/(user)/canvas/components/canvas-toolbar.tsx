@@ -203,7 +203,7 @@ export function CanvasToolbar({
                     <div className="mt-3 flex items-center justify-between gap-3 rounded-lg px-1.5 py-1">
                         <span className="inline-flex min-w-0 items-center gap-1.5 text-[11px] font-medium opacity-65">
                             <Info className="size-3.5" />
-                            图片信息
+                            节点信息
                         </span>
                         <Switch size="small" checked={showImageInfo} onChange={onShowImageInfoChange} />
                     </div>
