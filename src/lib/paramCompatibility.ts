@@ -1,6 +1,7 @@
 import { DEFAULT_PARAMS, type AppSettings, type TaskParams } from '../types'
 import { getActiveApiProfile, normalizeImageSizeForProfile } from './apiProfiles'
 import { normalizeImageSize } from './size'
+import { normalizeImageBackground } from './modelPricing'
 
 export const DEFAULT_FAL_IMAGE_SIZE = '1360x1024'
 export const MAX_FAL_OUTPUT_IMAGES = 4
@@ -26,6 +27,11 @@ export function normalizeParamsForSettings(
     output_compression: DEFAULT_PARAMS.output_compression,
     n: Math.min(outputImageLimit, Math.max(1, params.n || DEFAULT_PARAMS.n)),
   }
+
+  // 模型切换后清理透明背景，避免残留参数传给没有开放该能力的渠道。
+  const background = normalizeImageBackground(activeProfile.model, params.background)
+  if (background) nextParams.background = background
+  else if ('background' in nextParams) nextParams.background = undefined
 
   if (activeProfile.provider === 'openai' && activeProfile.codexCli) {
     nextParams.quality = DEFAULT_PARAMS.quality

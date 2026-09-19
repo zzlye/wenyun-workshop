@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useStore, submitTask, submitAgentMessage, stopAgentResponse, addImageFromFile, createInputImageFromFile, deleteImageIfUnreferenced, updateTaskInStore, removeMultipleTasks, getCachedImage, ensureImageCached, getActiveAgentRounds } from '../store'
 import { DEFAULT_PARAMS } from '../types'
 import { FIXED_IMAGE_MODEL_OPTIONS, allowsCustomImageRatioForProfile, getActiveApiProfile, getApiModelUnitCostText, getImageSizeTiersForProfile, isBananaImageModel, normalizeApiFormat, normalizeImageSizeForProfile, normalizeSettings, supportsExtendedImageQuality } from '../lib/apiProfiles'
+import { supportsTransparentImageBackground } from '../lib/modelPricing'
 import { getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
 import { normalizeImageSize } from '../lib/size'
@@ -1783,6 +1784,17 @@ export default function InputBar() {
           className="px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/[0.06] focus:outline-none text-xs transition-all duration-200 shadow-sm"
         />
       </label>
+      {supportsTransparentImageBackground(activeProfile.model) && (
+        <label className="relative flex flex-col gap-0.5">
+          <span className="text-gray-400 dark:text-gray-500 ml-1">背景</span>
+          <Select
+            value={params.background || 'auto'}
+            onChange={(background) => setParams({ background })}
+            options={[{ value: 'auto', label: '自动' }, { value: 'opaque', label: '不透明' }, { value: 'transparent', label: '透明背景' }]}
+            className="px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/[0.06] focus:outline-none text-xs transition-all duration-200 shadow-sm"
+          />
+        </label>
+      )}
       <label
         className="relative flex flex-col gap-0.5"
         onMouseEnter={showAgentNHint}

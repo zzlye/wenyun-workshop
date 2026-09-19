@@ -4,6 +4,7 @@ import { getFixedImageRequestModel, isBananaImageModel, resolveImageApiFormat } 
 import { buildApiUrl, getLockedNewApiProxyPrefix, isLockedApiProxyTarget, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from './devProxy'
 import { fetchImageTask, shouldUseImageTasks } from './imageTasks'
 import { formatImageRatio, normalizeImageSize, parseRatio } from './size'
+import { normalizeImageBackground, supportsTransparentImageBackground } from './modelPricing'
 import {
   assertImageInputPayloadSize,
   assertMaskEditFileSize,
@@ -584,6 +585,7 @@ function createResponsesImageTool(
     output_format: params.output_format,
     moderation: params.moderation,
   }
+  if (params.background) tool.background = params.background
 
   if (shouldRequestImageStream()) {
     tool.partial_images = getStreamPartialImages(profile)
@@ -929,6 +931,9 @@ async function callBananaImageApiAutomatically(opts: CallApiOptions, profile: Ap
 }
 
 async function callOpenAIImageApi(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
+  const background = normalizeImageBackground(profile.model, opts.params.background)
+  // 透明图片必须使用带透明通道的格式；直接调用和重试也经过此处校验。
+  opts = { ...opts, params: { ...opts.params, background, ...(background === 'transparent' && opts.params.output_format === 'jpeg' ? { output_format: 'png' as const, output_compression: null } : {}) } }
   const requestModel = getFixedImageRequestModel(profile.model)
   if (profile.provider === 'openai' && requestModel !== profile.model) {
     return callImagesApi(opts, {
@@ -1006,6 +1011,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
   const mime = MIME_MAP[params.output_format] || 'image/png'
   const proxyConfig = readClientDevProxyConfig()
   const isLockedImageApi = isLockedApiProxyTarget(profile.baseUrl)
+  const usesOfficialImageParams = supportsTransparentImageBackground(profile.model)
   const useImageTasks = Boolean(opts.imageTask) && shouldUseImageTasks(profile.baseUrl)
   // 文运站使用短轮询异步任务；其他内置站点和自定义接口继续保持原路径。
   const useApiProxy = shouldUseApiProxyForBaseUrl(profile.apiProxy, profile.baseUrl, proxyConfig) && !isLockedImageApi
@@ -1039,10 +1045,12 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
         formData.append('n', String(params.n))
       }
       // 网站生图统一要求返回 Base64，避免结果 URL 再经过客户网络二次下载。
-      formData.append('response_format', 'b64_json')
+      // GPT Image 官方接口默认返回 Base64，不接受旧模型的 response_format 参数。
+      if (!usesOfficialImageParams) formData.append('response_format', 'b64_json')
 
-      if (!isLockedImageApi) {
+      if (!isLockedImageApi || usesOfficialImageParams) {
         formData.append('output_format', params.output_format)
+        if (params.background) formData.append('background', params.background)
         formData.append('moderation', params.moderation)
 
         if (!profile.codexCli) {
@@ -1062,14 +1070,14 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       const imageBlobs: Blob[] = []
       for (let i = 0; i < inputImageDataUrls.length; i++) {
         const dataUrl = inputImageDataUrls[i]
-        const blob = !isLockedImageApi && opts.maskDataUrl && i === 0
+        const blob = (!isLockedImageApi || usesOfficialImageParams) && opts.maskDataUrl && i === 0
           ? await imageDataUrlToPngBlob(dataUrl)
           : await dataUrlToBlob(dataUrl)
         imageBlobs.push(blob)
       }
 
-      // 文运与公益站的图生图按公开文档提交，不发送上游不支持的 mask 参数。
-      const maskBlob = !isLockedImageApi && opts.maskDataUrl ? await maskDataUrlToPngBlob(opts.maskDataUrl) : null
+      // 旧渠道不发送 mask；这两个满血渠道按官方图生图协议支持遮罩。
+      const maskBlob = (!isLockedImageApi || usesOfficialImageParams) && opts.maskDataUrl ? await maskDataUrlToPngBlob(opts.maskDataUrl) : null
       if (maskBlob) {
         assertMaskEditFileSize('遮罩主图文件', imageBlobs[0]?.size ?? 0)
         assertMaskEditFileSize('遮罩文件', maskBlob.size)
@@ -1104,6 +1112,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
         output_format: params.output_format,
         moderation: params.moderation,
       }
+      if (params.background) body.background = params.background
 
       if (!profile.codexCli) {
         body.quality = params.quality
@@ -1116,7 +1125,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
         body.n = params.n
       }
       // 网站生图统一要求返回 Base64，生成结果随接口响应直接交给浏览器保存。
-      body.response_format = 'b64_json'
+      if (!usesOfficialImageParams) body.response_format = 'b64_json'
       if (shouldStreamImages) {
         body.stream = true
         body.partial_images = getStreamPartialImages(profile)

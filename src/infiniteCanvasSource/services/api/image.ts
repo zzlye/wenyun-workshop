@@ -9,6 +9,7 @@ import { callImageApi } from "../../../lib/api";
 import { getEffectiveImageApiProfile } from "../../../lib/accountApiKey";
 import { normalizeSettings } from "../../../lib/apiProfiles";
 import { normalizeParamsForSettings } from "../../../lib/paramCompatibility";
+import { normalizeImageBackground } from "../../../lib/modelPricing";
 import { buildApiUrl as buildDevApiUrl, readClientDevProxyConfig } from "../../../lib/devProxy";
 import { sanitizeApiErrorMessage } from "../../../lib/imageApiShared";
 import { createImageTaskIdempotencyKey, shouldUseImageTasks } from "../../../lib/imageTasks";
@@ -94,6 +95,7 @@ function buildTaskParams(config: AiConfig): TaskParams {
         ...DEFAULT_PARAMS,
         n,
         quality,
+        background: normalizeImageBackground(config.imageModel || config.model, config.imageBackground),
         // 品质可以交给模型自动判断；旧画布里残留的比例值按 1K 转成具体尺寸，避免预览和实际请求不一致。
         size: resolveRequestSize(quality === "auto" ? "low" : quality, config.size) || DEFAULT_PARAMS.size,
     };

@@ -35,6 +35,7 @@ export type AiConfig = {
     systemPrompt: string;
     models: string[];
     quality: string;
+    imageBackground: string;
     size: string;
     count: string;
 };
@@ -71,6 +72,7 @@ export const defaultConfig: AiConfig = {
     systemPrompt: "",
     models: [],
     quality: "auto",
+    imageBackground: "auto",
     size: "1024x1024",
     count: "1",
 };

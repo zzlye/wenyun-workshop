@@ -63,6 +63,20 @@ describe("canvas image api", () => {
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZmluYWw=" }]);
     });
 
+    it.each(["gpt-image-2.5-flare-满血", "gpt-image-2.5-sunburst-满血"])("画布 %s 文生图和图生图沿用节点背景参数", async (model) => {
+        const originalFetch = globalThis.fetch;
+        const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => String(input).startsWith("data:") ? originalFetch(input, init) : new Response(JSON.stringify({ data: [{ b64_json: "aW1hZ2U=" }] }), { headers: { "Content-Type": "application/json" } }));
+        useStore.setState({ settings: { ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({ ...profile, model, apiKey: "test-key" })) } });
+        const config = { ...defaultConfig, model, imageModel: model, imageBackground: "transparent", quality: "max", size: "3840x2160" };
+        await requestGeneration(config, "透明背景主体");
+        expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ model, background: "transparent", output_format: "png", quality: "max", size: "3840x2160" });
+        await requestEdit(config, "透明背景主体", [{ id: "ref", name: "参考图", type: "image/png", dataUrl: "data:image/png;base64,aW1hZ2U=" }]);
+        const form = fetchMock.mock.calls.find(([url]) => String(url).includes("/images/edits"))?.[1]?.body as FormData;
+        expect(form.get("background")).toBe("transparent");
+        expect(form.get("quality")).toBe("max");
+        expect(form.get("model")).toBe(model);
+    });
+
     it("让 Seedream 5 Pro 沿用标准图片接口并把 4K 请求限制为 2K", async () => {
         const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
             new Response(JSON.stringify({ data: [{ b64_json: "c2VlZHJlYW0=" }] }), {

@@ -12,6 +12,7 @@ import type { AiConfig } from "@/stores/use-config-store";
 import { allowsCustomImageRatioForProfile, getActiveApiProfile, getImageSizeTiersForProfile, normalizeImageSizeForProfile, normalizeSettings, supportsExtendedImageQuality } from "../../../../../lib/apiProfiles";
 import { calculateImageSize, normalizeImageSize, parseRatio, type SizeTier } from "../../../../../lib/size";
 import { useStore } from "../../../../../store";
+import { normalizeImageBackground, supportsTransparentImageBackground } from "../../../../../lib/modelPricing";
 
 const ALL_TIERS: SizeTier[] = ["1K", "2K", "4K"];
 const QUALITY_OPTIONS = [
@@ -264,6 +265,17 @@ function CanvasImageSizePanel({ config, allowedTiers, qualityOptions, allowCusto
                         ) : null}
                     </div>
                 </SettingGroup>
+                {supportsTransparentImageBackground(config.imageModel || config.model) && (
+                    <SettingGroup title="背景" color={theme.node.muted}>
+                        <div className="grid grid-cols-3 gap-2.5">
+                            {[{ value: "auto", label: "自动" }, { value: "opaque", label: "不透明" }, { value: "transparent", label: "透明背景" }].map((item) => (
+                                <OptionPill key={item.value} selected={normalizeImageBackground(config.imageModel || config.model, config.imageBackground) === item.value} theme={theme} onClick={() => onConfigChange("imageBackground", item.value)}>
+                                    {item.label}
+                                </OptionPill>
+                            ))}
+                        </div>
+                    </SettingGroup>
+                )}
                 {allowCustomRatio && ratio === "custom" ? (
                     <SettingGroup title="自定义比例" color={theme.node.muted}>
                         <input

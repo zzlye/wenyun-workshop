@@ -940,6 +940,7 @@ function InfiniteCanvasPage() {
                           model: sourceMetadata?.model || effectiveConfig.imageModel || effectiveConfig.model,
                           size: sourceMetadata?.size || effectiveConfig.size,
                           quality: sourceMetadata?.quality || effectiveConfig.quality,
+                          imageBackground: sourceMetadata?.imageBackground || effectiveConfig.imageBackground,
                           count: sourceMetadata?.count || 1,
                       }
                     : undefined;
@@ -2865,7 +2866,7 @@ function InfiniteCanvasPage() {
                     await Promise.all(
                         targetIds.map(async (targetId) => {
                             try {
-                                const requestFingerprint = `${generationType}:${targetId}:${effectivePrompt}:${generationConfig.model}:${generationConfig.size}:${generationConfig.quality}`;
+                                const requestFingerprint = `${generationType}:${targetId}:${effectivePrompt}:${generationConfig.model}:${generationConfig.size}:${generationConfig.quality}:${generationConfig.imageBackground}`;
                                 const image = referenceImages.length
                                     ? await requestEdit(
                                           { ...generationConfig, count: "1" },
@@ -3092,7 +3093,7 @@ function InfiniteCanvasPage() {
                     return;
                 }
 
-                const requestFingerprint = `retry:${node.id}:${requestPrompt}:${generationConfig.model}:${generationConfig.size}:${generationConfig.quality}`;
+                const requestFingerprint = `retry:${node.id}:${requestPrompt}:${generationConfig.model}:${generationConfig.size}:${generationConfig.quality}:${generationConfig.imageBackground}`;
                 const image = useReferenceImages
                     ? await requestEdit(
                           generationConfig,
@@ -3113,7 +3114,7 @@ function InfiniteCanvasPage() {
                 const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
                 const imageSize = fitNodeSize(uploadedImage.width, uploadedImage.height, imageConfig.width, imageConfig.height);
                 const generationMetadata = savedImageMetadata?.generationType
-                    ? { generationType: savedImageMetadata.generationType, model: generationConfig.model, size: generationConfig.size, quality: generationConfig.quality, count: savedImageMetadata.count || 1, references: savedImageMetadata.references }
+                    ? { generationType: savedImageMetadata.generationType, model: generationConfig.model, size: generationConfig.size, quality: generationConfig.quality, imageBackground: generationConfig.imageBackground, count: savedImageMetadata.count || 1, references: savedImageMetadata.references }
                     : buildImageGenerationMetadata(useReferenceImages ? "edit" : "generation", generationConfig, 1, retryReferenceImages || [], requestPrompt);
                 commitGenerationNodes((prev) =>
                     prev.map((item) =>
@@ -4109,6 +4110,7 @@ function buildImageGenerationMetadata(type: CanvasImageGenerationType, config: A
         model: config.model,
         size: config.size,
         quality: config.quality,
+        imageBackground: config.imageBackground,
         count,
         references: references.map(referenceUrl).filter((url): url is string => Boolean(url)),
     };
@@ -4303,6 +4305,7 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
         textModel: mode === "text" ? resolvedModel : config.textModel,
         videoModel: mode === "video" ? resolvedModel : config.videoModel,
         quality: node?.metadata?.quality || config.quality || defaultConfig.quality,
+        imageBackground: node?.metadata?.imageBackground || config.imageBackground || defaultConfig.imageBackground,
         size: normalizeImageSizeForProfile(node?.metadata?.size || config.size || defaultConfig.size, activeProfileId, resolvedModel),
         videoSeconds: node?.metadata?.seconds || config.videoSeconds || defaultConfig.videoSeconds,
         videoGenerateAudio: node?.metadata?.videoGenerateAudio ?? config.videoGenerateAudio ?? defaultConfig.videoGenerateAudio,

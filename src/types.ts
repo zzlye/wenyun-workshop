@@ -284,6 +284,8 @@ export interface AppSettings {
 // ===== 任务参数 =====
 
 export interface TaskParams {
+  /** 仅支持背景参数的图片模型发送，旧任务未设置时由模型自动决定。 */
+  background?: 'auto' | 'opaque' | 'transparent'
   size: string
   quality: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   output_format: 'png' | 'jpeg' | 'webp'

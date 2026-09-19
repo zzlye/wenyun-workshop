@@ -1342,6 +1342,7 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         textModel: mode === "text" ? resolvedModel : globalConfig.textModel,
         videoModel: mode === "video" ? resolvedModel : globalConfig.videoModel,
         quality: node.metadata?.quality || globalConfig.quality || defaultConfig.quality,
+        imageBackground: node.metadata?.imageBackground || globalConfig.imageBackground || defaultConfig.imageBackground,
         size: normalizeImageSizeForProfile(node.metadata?.size || globalConfig.size || defaultConfig.size, activeProfileId, resolvedModel),
         videoSeconds: node.metadata?.seconds || globalConfig.videoSeconds || defaultConfig.videoSeconds,
         videoGenerateAudio: node.metadata?.videoGenerateAudio ?? globalConfig.videoGenerateAudio ?? defaultConfig.videoGenerateAudio,
