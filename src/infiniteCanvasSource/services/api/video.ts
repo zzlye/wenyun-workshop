@@ -81,17 +81,17 @@ async function createVideoTask(source: VideoApiSource, payload: Record<string, u
         // 部分视频中转仍使用 input_reference 对象接收首张图片；仅在明确的参数校验错误时切换格式，避免任务已创建后重复扣费。
         if (isInputReferenceObjectError(error)) {
             const imageUrls = Array.isArray(payload.image_urls) ? payload.image_urls.filter((url): url is string => typeof url === "string" && Boolean(url)) : [];
+            // 单图对象不代表多图协议，不能为了重试成功而静默丢掉其余参考图。
+            if (imageUrls.length > 1) throw new Error("当前渠道要求单个 input_reference 对象，请配置中转的多图映射后再提交多张参考图");
             if (imageUrls.length) {
                 const objectReferencePayload = { ...payload, input_reference: { image_url: imageUrls[0] } };
                 delete objectReferencePayload.image_urls;
                 try {
                     return await post(objectReferencePayload);
                 } catch (objectReferenceError) {
-                    // 另一类中转把同名字段声明成字符串；兼容该协议时仍只在参数校验失败后再次尝试。
+                    // 上游已明确要求对象，入口却只收字符串时必须修复中转；退回字符串只会再次触发同一错误。
                     if (!isInputReferenceStringError(objectReferenceError)) throw objectReferenceError;
-                    const stringReferencePayload = { ...payload, input_reference: imageUrls[0] };
-                    delete stringReferencePayload.image_urls;
-                    return post(stringReferencePayload);
+                    throw new Error("中转服务与上游的 input_reference 类型不一致：上游要求 image_url 对象，中转入口只接受字符串，请更新中转服务的参考图解析");
                 }
             }
         }
@@ -117,7 +117,7 @@ function isInputReferenceStringError(error: unknown) {
     if (!axios.isAxiosError(error) || ![400, 422].includes(error.response?.status)) return false;
     if (hasVideoTaskId(error.response?.data)) return false;
     const message = extractApiErrorMessage(error.response?.data);
-    return /input_reference/i.test(message) && /string/i.test(message) && /unmarshal|unmarshal|type/i.test(message);
+    return /cannot unmarshal object into Go struct field\s+\S*input_reference\s+of type string/i.test(message);
 }
 
 function hasVideoTaskId(value: unknown): boolean {

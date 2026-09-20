@@ -19,6 +19,9 @@ const VIDEO_API_PROXY_BASE = "/api-proxy/wenyun";
 describe("画布视频异步接口", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // 失败路径不会消耗下载响应，清理队列避免影响下一条成功路径。
+        (axios.post as Mock).mockReset();
+        (axios.get as Mock).mockReset();
     });
 
     afterEach(() => {
@@ -174,19 +177,43 @@ describe("画布视频异步接口", () => {
         expect((axios.post as Mock).mock.calls[1][1]).not.toHaveProperty("image_urls");
     });
 
-    it("对象格式被 Go 接口拒绝为字符串时继续兼容 input_reference 字符串", async () => {
+    it("中转拒绝上游要求的对象时报告协议冲突，不再退回已被上游拒绝的字符串", async () => {
         (axios.post as Mock)
             .mockRejectedValueOnce({ isAxiosError: true, response: { status: 422, data: { error: { message: "input_reference must be an object containing image_url" } } } })
-            .mockRejectedValueOnce({ isAxiosError: true, response: { status: 422, data: { error: { message: "json: cannot unmarshal object into Go struct field Alias.input_reference of type string" } } } })
-            .mockResolvedValueOnce({ data: { id: "task-string-reference", status: "completed" } });
+            .mockRejectedValueOnce({ isAxiosError: true, response: { status: 422, data: { error: { message: "json: cannot unmarshal object into Go struct field Alias.input_reference of type string" } } } });
         (axios.get as Mock).mockResolvedValueOnce({ data: videoBlob() });
 
-        await requestVideoGeneration({ ...defaultConfig, videoApiKey: "video-key" }, "兼容字符串参考图", [
+        await expect(requestVideoGeneration({ ...defaultConfig, videoApiKey: "video-key" }, "兼容字符串参考图", [
             { id: "image-1", name: "参考图", type: "image/png", dataUrl: "data:image/png;base64,cmVm" },
-        ]);
+        ])).rejects.toThrow("中转服务与上游的 input_reference 类型不一致");
 
-        expect((axios.post as Mock).mock.calls[2][1]).toMatchObject({ input_reference: "data:image/png;base64,cmVm" });
-        expect((axios.post as Mock).mock.calls[2][1]).not.toHaveProperty("image_urls");
+        expect(axios.post).toHaveBeenCalledTimes(2);
+    });
+
+    it("参考图为多张时不在协议回退中丢弃后面的图片", async () => {
+        (axios.post as Mock).mockRejectedValueOnce({ isAxiosError: true, response: { status: 400, data: {
+            code: "fail_to_fetch_task", message: JSON.stringify({ error: { message: "input_reference must be an object containing image_url", type: "upstream_error" } }), data: null,
+        } } });
+        const refs = ["first", "second"].map((id) => ({ id, name: id, type: "image/png", dataUrl: "data:image/png;base64,cmVm" }));
+        await expect(requestVideoGeneration({ ...defaultConfig, videoApiKey: "video-key" }, "完整参考图", refs)).rejects.toThrow("多张参考图");
+        expect(axios.post).toHaveBeenCalledTimes(1);
+    });
+
+    it("解析截图中的嵌套错误且继续以对象提交，不修改音频和视频参考", async () => {
+        (axios.post as Mock)
+            .mockRejectedValueOnce({ isAxiosError: true, response: { status: 400, data: {
+                code: "fail_to_fetch_task", message: JSON.stringify({ error: { message: "input_reference must be an object containing image_url", type: "upstream_error" } }), data: null,
+            } } })
+            .mockResolvedValueOnce({ data: { id: "object-task", status: "completed" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: videoBlob() });
+        await requestVideoGeneration({ ...defaultConfig, videoApiKey: "video-key" }, "参考素材", [
+            { id: "image", name: "image", type: "image/png", url: "https://example.test/ref.png", dataUrl: "" },
+        ], [{ id: "audio", name: "audio", type: "audio/wav", url: "https://example.test/audio.wav" }], [
+            { id: "video", name: "video", type: "video/mp4", url: "https://example.test/video.mp4" },
+        ]);
+        const [first, next] = (axios.post as Mock).mock.calls.map((call) => call[1]);
+        const { image_urls: urls, ...unchanged } = first;
+        expect(next).toEqual({ ...unchanged, input_reference: { image_url: urls[0] } });
     });
 
     it("按文档提交多图和音频参考字段", async () => {
