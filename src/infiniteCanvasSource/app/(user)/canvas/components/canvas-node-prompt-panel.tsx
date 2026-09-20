@@ -82,6 +82,9 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
     const modelOptions = useCanvasModelOptions(config, mode, activeProfile.id);
     const connectedPromptText = useMemo(() => buildConnectedPromptText(inputs), [inputs]);
     const [prompt, setPrompt] = useState(() => stripConnectedPromptSuffix(node.metadata?.prompt || "", connectedPromptText));
+    // 输入法组合输入期间 DOM 已经有文字，但 prompt 状态要等 compositionend 才同步。
+    // 单独记录编辑器是否有内容，避免占位文字在候选词或已输入文字上方重叠。
+    const [hasEditorContent, setHasEditorContent] = useState(() => Boolean(stripConnectedPromptSuffix(node.metadata?.prompt || "", connectedPromptText).trim()));
     const canSubmitPrompt = hasUsableNodeGenerationPrompt(prompt, connectedPromptText);
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
@@ -159,6 +162,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
         if (isComposingRef.current) return;
         promptRef.current = displayPrompt;
         setPrompt(displayPrompt);
+        setHasEditorContent(Boolean(displayPrompt.trim()));
         if (displayPrompt !== rawPrompt) onPromptChange(node.id, displayPrompt);
         isUserInputRef.current = false;
     }, [connectedPromptText, node.id, node.metadata?.prompt, onPromptChange]);
@@ -167,6 +171,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
         (value: string) => {
             promptRef.current = value;
             setPrompt(value);
+            setHasEditorContent(Boolean(value.trim()));
             onPromptChange(node.id, value);
         },
         [node.id, onPromptChange],
@@ -933,11 +938,14 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                         onWheel={(event) => event.stopPropagation()}
                         onInput={(event) => {
                             isUserInputRef.current = true;
-                            if (isCanvasPromptImeEvent(isComposingRef.current, event.nativeEvent as InputEvent)) return;
                             const range = getContentEditableSelection(event.currentTarget);
+                            const nextText = getContentEditablePlainText(event.currentTarget);
+                            // compositionupdate 期间也立即隐藏占位文字，等最终确认后再同步 prompt。
+                            setHasEditorContent(Boolean(nextText.trim()));
+                            if (isCanvasPromptImeEvent(isComposingRef.current, event.nativeEvent as InputEvent)) return;
                             setCursorPos(range.start);
                             syncMentionTagSelection(event.currentTarget);
-                            updatePrompt(getContentEditablePlainText(event.currentTarget));
+                            updatePrompt(nextText);
                             setAtImageMenuIndex(0);
                             setAtImageMenuDismissed(false);
                         }}
@@ -946,6 +954,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                             compositionSyncTimerRef.current = null;
                             isComposingRef.current = true;
                             isUserInputRef.current = true;
+                            setHasEditorContent(Boolean(inputRef.current && getContentEditablePlainText(inputRef.current).trim()));
                         }}
                         onCompositionEnd={finishPromptComposition}
                         onBlur={() => {
@@ -980,7 +989,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                         }}
                         aria-label={getPromptPlaceholder(mode, hasImageContent, hasTextContent)}
                     />
-                    {!prompt ? <div className={`pointer-events-none col-start-1 row-start-1 text-sm leading-5 ${isPromptExpanded ? "px-3 py-3 pr-12" : "px-2 py-1.5 pr-10"}`} style={{ color: theme.node.placeholder }}>{getPromptPlaceholder(mode, hasImageContent, hasTextContent)}</div> : null}
+                    {!hasEditorContent ? <div className={`pointer-events-none col-start-1 row-start-1 text-sm leading-5 ${isPromptExpanded ? "px-3 py-3 pr-12" : "px-2 py-1.5 pr-10"}`} style={{ color: theme.node.placeholder }}>{getPromptPlaceholder(mode, hasImageContent, hasTextContent)}</div> : null}
                     <button
                         type="button"
                         className="absolute right-1.5 top-1.5 z-10 grid size-7 place-items-center rounded-lg border border-transparent text-current/60 transition hover:border-current/15 hover:bg-black/5 hover:text-current dark:hover:bg-white/10"
