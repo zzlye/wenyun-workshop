@@ -1,4 +1,6 @@
 import axios from "axios";
+import { fetchVideoCapabilities } from "../../../lib/videoCapabilities";
+vi.mock("../../../lib/videoCapabilities", async importOriginal => ({...await importOriginal<typeof import("../../../lib/videoCapabilities")>(),fetchVideoCapabilities:vi.fn()}));
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { defaultConfig } from "../../stores/use-config-store";
 import { requestVideoGeneration } from "./video";
@@ -13,6 +15,7 @@ const models = ["wan-3.0", "seedance-2.0-720p", "seedance-2.5-720p", "sd-2.5-720
 
 beforeEach(() => {
     vi.resetAllMocks();
+        vi.mocked(fetchVideoCapabilities).mockResolvedValue({model:"test",version:0,configured:false,variants:[]});
     (axios.post as Mock).mockResolvedValue({ data: { id: "task-contract", status: "completed" } });
     (axios.get as Mock).mockResolvedValue({ data: new Blob(["video"], { type: "video/mp4" }) });
 });
@@ -40,7 +43,6 @@ describe("统一视频请求协议", () => {
         await requestVideoGeneration({ ...config, videoModel: model, vquality: resolution }, "镜头向前移动", [image], [audio("a1"), audio("a2")], [video("v1"), video("v2")]);
         expect((axios.post as Mock).mock.calls[0][1]).toEqual({
             model, prompt: "镜头向前移动", duration: 30, resolution: `${resolution}p`, aspect_ratio: "16:9",
-            generate_audio: true,
             image_urls: [image.url], audio_urls: [audio("a1").url, audio("a2").url], video_urls: [video("v1").url, video("v2").url],
         });
         expect(axios.get).toHaveBeenCalledWith("/api-proxy/wenyun/videos/task-contract/content", expect.any(Object));
@@ -61,7 +63,7 @@ describe("统一视频请求协议", () => {
 
     it("Kling 单图同样使用 image_urls，不再强制发送供应商私有字段", async () => {
         await requestVideoGeneration({ ...config, videoModel: "kling-3.0-omni-1080p", videoSeconds: "10" }, "测试", [image]);
-        expect((axios.post as Mock).mock.calls[0][1]).toEqual({ model: "kling-3.0-omni-1080p", prompt: "测试", duration: 10, resolution: "720p", aspect_ratio: "16:9", image_urls: [image.url], generate_audio: true });
+        expect((axios.post as Mock).mock.calls[0][1]).toEqual({ model: "kling-3.0-omni-1080p", prompt: "测试", duration: 10, resolution: "720p", aspect_ratio: "16:9", image_urls: [image.url] });
     });
 
     it("失效的本地预览地址明确报错，不静默丢弃参考视频后创建付费任务", async () => {
@@ -89,7 +91,7 @@ describe("统一视频请求协议", () => {
 
     it("无参考素材时省略三个可选数组", async () => {
         await requestVideoGeneration(config, "测试");
-        expect((axios.post as Mock).mock.calls[0][1]).toEqual({ model: config.videoModel, prompt: "测试", duration: 30, resolution: "720p", aspect_ratio: "16:9", generate_audio: true });
+        expect((axios.post as Mock).mock.calls[0][1]).toEqual({ model: config.videoModel, prompt: "测试", duration: 30, resolution: "720p", aspect_ratio: "16:9" });
     });
 
     it("本地音频保留数组形式，不套用原先的音频时长限制", async () => {
@@ -108,15 +110,11 @@ describe("统一视频请求协议", () => {
         { message: "缺少参数 seconds" },
         { error: { param: "seconds", code: "missing_required_parameter" } },
         { detail: [{ loc: ["body", "seconds"], type: "missing", msg: "Field required" }] },
-    ])("任意模型遇到明确缺 seconds 错误后转换一次：%j", async (data) => {
+    ])("缺字段错误由中转配置处理，前端仅提交一次：%j", async (data) => {
         (axios.post as Mock).mockRejectedValueOnce({ isAxiosError: true, response: { status: 422, data } });
-        await requestVideoGeneration({ ...config, videoModel: "arbitrary-future-model", videoGenerateAudio: false }, "测试", [image]);
-        expect(axios.post).toHaveBeenCalledTimes(2);
-        const [first, second] = (axios.post as Mock).mock.calls.map((call) => call[1]);
-        expect(first.duration).toBe(30);
-        const { duration, ...rest } = first;
-        expect(second).toEqual({ ...rest, seconds: duration });
-        expect(axios.get).toHaveBeenCalledTimes(1);
+        await expect(requestVideoGeneration(config, "测试")).rejects.toThrow();
+        expect(axios.post).toHaveBeenCalledTimes(1);
+        expect((axios.post as Mock).mock.calls[0][1]).toHaveProperty("duration",30);
     });
 
     it.each([
@@ -144,7 +142,7 @@ describe("统一视频请求协议", () => {
         (axios.post as Mock)
             .mockRejectedValueOnce({ isAxiosError: true, response: { status: 400, data: { error: { message: "seconds is required" } } } })
             .mockRejectedValueOnce({ isAxiosError: true, response: { status: 400, data: { error: { message: "duration is required" } } } });
-        await expect(requestVideoGeneration(config, "测试")).rejects.toThrow("duration is required");
-        expect(axios.post).toHaveBeenCalledTimes(2);
+        await expect(requestVideoGeneration(config, "测试")).rejects.toThrow("seconds is required");
+        expect(axios.post).toHaveBeenCalledTimes(1);
     });
 });

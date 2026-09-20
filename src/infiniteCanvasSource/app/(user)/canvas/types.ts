@@ -51,7 +51,9 @@ export type CanvasNodeMetadata = {
     imageBackground?: string;
     count?: number;
     seconds?: string;
-    videoGenerateAudio?: boolean;
+    videoGenerateAudio?: boolean | null;
+    videoMode?: "auto" | "text" | "references" | "frames";
+    videoExtraParameters?: Record<string, unknown>;
     vquality?: string;
     references?: string[];
     referenceImages?: CanvasReferenceImage[];

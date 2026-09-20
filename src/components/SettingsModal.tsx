@@ -1,5 +1,5 @@
 import { useVideoModels } from '../hooks/useVideoModels'
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Cloud, CloudDownload, CloudUpload, HardDrive, RefreshCw } from 'lucide-react'
 import { normalizeBaseUrl } from '../lib/api'
@@ -40,11 +40,12 @@ import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_TIMEOUT, normalizeCanvasVideoModel 
 import { useCanvasStore } from '../infiniteCanvasSource/app/(user)/canvas/stores/use-canvas-store'
 import { useAssetStore } from '../infiniteCanvasSource/stores/use-asset-store'
 import Select from './Select'
-import { VideoProtocolManager } from './VideoProtocolManager'
 import { Checkbox } from './Checkbox'
 import ViewportTooltip from './ViewportTooltip'
 import PriceTableButton from './PriceTableButton'
 import { ChevronDownIcon, CloseIcon, CopyIcon, PlusIcon, TrashIcon, ExportIcon, ImportIcon, DragHandleIcon, LinkIcon } from './icons'
+
+const GlobalVideoSettings = lazy(() => import('./GlobalVideoSettings'))
 
 function newId(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
@@ -2463,9 +2464,8 @@ export default function SettingsModal() {
                   fixedBaseUrl={CANVAS_VIDEO_BASE_URL}
                   fixedTimeout={CANVAS_VIDEO_TIMEOUT}
                 />
-                {draft.profiles.filter(profile => profile.baseUrl.replace(/\/v1\/?$/, '').replace(/\/$/, '') === CANVAS_VIDEO_BASE_URL.replace(/\/v1\/?$/, '').replace(/\/$/, '')).map(profile => (
-                  <VideoProtocolManager key={profile.id} profile={profile} session={draft.newApiAccountSessions[profile.id]} />
-                ))}
+                <Suspense fallback={<p className="text-sm">正在加载视频设置…</p>}><GlobalVideoSettings model={draft.videoModel} apiKey={draft.videoApiKey} proxy={Boolean(draft.videoApiProxy)} /></Suspense>
+
               </div>
             )}
             

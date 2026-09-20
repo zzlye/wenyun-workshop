@@ -20,15 +20,15 @@ describe("画布视频模型列表", () => {
     });
 
     it.each([
-        ["", 10], ["NaN", 10], ["Infinity", 10], ["0", 1], ["-10", 1],
-        ["1", 1], ["8", 8], ["23", 23], ["29.8", 30], ["30", 30], ["31", 30],
-    ])("统一校验时长 %s 为 %s 秒", (value, expected) => {
+        ["", 10], ["NaN", NaN], ["Infinity", Infinity], ["0", 0], ["-10", -10],
+        ["1", 1], ["8", 8], ["23", 23], ["29.8", 29.8], ["30", 30], ["31", 31],
+    ])("保留原始时长交给能力校验 %s 为 %s 秒", (value, expected) => {
         expect(normalizeCanvasVideoDuration(value)).toBe(expected);
     });
 
     it.each([
         ["480", "480"], ["720", "720"], ["1080", "1080"], [" 1080P ", "1080"],
-        ["", "720"], ["2160", "720"],
+        ["", "720"], ["2160", "4k"],
     ])("统一校验清晰度 %s 为 %s", (value, expected) => {
         expect(normalizeCanvasVideoResolution(value)).toBe(expected);
     });

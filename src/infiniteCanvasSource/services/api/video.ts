@@ -2,8 +2,8 @@
 import axios from "axios";
 
 import { getDataUrlByteSize } from "@/lib/image-utils";
-import { mediaToDataUrl } from "@/services/file-storage";
-import { imageToDataUrl } from "@/services/image-storage";
+import { mediaToDataUrl, getMediaBlob } from "@/services/file-storage";
+import { imageToDataUrl, getImageBlob } from "@/services/image-storage";
 import type { AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceAudio, ReferenceImage, ReferenceVideo } from "@/types/image";
@@ -17,6 +17,8 @@ import {
     normalizeCanvasVideoResolution,
     normalizeCanvasVideoModel,
 } from "../../../lib/videoModel";
+
+import { fetchVideoCapabilities, videoSelectionError, type VideoSelection } from "../../../lib/videoCapabilities";
 
 type VideoTask = {
     id: string;
@@ -59,114 +61,85 @@ const VIDEO_REFERENCE_JPEG_QUALITY = 0.88;
  */
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], audioReferences: ReferenceAudio[] = [], videoReferences: ReferenceVideo[] = [], taskReference?: VideoTaskReference, onTaskCreated?: (task: VideoTaskReference) => void) {
     const source = resolveVideoApiSource(config);
+    let activeTaskId = taskReference?.taskId;
     try {
         // 恢复已有任务只查询编号，不重新读取可能已经移除的本地素材。
         const created = taskReference?.taskId ? { id: taskReference.taskId, status: "processing" } : unwrapVideoTask(await createVideoTask(source, await buildCanvasVideoPayload(config, prompt, references, audioReferences, videoReferences)));
+        activeTaskId = created.id;
         if (!taskReference?.taskId && created.id) onTaskCreated?.({ taskId: created.id });
         const result = await waitForVideoResult(source, created);
         refreshRemoteUser(config);
         return result;
     } catch (error) {
+        if (error instanceof VideoTaskPendingError) throw error;
+        if (activeTaskId && !(error instanceof VideoTaskFailedError)) throw new VideoTaskPendingError(activeTaskId, `任务已保存，等待继续查询：${readAxiosError(error, "查询暂时中断")}`);
         throw new Error(readAxiosError(error, "视频生成失败"));
     }
 }
 
+// 创建请求只发送一次；字段和协议差异统一由 NewAPI 转换。
 async function createVideoTask(source: VideoApiSource, payload: Record<string, unknown>) {
-    const post = async (body: Record<string, unknown>) => (await axios.post<VideoApiResponse>(videoApiUrl(source, "/videos"), body, {
+    return (await axios.post<VideoApiResponse>(videoApiUrl(source, "/videos"), payload, {
         headers: { ...videoApiHeaders(source), "Content-Type": "application/json", Prefer: "respond-async" },
         timeout: requestTimeout(source),
     })).data;
-    try {
-        return await post(payload);
-    } catch (error) {
-        // 已配置渠道的参数由中转统一转换，前端不再通过重复创建来猜测协议。
-        if (axios.isAxiosError(error) && error.response?.headers?.["x-new-api-video-protocol"] === "configured") throw error;
-        // 部分视频中转仍使用 input_reference 对象接收首张图片；仅在明确的参数校验错误时切换格式，避免任务已创建后重复扣费。
-        if (isInputReferenceObjectError(error)) {
-            const imageUrls = Array.isArray(payload.image_urls) ? payload.image_urls.filter((url): url is string => typeof url === "string" && Boolean(url)) : [];
-            // 单图对象不代表多图协议，不能为了重试成功而静默丢掉其余参考图。
-            if (imageUrls.length > 1) throw new Error("当前渠道要求单个 input_reference 对象，请配置中转的多图映射后再提交多张参考图");
-            if (imageUrls.length) {
-                const objectReferencePayload = { ...payload, input_reference: { image_url: imageUrls[0] } };
-                delete objectReferencePayload.image_urls;
-                try {
-                    return await post(objectReferencePayload);
-                } catch (objectReferenceError) {
-                    // 上游已明确要求对象，入口却只收字符串时必须修复中转；退回字符串只会再次触发同一错误。
-                    if (!isInputReferenceStringError(objectReferenceError)) throw objectReferenceError;
-                    throw new Error("中转服务与上游的 input_reference 类型不一致：上游要求 image_url 对象，中转入口只接受字符串，请更新中转服务的参考图解析");
-                }
-            }
-        }
-        const currentField = "seconds" in payload ? "seconds" : "duration";
-        const alternateField = currentField === "seconds" ? "duration" : "seconds";
-        // 只有明确拒绝创建任务的缺字段错误才转换一次，超时或服务端异常不重发付费请求。
-        if (!axios.isAxiosError(error) || ![400, 422].includes(error.response?.status)
-            || hasVideoTaskId(error.response?.data) || !isMissingDurationField(error.response?.data, alternateField)) throw error;
-        const converted = { ...payload, [alternateField]: payload[currentField] };
-        delete converted[currentField];
-        return post(converted);
-    }
-}
-
-function isInputReferenceObjectError(error: unknown) {
-    if (!axios.isAxiosError(error) || ![400, 422].includes(error.response?.status)) return false;
-    if (hasVideoTaskId(error.response?.data)) return false;
-    const message = extractApiErrorMessage(error.response?.data);
-    return /input_reference/i.test(message) && /image_url/i.test(message) && /object/i.test(message);
-}
-
-function isInputReferenceStringError(error: unknown) {
-    if (!axios.isAxiosError(error) || ![400, 422].includes(error.response?.status)) return false;
-    if (hasVideoTaskId(error.response?.data)) return false;
-    const message = extractApiErrorMessage(error.response?.data);
-    return /cannot unmarshal object into Go struct field\s+\S*input_reference\s+of type string/i.test(message);
-}
-
-function hasVideoTaskId(value: unknown): boolean {
-    if (!value || typeof value !== "object") return false;
-    const record = value as Record<string, unknown>;
-    return Boolean(record.id || record.task_id || record.taskId) || Object.values(record).some(hasVideoTaskId);
-}
-
-function isMissingDurationField(value: unknown, field: "seconds" | "duration") {
-    if (!value || typeof value !== "object") return false;
-    const record = value as Record<string, unknown>;
-    const error = record.error && typeof record.error === "object" ? record.error as Record<string, unknown> : record;
-    if (error.param === field && ["missing_required_parameter", "field_required", "missing"].includes(String(error.code))) return true;
-    // 兼容结构化校验响应，仅识别请求体顶层的时长字段，不误判参考素材自身的时长。
-    if (Array.isArray(record.detail) && record.detail.some((item) => Array.isArray(item?.loc)
-        && item.loc.length === 2 && item.loc[0] === "body" && item.loc[1] === field
-        && ["missing", "value_error.missing"].includes(item.type))) return true;
-    const message = extractApiErrorMessage(value);
-    return new RegExp(`\\b${field}\\b[\\s'\"\x60:：]*(?:(?:field|parameter)\\s+)?(?:is\\s+)?(?:required|missing)\\b|\\b(?:missing|required)\\s+(?:(?:field|parameter)\\s*[:：]?\\s*)?['\"\x60]?${field}\\b|(?:缺少|缺失|必填)(?:参数|字段)?\\s*[:：]?\\s*['\"\x60]?${field}\\b|\\b${field}\\b[\\s'\"\x60:：]*(?:参数|字段)?(?:为必填|不能为空|是必填)`, "i").test(message);
 }
 
 async function buildCanvasVideoPayload(config: AiConfig, prompt: string, references: ReferenceImage[], audioReferences: ReferenceAudio[], videoReferences: ReferenceVideo[]) {
-    const normalizedPrompt = prompt.trim();
-    if (!normalizedPrompt) throw new Error("请输入视频提示词");
     const model = normalizeCanvasVideoModel(config.videoModel || config.model);
-    const payload: Record<string, unknown> = {
-        model,
-        prompt: normalizedPrompt,
-        aspect_ratio: normalizeCanvasVideoAspectRatio(config.size),
-        duration: normalizeCanvasVideoDuration(config.videoSeconds),
-        resolution: `${normalizeCanvasVideoResolution(config.vquality)}p`,
-        generate_audio: config.videoGenerateAudio ?? true,
+    // 能力读取失败时中止本次创建并保留表单，不能把网络错误当成没有配置。
+    const capability = await fetchVideoCapabilities(config.videoApiKey, Boolean(config.videoApiProxy), model);
+    const resolution = normalizeCanvasVideoResolution(config.vquality);
+    const mode = !config.videoMode || config.videoMode === "auto" ? (references.length + audioReferences.length + videoReferences.length ? "references" : "text") : config.videoMode;
+    const selection: VideoSelection = {
+        prompt: prompt.trim(), duration: normalizeCanvasVideoDuration(config.videoSeconds),
+        resolution: resolution === "4k" ? "4k" : `${resolution}p`, aspect_ratio: normalizeCanvasVideoAspectRatio(config.size),
+        mode, imageCount: references.length, audioCount: audioReferences.length, videoCount: videoReferences.length,
+        generate_audio: config.videoGenerateAudio ?? undefined, extra_parameters: config.videoExtraParameters,
     };
-
-    // 参考素材只发送统一数组字段，供应商别名及首尾帧规则由中转适配。
-    // 本地图片和音频沿用现有 data URL 传输，接收方若要求公网地址需在中转落存储。
-    const videos = await Promise.all(videoReferences.map(videoToReferenceUrl));
-    const images = await Promise.all(references.map(imageToVideoReferenceUrl));
-    const audios = await Promise.all(audioReferences.map(audioToVideoReferenceUrl));
-    if (images.some((url) => !url) || audios.some((url) => !url)) throw new Error("参考媒体读取失败，请重新添加");
-    if (images.length) payload.image_urls = images;
-    if (audios.length) payload.audio_urls = audios;
+    const error = videoSelectionError(capability, selection);
+    if (error) throw new Error(error);
+    if (!Number.isInteger(selection.duration) || selection.duration! < 1 || selection.duration! > 3600) throw new Error("视频时长应为 1 到 3600 的整数");
+    if (!capability.configured && !selection.prompt) throw new Error("请输入视频提示词");
+    if (mode === "text" && references.length + audioReferences.length + videoReferences.length) throw new Error("文生视频模式与已连接素材冲突，请调整生成模式");
+    if (mode === "frames" && (references.length < 1 || references.length > 2)) throw new Error("首尾帧模式需要一张或两张图片，请调整素材数量");
+    const payload: Record<string, unknown> = { model, prompt:selection.prompt, duration:selection.duration, resolution:selection.resolution, aspect_ratio:selection.aspect_ratio };
+    if (selection.generate_audio !== undefined) payload.generate_audio = selection.generate_audio;
+    if (capability.configured || mode === "frames") payload.mode = mode;
+    if (Object.keys(config.videoExtraParameters ?? {}).length) payload.extra_parameters = config.videoExtraParameters;
+    // 新服务逐个上传本地文件，生成请求只携带素材编号，不同时堆积多份 Base64。
+    const images: unknown[] = [], videos: unknown[] = [], audios: unknown[] = [];
+    for (const item of references) images.push(capability.configured ? await uploadVideoReference(config,item,"image") : await imageToVideoReferenceUrl(item));
+    for (const item of videoReferences) videos.push(capability.configured ? await uploadVideoReference(config,item,"video") : await videoToReferenceUrl(item));
+    for (const item of audioReferences) audios.push(capability.configured ? await uploadVideoReference(config,item,"audio") : await audioToVideoReferenceUrl(item));
+    if ([...images,...audios,...videos].some(v => !v)) throw new Error("参考素材读取失败，请重新添加");
+    if (mode === "frames") { payload.first_frame = images[0]; if (images.length === 2) payload.last_frame = images[1]; }
+    else if (images.length) payload.image_urls = images;
     if (videos.length) payload.video_urls = videos;
-
+    if (audios.length) payload.audio_urls = audios;
     return payload;
 }
+
+async function uploadVideoReference(config: AiConfig, item: ReferenceImage | ReferenceVideo | ReferenceAudio, kind: string) {
+    if (/^https?:\/\//i.test(item.url || "")) return item.url;
+    let blob: Blob | null = null;
+    if (item.storageKey) blob = await (kind === "image" ? getImageBlob(item.storageKey) : getMediaBlob(item.storageKey));
+    if (!blob) {
+        const url = "dataUrl" in item && item.dataUrl || item.url;
+        if (!url || !/^(data:|blob:)/.test(url)) throw new Error("本地素材已丢失，请重新添加");
+        blob = await (await fetch(url)).blob();
+    }
+    const source = resolveVideoApiSource(config);
+    const form = new FormData(); form.append("file", blob, item.name || kind);
+    const response = await axios.post(videoApiUrl(source,"/video/assets"), form, {headers:videoApiHeaders(source), timeout:requestTimeout(source)});
+    if (!response.data?.asset_id) throw new Error("素材上传未返回编号");
+    return {asset_id:response.data.asset_id};
+}
+
+export class VideoTaskPendingError extends Error {
+    constructor(public taskId: string, message = "任务仍在后台处理中，稍后继续查询") { super(message); this.name = "VideoTaskPendingError"; }
+}
+class VideoTaskFailedError extends Error {}
 
 async function waitForVideoResult(source: VideoApiSource, created: VideoTask) {
     if (!created.id) throw new Error("视频接口没有返回任务 ID");
@@ -177,8 +150,8 @@ async function waitForVideoResult(source: VideoApiSource, created: VideoTask) {
     const taskPath = `/${backgroundTask ? "tasks" : "videos"}/${encodeURIComponent(created.id)}`;
 
     for (;;) {
-        if (isVideoStatusFailed(task.status)) throw new Error(task.error?.message || "视频生成失败");
-        if (task.resultExpired) throw new Error("视频文件已过期，任务记录仍然保留");
+        if (isVideoStatusFailed(task.status)) throw new VideoTaskFailedError(task.error?.message || "视频生成失败");
+        if (task.resultExpired) throw new VideoTaskFailedError("视频文件已过期，任务记录仍然保留");
         if (backgroundTask && isVideoStatusCompleted(task.status)) {
             const media = task.media?.find(item => item.kind === "video");
             const mediaPath = media?.url?.replace(/^\/v1/, "") || "";
@@ -191,10 +164,10 @@ async function waitForVideoResult(source: VideoApiSource, created: VideoTask) {
         if (!backgroundTask && isVideoStatusCompleted(task.status)) return fetchVideoContent(source, created.id, remainingTimeout(deadline));
 
         const remaining = remainingTimeout(deadline);
-        if (!remaining) throw new Error(`视频生成超过 ${CANVAS_VIDEO_TIMEOUT} 秒仍未完成`);
+        if (!remaining) throw new VideoTaskPendingError(created.id);
         await delayVideoPoll(Math.min(VIDEO_POLL_INTERVAL_MS, remaining));
         const nextRemaining = remainingTimeout(deadline);
-        if (!nextRemaining) throw new Error(`视频生成超过 ${CANVAS_VIDEO_TIMEOUT} 秒仍未完成`);
+        if (!nextRemaining) throw new VideoTaskPendingError(created.id);
         try {
             task = unwrapVideoTask((await axios.get<VideoApiResponse>(videoApiUrl(source, taskPath), {
                 headers: videoApiHeaders(source),

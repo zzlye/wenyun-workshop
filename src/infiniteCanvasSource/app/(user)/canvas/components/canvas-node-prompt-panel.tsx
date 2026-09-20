@@ -85,7 +85,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
     // 输入法组合输入期间 DOM 已经有文字，但 prompt 状态要等 compositionend 才同步。
     // 单独记录编辑器是否有内容，避免占位文字在候选词或已输入文字上方重叠。
     const [hasEditorContent, setHasEditorContent] = useState(() => Boolean(stripConnectedPromptSuffix(node.metadata?.prompt || "", connectedPromptText).trim()));
-    const canSubmitPrompt = hasUsableNodeGenerationPrompt(prompt, connectedPromptText);
+    const canSubmitPrompt = hasUsableNodeGenerationPrompt(prompt, connectedPromptText) || mode === "video";
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const [cursorPos, setCursorPos] = useState(0);
@@ -721,7 +721,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
 
     const submit = useCallback(() => {
         const text = prompt.trim();
-        if (!hasUsableNodeGenerationPrompt(text, connectedPromptText) || isRunning) return;
+        if ((!hasUsableNodeGenerationPrompt(text, connectedPromptText) && mode !== "video") || isRunning) return;
         onPromptChange(node.id, text);
         onGenerate(node.id, mode, text);
     }, [connectedPromptText, isRunning, mode, node.id, onGenerate, onPromptChange, prompt]);
@@ -1041,7 +1041,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                     ) : mode === "video" ? (
                         <>
                             <ModelPicker config={config} value={config.model} options={modelOptions} modelType="video" onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
-                            <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, key === "videoSeconds" ? { seconds: String(value) } : { [key]: value })} />
+                            <CanvasVideoSettingsPopover config={config} media={{ imageCount: mentionableReferences.length, videoCount: connectedReferenceVideos.length, audioCount: connectedReferenceAudios.length }} buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, key === "videoSeconds" ? { seconds: String(value) } : { [key]: value })} />
                         </>
                     ) : (
                         <ModelPicker config={config} value={config.model} options={modelOptions} onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
@@ -1352,9 +1352,11 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         videoModel: mode === "video" ? resolvedModel : globalConfig.videoModel,
         quality: node.metadata?.quality || globalConfig.quality || defaultConfig.quality,
         imageBackground: node.metadata?.imageBackground || globalConfig.imageBackground || defaultConfig.imageBackground,
-        size: normalizeImageSizeForProfile(node.metadata?.size || globalConfig.size || defaultConfig.size, activeProfileId, resolvedModel),
-        videoSeconds: node.metadata?.seconds || globalConfig.videoSeconds || defaultConfig.videoSeconds,
-        videoGenerateAudio: node.metadata?.videoGenerateAudio ?? globalConfig.videoGenerateAudio ?? defaultConfig.videoGenerateAudio,
+        size: mode === "video" ? (node.metadata?.size || globalConfig.size) : normalizeImageSizeForProfile(node.metadata?.size || globalConfig.size || defaultConfig.size, activeProfileId, resolvedModel),
+        videoSeconds: node.metadata?.seconds ?? globalConfig.videoSeconds ?? defaultConfig.videoSeconds,
+        videoGenerateAudio: node.metadata?.videoGenerateAudio !== undefined ? node.metadata.videoGenerateAudio : globalConfig.videoGenerateAudio,
+        videoMode: node.metadata?.videoMode ?? globalConfig.videoMode,
+        videoExtraParameters: node.metadata?.videoExtraParameters ?? globalConfig.videoExtraParameters,
         vquality: node.metadata?.vquality || globalConfig.vquality || defaultConfig.vquality,
         count: String(node.metadata?.count || (mode === "image" ? 1 : globalConfig.count) || defaultConfig.count),
     };

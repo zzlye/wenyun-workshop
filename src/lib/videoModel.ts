@@ -17,9 +17,9 @@ export function normalizeCanvasVideoModel(value: string | undefined | null): str
     return normalized || CANVAS_VIDEO_MODEL;
 }
 
+// 保留用户输入，由模型能力校验解释错误，避免默默缩短视频。
 export function normalizeCanvasVideoDuration(value: string) {
-    if (!value?.trim() || !Number.isFinite(Number(value))) return 10;
-    return Math.min(CANVAS_VIDEO_MAX_SECONDS, Math.max(CANVAS_VIDEO_MIN_SECONDS, Math.round(Number(value))));
+    return value?.trim() ? Number(value) : 10;
 }
 
 export function normalizeCanvasVideoAspectRatio(value: string) {
@@ -28,15 +28,15 @@ export function normalizeCanvasVideoAspectRatio(value: string) {
     // 历史画布以宽高像素保存比例，提交和设置面板共用同一转换，防止显示与请求不一致。
     if (/^\d+x\d+$/.test(trimmed)) {
         const [width, height] = trimmed.split("x").map(Number);
-        const numeric = width / height;
-        ratio = !width || !height ? "16:9" : Math.abs(width - height) / Math.max(width, height) < 0.02 ? "1:1"
-            : numeric >= 2 ? "21:9" : numeric >= 1.5 ? "16:9" : numeric >= 1.15 ? "4:3"
-                : numeric <= 0.65 ? "9:16" : numeric <= 0.85 ? "3:4" : "16:9";
+        const known: Record<string,string> = {"1280x720":"16:9","720x1280":"9:16","1024x768":"4:3","768x1024":"3:4","1024x1024":"1:1","1680x720":"21:9"};
+        let a = width, b = height;
+        while (b) { [a,b] = [b,a % b]; }
+        ratio = !width || !height ? "16:9" : known[trimmed] || `${width / a}:${height / a}`;
     }
-    return CANVAS_VIDEO_ASPECT_RATIOS.find((option) => option === ratio) || "16:9";
+    return !ratio || ratio === "auto" ? "16:9" : ratio;
 }
 
 export function normalizeCanvasVideoResolution(value: string) {
-    const normalized = (value || "").trim().replace(/p$/i, "");
-    return CANVAS_VIDEO_RESOLUTIONS.find((option) => option === normalized) || "720";
+    const normalized = (value || "").trim().toLowerCase().replace(/p$/, "");
+    return normalized === "2160" ? "4k" : normalized || "720";
 }
