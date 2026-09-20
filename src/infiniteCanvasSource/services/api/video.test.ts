@@ -140,6 +140,21 @@ describe("画布视频异步接口", () => {
         expect((axios.post as Mock).mock.calls[1][1]).not.toHaveProperty("image_urls");
     });
 
+    it("对象格式被 Go 接口拒绝为字符串时继续兼容 input_reference 字符串", async () => {
+        (axios.post as Mock)
+            .mockRejectedValueOnce({ isAxiosError: true, response: { status: 422, data: { error: { message: "input_reference must be an object containing image_url" } } } })
+            .mockRejectedValueOnce({ isAxiosError: true, response: { status: 422, data: { error: { message: "json: cannot unmarshal object into Go struct field Alias.input_reference of type string" } } } })
+            .mockResolvedValueOnce({ data: { id: "task-string-reference", status: "completed" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: videoBlob() });
+
+        await requestVideoGeneration({ ...defaultConfig, videoApiKey: "video-key" }, "兼容字符串参考图", [
+            { id: "image-1", name: "参考图", type: "image/png", dataUrl: "data:image/png;base64,cmVm" },
+        ]);
+
+        expect((axios.post as Mock).mock.calls[2][1]).toMatchObject({ input_reference: "data:image/png;base64,cmVm" });
+        expect((axios.post as Mock).mock.calls[2][1]).not.toHaveProperty("image_urls");
+    });
+
     it("按文档提交多图和音频参考字段", async () => {
         (axios.post as Mock).mockResolvedValueOnce({ data: { code: 0, data: { id: "task-2", status: "completed" } } });
         (axios.get as Mock).mockResolvedValueOnce({ data: videoBlob() });

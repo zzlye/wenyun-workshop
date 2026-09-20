@@ -79,7 +79,15 @@ async function createVideoTask(source: VideoApiSource, payload: Record<string, u
             if (imageUrls.length) {
                 const objectReferencePayload = { ...payload, input_reference: { image_url: imageUrls[0] } };
                 delete objectReferencePayload.image_urls;
-                return post(objectReferencePayload);
+                try {
+                    return await post(objectReferencePayload);
+                } catch (objectReferenceError) {
+                    // 另一类中转把同名字段声明成字符串；兼容该协议时仍只在参数校验失败后再次尝试。
+                    if (!isInputReferenceStringError(objectReferenceError)) throw objectReferenceError;
+                    const stringReferencePayload = { ...payload, input_reference: imageUrls[0] };
+                    delete stringReferencePayload.image_urls;
+                    return post(stringReferencePayload);
+                }
             }
         }
         const currentField = "seconds" in payload ? "seconds" : "duration";
@@ -98,6 +106,13 @@ function isInputReferenceObjectError(error: unknown) {
     if (hasVideoTaskId(error.response?.data)) return false;
     const message = extractApiErrorMessage(error.response?.data);
     return /input_reference/i.test(message) && /image_url/i.test(message) && /object/i.test(message);
+}
+
+function isInputReferenceStringError(error: unknown) {
+    if (!axios.isAxiosError(error) || ![400, 422].includes(error.response?.status)) return false;
+    if (hasVideoTaskId(error.response?.data)) return false;
+    const message = extractApiErrorMessage(error.response?.data);
+    return /input_reference/i.test(message) && /string/i.test(message) && /unmarshal|unmarshal|type/i.test(message);
 }
 
 function hasVideoTaskId(value: unknown): boolean {
