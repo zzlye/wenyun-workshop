@@ -15,6 +15,10 @@ function node(id: string, status: "loading" | "success" | "error"): CanvasNodeDa
     };
 }
 
+function videoNode(id: string, status: "loading" | "success" | "error", videoTaskId?: string): CanvasNodeData {
+    return { ...node(id, status), type: CanvasNodeType.Video, metadata: { status, videoTaskId } };
+}
+
 describe("canvas generation running session", () => {
     it("keeps loading nodes locked but releases stale running ids after completion", () => {
         expect(isCanvasNodeGenerationLocked(node("image-1", "loading"), new Set())).toBe(true);
@@ -59,6 +63,13 @@ describe("canvas generation running session", () => {
 
         expect(result[0].metadata?.status).toBe("loading");
         expect(result[0].metadata?.errorDetails).toBeUndefined();
+    });
+
+    it("keeps video tasks loading so the saved async task can be polled after refresh", () => {
+        const result = resetInterruptedCanvasGenerations([videoNode("video-1", "loading", "video-task-1")], new Set());
+
+        expect(result[0].metadata?.status).toBe("loading");
+        expect(result[0].metadata?.videoTaskId).toBe("video-task-1");
     });
 
     it("marks stale loading nodes as retryable after session state is gone", () => {

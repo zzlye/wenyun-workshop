@@ -63,6 +63,8 @@ export type CanvasNodeMetadata = {
     imageTaskIdempotencyKey?: string;
     imageTaskRequestFingerprint?: string;
     imageTaskApiProfileId?: string;
+    // 视频异步任务 ID，用于页面刷新后继续轮询原任务，避免重复提交生成请求。
+    videoTaskId?: string;
     naturalWidth?: number;
     naturalHeight?: number;
     manualSize?: boolean;

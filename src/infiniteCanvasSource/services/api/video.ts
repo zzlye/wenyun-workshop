@@ -41,6 +41,10 @@ type VideoApiSource = {
     timeout: number;
 };
 
+export type VideoTaskReference = {
+    taskId: string;
+};
+
 const VIDEO_POLL_INTERVAL_MS = typeof process !== "undefined" && process.env.NODE_ENV === "test" ? 1 : 5000;
 const VIDEO_TOTAL_TIMEOUT_MS = CANVAS_VIDEO_TIMEOUT * 1000;
 const VIDEO_REFERENCE_MAX_EDGE = 1920;
@@ -51,12 +55,13 @@ const VIDEO_REFERENCE_JPEG_QUALITY = 0.88;
  * 画布视频节点只调用固定地址的异步视频接口。
  * 创建、查询和下载都保持在同一套 /v1/videos 路径，避免旧模型兼容分支误发请求。
  */
-export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], audioReferences: ReferenceAudio[] = [], videoReferences: ReferenceVideo[] = []) {
+export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], audioReferences: ReferenceAudio[] = [], videoReferences: ReferenceVideo[] = [], taskReference?: VideoTaskReference, onTaskCreated?: (task: VideoTaskReference) => void) {
     const source = resolveVideoApiSource(config);
     const payload = await buildCanvasVideoPayload(config, prompt, references, audioReferences, videoReferences);
 
     try {
-        const created = unwrapVideoTask(await createVideoTask(source, payload));
+        const created = taskReference?.taskId ? { id: taskReference.taskId, status: "processing" } : unwrapVideoTask(await createVideoTask(source, payload));
+        if (!taskReference?.taskId && created.id) onTaskCreated?.({ taskId: created.id });
         const result = await waitForVideoResult(source, created);
         refreshRemoteUser(config);
         return result;

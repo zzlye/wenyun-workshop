@@ -61,6 +61,40 @@ describe("画布视频异步接口", () => {
         expect(result.type).toBe("video/mp4");
     });
 
+    it("保存任务 ID 后可跳过重复创建并继续异步轮询", async () => {
+        (axios.get as Mock)
+            .mockResolvedValueOnce({ data: { task_id: "saved-task-1", status: "completed", video_url: "https://cdn.example.com/result.mp4" } })
+            .mockResolvedValueOnce({ data: videoBlob() });
+        const onTaskCreated = vi.fn();
+
+        const result = await requestVideoGeneration(
+            { ...defaultConfig, videoApiKey: "video-key" },
+            "继续查询视频",
+            [],
+            [],
+            [],
+            { taskId: "saved-task-1" },
+            onTaskCreated,
+        );
+
+        expect(axios.post).not.toHaveBeenCalled();
+        expect(axios.get).toHaveBeenCalledWith(`${VIDEO_API_PROXY_BASE}/videos/saved-task-1`, expect.any(Object));
+        expect(onTaskCreated).not.toHaveBeenCalled();
+        expect(result.type).toBe("video/mp4");
+    });
+
+    it("创建异步任务后立即回传任务 ID", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { id: "created-task-1", status: "processing" } });
+        (axios.get as Mock)
+            .mockResolvedValueOnce({ data: { id: "created-task-1", status: "completed", video_url: "https://cdn.example.com/result.mp4" } })
+            .mockResolvedValueOnce({ data: videoBlob() });
+        const onTaskCreated = vi.fn();
+
+        await requestVideoGeneration({ ...defaultConfig, videoApiKey: "video-key" }, "保存任务", [], [], [], undefined, onTaskCreated);
+
+        expect(onTaskCreated).toHaveBeenCalledWith({ taskId: "created-task-1" });
+    });
+
     it("Kling 使用统一图像音频数组，保留用户时长、比例和清晰度", async () => {
         (axios.post as Mock).mockResolvedValueOnce({ data: { id: "kling-task-2", status: "completed" } });
         (axios.get as Mock).mockResolvedValueOnce({ data: videoBlob() });

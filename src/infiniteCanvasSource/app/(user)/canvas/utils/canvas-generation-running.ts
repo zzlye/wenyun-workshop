@@ -49,10 +49,14 @@ export function hasRecoverableCanvasImageTask(node: Pick<CanvasNodeData, "metada
     return Boolean(metadata?.imageTaskIdempotencyKey && metadata.imageTaskRequestFingerprint);
 }
 
+export function hasRecoverableCanvasVideoTask(node: Pick<CanvasNodeData, "metadata"> | null | undefined) {
+    return Boolean(node?.metadata?.videoTaskId);
+}
+
 export function resetInterruptedCanvasGenerations(nodes: CanvasNodeData[], activeNodeIds: ReadonlySet<string>) {
     return nodes.map((node) => {
         if (node.metadata?.status !== LOADING_STATUS || activeNodeIds.has(node.id)) return node;
-        if (hasRecoverableCanvasImageTask(node)) return node;
+        if (hasRecoverableCanvasImageTask(node) || hasRecoverableCanvasVideoTask(node)) return node;
         // 真正刷新会清空会话级运行集合，这时 loading 节点才需要改成可重试的错误态。
         return { ...node, metadata: { ...node.metadata, status: "error" as const, errorDetails: INTERRUPTED_ERROR } };
     });
