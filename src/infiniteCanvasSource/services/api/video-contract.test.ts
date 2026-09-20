@@ -18,6 +18,24 @@ beforeEach(() => {
 });
 
 describe("统一视频请求协议", () => {
+    it("后台任务先返回编号，暂时查询失败后继续查询并下载已保存视频", async () => {
+        const onCreated = vi.fn();
+        (axios.post as Mock).mockResolvedValueOnce({ data: { id: "async_saved", status: "pending", poll_url: "/v1/tasks/async_saved" } });
+        (axios.get as Mock).mockRejectedValueOnce({ isAxiosError: true, response: { status: 503 } })
+            .mockResolvedValueOnce({ data: { id: "async_saved", status: "succeeded", media: [{ kind: "video", url: "/v1/tasks/async_saved/media/0" }] } })
+            .mockResolvedValueOnce({ data: new Blob(["video"], { type: "video/mp4" }) });
+        await requestVideoGeneration(config, "后台生成", [], [], [], undefined, onCreated);
+        expect(onCreated).toHaveBeenCalledWith({ taskId: "async_saved" });
+        expect(axios.post).toHaveBeenCalledTimes(1);
+        expect(axios.get).toHaveBeenNthCalledWith(1, "/api-proxy/wenyun/tasks/async_saved", expect.any(Object));
+        expect(axios.get).toHaveBeenLastCalledWith("/api-proxy/wenyun/tasks/async_saved/media/0", expect.objectContaining({ responseType: "blob" }));
+    });
+
+    it("后台任务过期时明确报错且不重新生成", async () => {
+        (axios.get as Mock).mockResolvedValueOnce({ data: { id: "async_expired", status: "succeeded", result_expired: true } });
+        await expect(requestVideoGeneration(config, "", [], [], [], { taskId: "async_expired" })).rejects.toThrow("视频文件已过期");
+        expect(axios.post).not.toHaveBeenCalled();
+    });
     it.each(models.flatMap((model) => ["480", "720", "1080"].map((resolution) => [model, resolution])))("%s 提交所选 %sp 与完整参考数组，不携带旧字段", async (model, resolution) => {
         await requestVideoGeneration({ ...config, videoModel: model, vquality: resolution }, "镜头向前移动", [image], [audio("a1"), audio("a2")], [video("v1"), video("v2")]);
         expect((axios.post as Mock).mock.calls[0][1]).toEqual({
@@ -46,9 +64,27 @@ describe("统一视频请求协议", () => {
         expect((axios.post as Mock).mock.calls[0][1]).toEqual({ model: "kling-3.0-omni-1080p", prompt: "测试", duration: 10, resolution: "720p", aspect_ratio: "16:9", image_urls: [image.url], generate_audio: true });
     });
 
-    it("本地预览地址明确报错，不静默丢弃参考视频后创建付费任务", async () => {
-        await expect(requestVideoGeneration(config, "测试", [], [], [{ ...video("local"), url: "blob:http://localhost/preview" }])).rejects.toThrow("参考视频需要可访问的 HTTP(S) 地址");
+    it("失效的本地预览地址明确报错，不静默丢弃参考视频后创建付费任务", async () => {
+        await expect(requestVideoGeneration(config, "测试", [], [], [{ ...video("local"), url: "blob:http://localhost/preview" }])).rejects.toThrow("参考视频读取失败");
         expect(axios.post).not.toHaveBeenCalled();
+    });
+
+    it("本地视频内容通过统一数组提交，不把 blob 地址传给渠道", async () => {
+        await requestVideoGeneration(config, "参考视频", [], [], [{ ...video("local"), url: "data:video/mp4;base64,dmlkZW8=" }]);
+        expect((axios.post as Mock).mock.calls[0][1].video_urls).toEqual(["data:video/mp4;base64,dmlkZW8="]);
+    });
+
+    it("恢复任务即使提示词和原素材已移除也只查询已有编号", async () => {
+        (axios.get as Mock).mockResolvedValueOnce({ data: { id: "saved", status: "completed" } }).mockResolvedValueOnce({ data: new Blob(["video"], { type: "video/mp4" }) });
+        await requestVideoGeneration(config, "", [], [], [{ ...video("missing"), url: "blob:missing" }], { taskId: "saved" });
+        expect(axios.post).not.toHaveBeenCalled();
+        expect(axios.get).toHaveBeenCalledWith("/api-proxy/wenyun/videos/saved", expect.any(Object));
+    });
+
+    it("已配置渠道返回字段错误时不重复提交并解开嵌套错误文本", async () => {
+        (axios.post as Mock).mockRejectedValueOnce({ isAxiosError: true, response: { status: 400, headers: { "x-new-api-video-protocol": "configured" }, data: { message: JSON.stringify({ error: { message: "input_reference must be an object containing image_url" } }) } } });
+        await expect(requestVideoGeneration(config, "测试", [image])).rejects.toThrow(/^input_reference must be an object containing image_url$/);
+        expect(axios.post).toHaveBeenCalledTimes(1);
     });
 
     it("无参考素材时省略三个可选数组", async () => {

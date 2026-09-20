@@ -7,6 +7,8 @@ import {
   createNewApiTopupOrder,
   fetchNewApiAccountBalance,
   fetchNewApiTopupInfo,
+  fetchNewApiAccountRole,
+  requestNewApiVideoProtocol,
   loginNewApiAccount,
   normalizeNewApiAccountErrorMessage,
   readAccessToken,
@@ -729,5 +731,28 @@ describe('NewAPI 在线支付', () => {
 
     expect(orderRequests).toBe(2)
     expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/user/auth/refresh'))).toHaveLength(1)
+  })
+})
+
+describe('视频渠道根用户配置', () => {
+  it('读取服务器角色并使用账号访问令牌保存，生成 Key 不参与管理鉴权', async () => {
+    const session = { siteProfileId: 'wenyun-site', username: 'root', userId: 1, accessToken: 'account-token', boundApiKey: 'generation-key' }
+    const profile = DEFAULT_SETTINGS.profiles[0]
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options) => {
+      expect((options?.headers as Record<string, string>).Authorization).toBe('Bearer account-token')
+      if (String(url).includes('/api/user/self')) return new Response(JSON.stringify({ success: true, data: { role: 100 } }))
+      expect(options?.method).toBe('PUT')
+      expect(String(url)).toContain('/api/video-protocol/8')
+      return new Response(JSON.stringify({ success: true, data: { enabled: true } }))
+    })
+    expect(await fetchNewApiAccountRole(profile, session)).toBe(100)
+    expect(await requestNewApiVideoProtocol(profile, session, 8, { enabled: true })).toEqual({ enabled: true })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('服务端拒绝管理员保存时保留真实错误，不回退使用生成 Key', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ success: false, message: '仅根用户可以管理视频渠道协议' }), { status: 403 }))
+    await expect(requestNewApiVideoProtocol(DEFAULT_SETTINGS.profiles[0], { siteProfileId: 'wenyun-site', username: 'admin', accessToken: 'admin-token', boundApiKey: 'generation-key' }, 8, {})).rejects.toThrow('仅根用户')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

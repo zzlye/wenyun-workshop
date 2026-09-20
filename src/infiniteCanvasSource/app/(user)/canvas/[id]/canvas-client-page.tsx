@@ -305,6 +305,7 @@ function InfiniteCanvasPage() {
     const applyingHistoryRef = useRef(false);
     const historyPausedRef = useRef(false);
     const recoveringImageTaskIdsRef = useRef(new Set<string>());
+    const recoveringVideoTaskIdsRef = useRef(new Set<string>());
     const didInitialCenterRef = useRef(false);
     const rafRef = useRef<number | null>(null);
     const resizeFrameRef = useRef<number | null>(null);
@@ -645,13 +646,13 @@ function InfiniteCanvasPage() {
     const recoverCanvasVideoTaskNode = useCallback(
         async (node: CanvasNodeData) => {
             const taskId = node.metadata?.videoTaskId;
-            if (node.type !== CanvasNodeType.Video || node.metadata?.status !== NODE_STATUS_LOADING || !taskId) return;
-
+            if (node.type !== CanvasNodeType.Video || node.metadata?.status !== NODE_STATUS_LOADING || !taskId || recoveringVideoTaskIdsRef.current.has(node.id)) return;
+            recoveringVideoTaskIdsRef.current.add(node.id);
             markCanvasNodeRunning(node.id);
             const generationStartedAt = node.metadata.generationStartedAt || Date.now();
             const timing = () => buildGenerationTiming(generationStartedAt);
             try {
-                const context = await hydrateNodeGenerationContext(buildNodeGenerationContext(node.id, nodesRef.current, connectionsRef.current, ""));
+                // 已提交任务仅续查服务端结果，不再重新读取原来的图片、音频或视频素材。
                 const videoModel = normalizeCanvasVideoModel(node.metadata.model || effectiveConfig.videoModel || effectiveConfig.model);
                 const generationConfig = {
                     ...effectiveConfig,
@@ -663,7 +664,7 @@ function InfiniteCanvasPage() {
                     vquality: node.metadata.vquality || effectiveConfig.vquality,
                 };
                 const video = await uploadMediaFile(
-                    await requestVideoGeneration(generationConfig, (node.metadata.generationPrompt || node.metadata.prompt || "").trim(), context.referenceImages, context.referenceAudios, context.referenceVideos, { taskId }),
+                    await requestVideoGeneration(generationConfig, "", [], [], [], { taskId }),
                     "video",
                 );
                 const videoSize = fitNodeSize(video.width || node.width, video.height || node.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
@@ -676,6 +677,7 @@ function InfiniteCanvasPage() {
                 const errorDetails = error instanceof Error ? error.message : "恢复视频任务失败";
                 commitGenerationNodes((prev) => prev.map((item) => item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails, ...timing(), ...CLEARED_VIDEO_TASK_METADATA } } : item));
             } finally {
+                recoveringVideoTaskIdsRef.current.delete(node.id);
                 clearCanvasNodeRunning([node.id]);
             }
         },

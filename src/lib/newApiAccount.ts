@@ -44,7 +44,7 @@ const ACCOUNT_DEFAULT_STATUS: NewApiStatusInfo = {
   raw: null,
 }
 
-type RequestMethod = 'GET' | 'POST' | 'DELETE'
+type RequestMethod = 'GET' | 'POST' | 'PUT' | 'DELETE'
 type NewApiSessionUpdated = (session: NewApiAccountSession) => void
 
 const accountRefreshRequests = new Map<string, Promise<NewApiAccountSession>>()
@@ -267,6 +267,21 @@ async function requestWithNewApiSession<T>(
     // 只在明确鉴权失败且刷新成功后重放一次，避免支付订单被重复创建。
     return request(refreshedSession)
   }
+}
+
+// 管理入口使用账号会话，绝不使用绑定的生成 Key 代替根用户登录状态。
+export async function fetchNewApiAccountRole(profile: ApiProfile, session: NewApiAccountSession): Promise<number> {
+  return requestWithNewApiSession(profile, session, async current => {
+    const user = await newApiRequest<{ role?: number }>(profile, '/api/user/self', { accessToken: current.accessToken, userId: current.userId })
+    return user.role ?? 0
+  })
+}
+
+export async function requestNewApiVideoProtocol<T>(profile: ApiProfile, session: NewApiAccountSession, channelId?: number, value?: unknown): Promise<T> {
+  if (channelId !== undefined && (!Number.isInteger(channelId) || channelId <= 0)) throw new Error('渠道编号无效')
+  return requestWithNewApiSession(profile, session, current => newApiRequest<T>(profile, `/api/video-protocol/${channelId ?? ''}`, {
+    method: value === undefined ? 'GET' : 'PUT', body: value, accessToken: current.accessToken, userId: current.userId,
+  }))
 }
 
 function hasConfirmedInviter(session: Pick<NewApiAccountSession, 'inviter' | 'inviterId'>): boolean {

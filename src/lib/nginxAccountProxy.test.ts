@@ -14,6 +14,7 @@ describe('文运账号反向代理配置', () => {
     const block = getLocationBlock('location /newapi-proxy/wenyun/')
 
     expect(block).toContain('proxy_pass http://new-api:3000/;')
+    expect(block).toContain('limit_except GET POST PUT DELETE OPTIONS')
     expect(block).toContain('proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;')
     expect(block).not.toContain('proxy_pass https://api.zzlye.xyz/')
   })

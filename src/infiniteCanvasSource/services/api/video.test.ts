@@ -55,7 +55,7 @@ describe("画布视频异步接口", () => {
                 generate_audio: true,
             },
             expect.objectContaining({
-                headers: { Authorization: "Bearer video-key", "Content-Type": "application/json" },
+                headers: { Authorization: "Bearer video-key", "Content-Type": "application/json", Prefer: "respond-async" },
                 timeout: 900000,
             }),
         );

@@ -24,6 +24,8 @@ type VideoTask = {
     url?: string;
     videoUrl?: string;
     output?: unknown;
+    media?: Array<{ url?: string; kind?: string }>;
+    resultExpired?: boolean;
     error?: { message?: string };
 };
 
@@ -57,10 +59,9 @@ const VIDEO_REFERENCE_JPEG_QUALITY = 0.88;
  */
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], audioReferences: ReferenceAudio[] = [], videoReferences: ReferenceVideo[] = [], taskReference?: VideoTaskReference, onTaskCreated?: (task: VideoTaskReference) => void) {
     const source = resolveVideoApiSource(config);
-    const payload = await buildCanvasVideoPayload(config, prompt, references, audioReferences, videoReferences);
-
     try {
-        const created = taskReference?.taskId ? { id: taskReference.taskId, status: "processing" } : unwrapVideoTask(await createVideoTask(source, payload));
+        // 恢复已有任务只查询编号，不重新读取可能已经移除的本地素材。
+        const created = taskReference?.taskId ? { id: taskReference.taskId, status: "processing" } : unwrapVideoTask(await createVideoTask(source, await buildCanvasVideoPayload(config, prompt, references, audioReferences, videoReferences)));
         if (!taskReference?.taskId && created.id) onTaskCreated?.({ taskId: created.id });
         const result = await waitForVideoResult(source, created);
         refreshRemoteUser(config);
@@ -72,12 +73,14 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
 
 async function createVideoTask(source: VideoApiSource, payload: Record<string, unknown>) {
     const post = async (body: Record<string, unknown>) => (await axios.post<VideoApiResponse>(videoApiUrl(source, "/videos"), body, {
-        headers: { ...videoApiHeaders(source), "Content-Type": "application/json" },
+        headers: { ...videoApiHeaders(source), "Content-Type": "application/json", Prefer: "respond-async" },
         timeout: requestTimeout(source),
     })).data;
     try {
         return await post(payload);
     } catch (error) {
+        // 已配置渠道的参数由中转统一转换，前端不再通过重复创建来猜测协议。
+        if (axios.isAxiosError(error) && error.response?.headers?.["x-new-api-video-protocol"] === "configured") throw error;
         // 部分视频中转仍使用 input_reference 对象接收首张图片；仅在明确的参数校验错误时切换格式，避免任务已创建后重复扣费。
         if (isInputReferenceObjectError(error)) {
             const imageUrls = Array.isArray(payload.image_urls) ? payload.image_urls.filter((url): url is string => typeof url === "string" && Boolean(url)) : [];
@@ -154,7 +157,7 @@ async function buildCanvasVideoPayload(config: AiConfig, prompt: string, referen
 
     // 参考素材只发送统一数组字段，供应商别名及首尾帧规则由中转适配。
     // 本地图片和音频沿用现有 data URL 传输，接收方若要求公网地址需在中转落存储。
-    const videos = videoReferences.map(videoToReferenceUrl);
+    const videos = await Promise.all(videoReferences.map(videoToReferenceUrl));
     const images = await Promise.all(references.map(imageToVideoReferenceUrl));
     const audios = await Promise.all(audioReferences.map(audioToVideoReferenceUrl));
     if (images.some((url) => !url) || audios.some((url) => !url)) throw new Error("参考媒体读取失败，请重新添加");
@@ -169,22 +172,39 @@ async function waitForVideoResult(source: VideoApiSource, created: VideoTask) {
     if (!created.id) throw new Error("视频接口没有返回任务 ID");
     let task = created;
     const deadline = Date.now() + VIDEO_TOTAL_TIMEOUT_MS;
+    // NewAPI 后台任务和原生视频任务使用各自的查询端点，刷新后可根据编号直接恢复。
+    const backgroundTask = created.id.startsWith("async_");
+    const taskPath = `/${backgroundTask ? "tasks" : "videos"}/${encodeURIComponent(created.id)}`;
 
     for (;;) {
-        const videoUrl = findVideoUrl(task);
-        if (videoUrl) return fetchVideoResultBlob(source, created.id, videoUrl, remainingTimeout(deadline));
-        if (isVideoStatusCompleted(task.status)) return fetchVideoContent(source, created.id, remainingTimeout(deadline));
         if (isVideoStatusFailed(task.status)) throw new Error(task.error?.message || "视频生成失败");
+        if (task.resultExpired) throw new Error("视频文件已过期，任务记录仍然保留");
+        if (backgroundTask && isVideoStatusCompleted(task.status)) {
+            const media = task.media?.find(item => item.kind === "video");
+            const mediaPath = media?.url?.replace(/^\/v1/, "") || "";
+            // 只携带鉴权访问当前任务的内容接口，不信任响应里任意外部地址。
+            if (!mediaPath.startsWith(`${taskPath}/media/`) || !/^\d+$/.test(mediaPath.slice(`${taskPath}/media/`.length))) throw new Error("任务已完成，但没有返回可读取的视频文件");
+            return requestVideoContent(videoApiUrl(source, mediaPath), source, remainingTimeout(deadline));
+        }
+        const videoUrl = findVideoUrl(task);
+        if (!backgroundTask && videoUrl) return fetchVideoResultBlob(source, created.id, videoUrl, remainingTimeout(deadline));
+        if (!backgroundTask && isVideoStatusCompleted(task.status)) return fetchVideoContent(source, created.id, remainingTimeout(deadline));
 
         const remaining = remainingTimeout(deadline);
         if (!remaining) throw new Error(`视频生成超过 ${CANVAS_VIDEO_TIMEOUT} 秒仍未完成`);
         await delayVideoPoll(Math.min(VIDEO_POLL_INTERVAL_MS, remaining));
         const nextRemaining = remainingTimeout(deadline);
         if (!nextRemaining) throw new Error(`视频生成超过 ${CANVAS_VIDEO_TIMEOUT} 秒仍未完成`);
-        task = unwrapVideoTask((await axios.get<VideoApiResponse>(videoApiUrl(source, `/videos/${created.id}`), {
-            headers: videoApiHeaders(source),
-            timeout: requestTimeout(source, nextRemaining),
-        })).data);
+        try {
+            task = unwrapVideoTask((await axios.get<VideoApiResponse>(videoApiUrl(source, taskPath), {
+                headers: videoApiHeaders(source),
+                timeout: requestTimeout(source, nextRemaining),
+            })).data);
+        } catch (error) {
+            // 断网、限流及暂时的服务错误只重试查询，绝不重新创建已扣费的任务。
+            if (axios.isAxiosError(error) && (!error.response || [408, 429, 500, 502, 503, 504].includes(error.response.status))) continue;
+            throw error;
+        }
     }
 }
 
@@ -290,16 +310,22 @@ async function audioToVideoReferenceUrl(audio: ReferenceAudio) {
     return normalizeVideoReferenceAudioDataUrl(dataUrl);
 }
 
-function videoToReferenceUrl(video: ReferenceVideo) {
+async function videoToReferenceUrl(video: ReferenceVideo) {
     const directUrl = (video.url || "").trim();
-    // 上游只接受公网 HTTP(S) 视频地址，浏览器的 blob 地址只用于本地预览，不能直接提交。
+    // 公网地址直接引用；本地素材读取实际内容，避免把浏览器 blob 地址发送给服务器。
     try {
         const parsed = new URL(directUrl);
         if (["http:", "https:"].includes(parsed.protocol)) return parsed.href;
     } catch {
         // 无效地址与本地 blob 均在创建任务前报告，避免静默丢弃参考后扣费。
     }
-    throw new Error("参考视频需要可访问的 HTTP(S) 地址，请先上传到可访问的存储");
+    try {
+        const dataUrl = await mediaToDataUrl(video);
+        if (dataUrl?.startsWith("data:video/")) return dataUrl;
+    } catch {
+        // 素材读取失败必须中止创建，不能忽略参考视频继续计费。
+    }
+    throw new Error("参考视频读取失败，请重新添加视频素材");
 }
 
 async function normalizeVideoReferenceAudioDataUrl(dataUrl: string) {
@@ -432,7 +458,7 @@ function findVideoTask(input: unknown): VideoTask | null {
     const url = readDirectVideoUrl(record);
     if (id || status || url) {
         const errorMessage = stringValue((record.error as Record<string, unknown> | undefined)?.message) || stringValue(record.error_message) || stringValue(record.fail_reason);
-        return { id, status, url, videoUrl: stringValue(record.videoUrl), output: record.output, error: errorMessage ? { message: errorMessage } : undefined };
+        return { id, status, url, videoUrl: stringValue(record.videoUrl), output: record.output, media: Array.isArray(record.media) ? record.media : undefined, resultExpired: record.result_expired === true, error: errorMessage ? { message: errorMessage } : undefined };
     }
 
     for (const value of Object.values(record)) {
@@ -533,15 +559,18 @@ function readAxiosError(error: unknown, fallback: string) {
     return sanitizeApiErrorMessage(error instanceof Error ? error.message : fallback);
 }
 
-function extractApiErrorMessage(input: unknown): string {
+function extractApiErrorMessage(input: unknown, depth = 0): string {
+    if (depth > 6) return "";
     if (!input) return "";
-    if (typeof input === "string") return input.trim();
+    if (typeof input === "string") {
+        const parsed = parseJsonString(input);
+        return parsed ? extractApiErrorMessage(parsed, depth + 1) : input.trim();
+    }
     if (typeof input !== "object") return "";
     const record = input as Record<string, unknown>;
     const direct = stringValue(record.msg) || stringValue(record.message) || stringValue(record.detail) || stringValue(record.reason) || stringValue(record.error_message) || stringValue(record.fail_reason);
-    if (direct) return direct;
-    if (typeof record.error === "string") return record.error.trim();
-    return extractApiErrorMessage(record.error) || extractApiErrorMessage(record.data);
+    if (direct) return extractApiErrorMessage(direct, depth + 1);
+    return extractApiErrorMessage(record.error, depth + 1) || extractApiErrorMessage(record.data, depth + 1);
 }
 
 async function assertVideoBlob(blob: Blob) {

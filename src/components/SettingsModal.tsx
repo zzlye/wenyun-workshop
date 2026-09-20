@@ -40,6 +40,7 @@ import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_TIMEOUT, normalizeCanvasVideoModel 
 import { useCanvasStore } from '../infiniteCanvasSource/app/(user)/canvas/stores/use-canvas-store'
 import { useAssetStore } from '../infiniteCanvasSource/stores/use-asset-store'
 import Select from './Select'
+import { VideoProtocolManager } from './VideoProtocolManager'
 import { Checkbox } from './Checkbox'
 import ViewportTooltip from './ViewportTooltip'
 import PriceTableButton from './PriceTableButton'
@@ -2462,6 +2463,9 @@ export default function SettingsModal() {
                   fixedBaseUrl={CANVAS_VIDEO_BASE_URL}
                   fixedTimeout={CANVAS_VIDEO_TIMEOUT}
                 />
+                {draft.profiles.filter(profile => profile.baseUrl.replace(/\/v1\/?$/, '').replace(/\/$/, '') === CANVAS_VIDEO_BASE_URL.replace(/\/v1\/?$/, '').replace(/\/$/, '')).map(profile => (
+                  <VideoProtocolManager key={profile.id} profile={profile} session={draft.newApiAccountSessions[profile.id]} />
+                ))}
               </div>
             )}
             
