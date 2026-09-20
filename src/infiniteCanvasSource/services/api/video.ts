@@ -73,6 +73,15 @@ async function createVideoTask(source: VideoApiSource, payload: Record<string, u
     try {
         return await post(payload);
     } catch (error) {
+        // 部分视频中转仍使用 input_reference 对象接收首张图片；仅在明确的参数校验错误时切换格式，避免任务已创建后重复扣费。
+        if (isInputReferenceObjectError(error)) {
+            const imageUrls = Array.isArray(payload.image_urls) ? payload.image_urls.filter((url): url is string => typeof url === "string" && Boolean(url)) : [];
+            if (imageUrls.length) {
+                const objectReferencePayload = { ...payload, input_reference: { image_url: imageUrls[0] } };
+                delete objectReferencePayload.image_urls;
+                return post(objectReferencePayload);
+            }
+        }
         const currentField = "seconds" in payload ? "seconds" : "duration";
         const alternateField = currentField === "seconds" ? "duration" : "seconds";
         // 只有明确拒绝创建任务的缺字段错误才转换一次，超时或服务端异常不重发付费请求。
@@ -82,6 +91,13 @@ async function createVideoTask(source: VideoApiSource, payload: Record<string, u
         delete converted[currentField];
         return post(converted);
     }
+}
+
+function isInputReferenceObjectError(error: unknown) {
+    if (!axios.isAxiosError(error) || ![400, 422].includes(error.response?.status)) return false;
+    if (hasVideoTaskId(error.response?.data)) return false;
+    const message = extractApiErrorMessage(error.response?.data);
+    return /input_reference/i.test(message) && /image_url/i.test(message) && /object/i.test(message);
 }
 
 function hasVideoTaskId(value: unknown): boolean {

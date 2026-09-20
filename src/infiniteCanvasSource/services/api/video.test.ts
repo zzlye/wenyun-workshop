@@ -124,6 +124,22 @@ describe("画布视频异步接口", () => {
         expect((axios.post as Mock).mock.calls[0][1]).not.toHaveProperty("image_url");
     });
 
+    it("中转要求对象格式时，将首张 data URL 改为 input_reference.image_url 重试", async () => {
+        (axios.post as Mock)
+            .mockRejectedValueOnce({ isAxiosError: true, response: { status: 422, data: { error: { message: "input_reference must be an object containing image_url" } } } })
+            .mockResolvedValueOnce({ data: { id: "task-object-reference", status: "completed" } });
+        (axios.get as Mock).mockResolvedValueOnce({ data: videoBlob() });
+
+        await requestVideoGeneration({ ...defaultConfig, videoApiKey: "video-key" }, "参考图片生成视频", [
+            { id: "image-1", name: "参考图", type: "image/png", dataUrl: "data:image/png;base64,cmVm" },
+        ]);
+
+        expect((axios.post as Mock).mock.calls).toHaveLength(2);
+        expect((axios.post as Mock).mock.calls[0][1].image_urls).toEqual(["data:image/png;base64,cmVm"]);
+        expect((axios.post as Mock).mock.calls[1][1]).toMatchObject({ input_reference: { image_url: "data:image/png;base64,cmVm" } });
+        expect((axios.post as Mock).mock.calls[1][1]).not.toHaveProperty("image_urls");
+    });
+
     it("按文档提交多图和音频参考字段", async () => {
         (axios.post as Mock).mockResolvedValueOnce({ data: { code: 0, data: { id: "task-2", status: "completed" } } });
         (axios.get as Mock).mockResolvedValueOnce({ data: videoBlob() });
