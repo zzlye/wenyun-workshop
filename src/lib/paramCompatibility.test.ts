@@ -4,6 +4,19 @@ import { createDefaultFalProfile, createDefaultOpenAIProfile, DEFAULT_SETTINGS, 
 import { getOutputImageLimitForSettings, normalizeParamsForSettings } from './paramCompatibility'
 
 describe('parameter compatibility', () => {
+  it.each([
+    ['Nano-Banana-2', '512x512'],
+    ['Nano-Banana-2', '12288x1536'],
+    ['Nano-Banana-Pro', '4096x4096'],
+    ['Nano-Banana-Pro', '6336x2688'],
+  ])('保留 %s 的官方尺寸 %s，不套用通用像素限制', (model, size) => {
+    const settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({ ...profile, model })),
+    })
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size }, settings).size).toBe(size)
+  })
+
   it('limits OpenAI output count to 10', () => {
     const openAIProfile = createDefaultOpenAIProfile({ apiKey: 'test-key', streamImages: false })
     const settings = normalizeSettings({

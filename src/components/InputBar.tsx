@@ -7,6 +7,7 @@ import { supportsTransparentImageBackground } from '../lib/modelPricing'
 import { getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
 import { normalizeImageSize } from '../lib/size'
+import { resolveBananaSizePreset } from '../lib/bananaImageSize'
 import { createMaskPreviewDataUrl } from '../lib/canvasImage'
 import { dismissAllTooltips } from '../lib/tooltipDismiss'
 import { getSafeBoundingClientRect } from '../lib/domRect'
@@ -642,7 +643,8 @@ export default function InputBar() {
     : isFalProvider
     ? `fal.ai 最大请求数量为 ${outputImageLimit}`
     : `OpenAI 最大请求数量为 ${outputImageLimit}`
-  const normalizedDisplaySize = normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id, activeProfile.model)
+  const normalizedDisplaySize = resolveBananaSizePreset(activeProfile.model, params.size)?.size
+    ?? normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id, activeProfile.model)
   const displaySize = normalizedDisplaySize === 'auto' ? DEFAULT_PARAMS.size : normalizedDisplaySize || DEFAULT_PARAMS.size
   const imageSizeTiers = getImageSizeTiersForProfile(activeProfile.id, activeProfile.model)
   const allowCustomImageRatio = allowsCustomImageRatioForProfile(activeProfile.id)
@@ -651,7 +653,8 @@ export default function InputBar() {
   const isBananaModel = isBananaImageModel(activeProfile.model)
 
   useEffect(() => {
-    const nextSize = normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id, activeProfile.model)
+    const nextSize = resolveBananaSizePreset(activeProfile.model, params.size)?.size
+      ?? normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id, activeProfile.model)
     if (nextSize && nextSize !== params.size) setParams({ size: nextSize })
   }, [activeProfile.id, activeProfile.model, params.size, setParams])
 
@@ -1881,6 +1884,8 @@ export default function InputBar() {
 
       {showSizePicker && (
         <SizePickerModal
+          key={activeProfile.model}
+          imageModel={activeProfile.model}
           currentSize={displaySize}
           allowedTiers={imageSizeTiers}
           allowCustomRatio={allowCustomImageRatio}

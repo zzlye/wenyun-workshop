@@ -2,6 +2,7 @@ import { DEFAULT_PARAMS, type AppSettings, type TaskParams } from '../types'
 import { getActiveApiProfile, normalizeImageSizeForProfile } from './apiProfiles'
 import { normalizeImageSize } from './size'
 import { normalizeImageBackground } from './modelPricing'
+import { findBananaSizePreset } from './bananaImageSize'
 
 export const DEFAULT_FAL_IMAGE_SIZE = '1360x1024'
 export const MAX_FAL_OUTPUT_IMAGES = 4
@@ -18,7 +19,9 @@ export function normalizeParamsForSettings(
 ): TaskParams {
   const activeProfile = getActiveApiProfile(settings)
   const outputImageLimit = getOutputImageLimitForSettings(settings)
-  const normalizedSize = normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id, activeProfile.model)
+  // 官方香蕉预设要原样经过提交、重试和任务恢复，避免被通用尺寸规则裁小。
+  const normalizedSize = findBananaSizePreset(activeProfile.model, params.size)?.size
+    ?? normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id, activeProfile.model)
   const nextParams: TaskParams = {
     ...params,
     size: normalizedSize === 'auto' ? DEFAULT_PARAMS.size : normalizedSize || DEFAULT_PARAMS.size,

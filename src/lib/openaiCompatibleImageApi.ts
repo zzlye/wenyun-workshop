@@ -5,6 +5,7 @@ import { buildApiUrl, getLockedNewApiProxyPrefix, isLockedApiProxyTarget, readCl
 import { fetchImageTask, shouldUseImageTasks } from './imageTasks'
 import { formatImageRatio, normalizeImageSize, parseRatio } from './size'
 import { normalizeImageBackground, supportsTransparentImageBackground } from './modelPricing'
+import { findBananaSizePreset, resolveBananaSizePreset } from './bananaImageSize'
 import {
   assertImageInputPayloadSize,
   assertMaskEditFileSize,
@@ -35,7 +36,10 @@ function shouldRequestImageStream(): boolean {
   return false
 }
 
-function getBananaImageSize(size: string): '1K' | '2K' | '4K' {
+function getBananaImageSize(size: string, model: string): '512' | '1K' | '2K' | '4K' {
+  const preset = resolveBananaSizePreset(model, size)
+  // 界面显示 512px，官方 generateContent 接口要求的字面值是字符串 "512"。
+  if (preset) return preset.tier === '512px' ? '512' : preset.tier
   const match = normalizeImageSize(size).match(/^(\d+)x(\d+)$/)
   if (!match) return '1K'
   const width = Number(match[1])
@@ -47,7 +51,9 @@ function getBananaImageSize(size: string): '1K' | '2K' | '4K' {
   return '1K'
 }
 
-function getBananaAspectRatio(size: string): string {
+function getBananaAspectRatio(size: string, model: string): string {
+  const preset = resolveBananaSizePreset(model, size)
+  if (preset) return preset.ratio
   const match = normalizeImageSize(size).match(/^(\d+)x(\d+)$/)
   if (match) return formatImageRatio(Number(match[1]), Number(match[2])).replace(/^≈/, '') || '1:1'
   const ratio = parseRatio(size)
@@ -58,15 +64,15 @@ function getBananaAspectRatio(size: string): string {
 function appendBananaGenerationFields(target: Record<string, unknown>, profile: ApiProfile, params: TaskParams) {
   if (!isBananaImageModel(profile.model)) return
   // 香蕉上游不按 OpenAI 的 size 字段判断清晰度，需要同步传它的原生字段。
-  target.aspectRatio = getBananaAspectRatio(params.size)
-  target.imageSize = getBananaImageSize(params.size)
+  target.aspectRatio = getBananaAspectRatio(params.size, profile.model)
+  target.imageSize = getBananaImageSize(params.size, profile.model)
   target.replyType = 'json'
 }
 
 function appendBananaGenerationFormFields(formData: FormData, profile: ApiProfile, params: TaskParams) {
   if (!isBananaImageModel(profile.model)) return
-  formData.append('aspectRatio', getBananaAspectRatio(params.size))
-  formData.append('imageSize', getBananaImageSize(params.size))
+  formData.append('aspectRatio', getBananaAspectRatio(params.size, profile.model))
+  formData.append('imageSize', getBananaImageSize(params.size, profile.model))
   formData.append('replyType', 'json')
 }
 
@@ -121,8 +127,8 @@ function createGeminiRequestBody(opts: CallApiOptions, profile: ApiProfile): Rec
     generationConfig: {
       responseModalities: ['IMAGE'],
       imageConfig: {
-        aspectRatio: getBananaAspectRatio(opts.params.size),
-        imageSize: getBananaImageSize(opts.params.size),
+        aspectRatio: getBananaAspectRatio(opts.params.size, profile.model),
+        imageSize: getBananaImageSize(opts.params.size, profile.model),
       },
     },
   }
@@ -1064,6 +1070,10 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
           formData.append('stream', 'true')
           formData.append('partial_images', String(getStreamPartialImages(profile)))
         }
+        appendBananaGenerationFormFields(formData, profile, params)
+      }
+      // 官方预设在图生图时也传递原生档位，避免上游仅凭像素误判超宽 1K 或 512px。
+      if (isLockedImageApi && !usesOfficialImageParams && findBananaSizePreset(profile.model, params.size)) {
         appendBananaGenerationFormFields(formData, profile, params)
       }
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { calculateImageSize, normalizeImageSize, parseRatio, type SizeTier } from '../lib/size'
+import { getBananaSizeConfig, resolveBananaSizePreset, type BananaSizeTier } from '../lib/bananaImageSize'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
 import ViewportTooltip from './ViewportTooltip'
 
@@ -18,6 +19,7 @@ const RATIOS = [
 
 interface Props {
   currentSize: string
+  imageModel?: string
   allowedTiers?: SizeTier[]
   allowCustomRatio?: boolean
   onSelect: (size: string) => void
@@ -44,11 +46,16 @@ function findPresetForSize(size: string, tiers = TIERS) {
   return null
 }
 
-export default function SizePickerModal({ currentSize, allowedTiers, allowCustomRatio = true, onSelect, onClose }: Props) {
-  usePreventBackgroundScroll(true)
-  const tiers = allowedTiers?.length ? allowedTiers : TIERS
-
+export default function SizePickerModal({ currentSize, imageModel = '', allowedTiers, allowCustomRatio: customRatioAllowed = true, onSelect, onClose }: Props) {
   const modalRef = useRef<HTMLDivElement>(null)
+  // 扩展比例超过一屏时保留弹窗内滚动，只锁定背后的页面。
+  usePreventBackgroundScroll(true, modalRef)
+  // 文运香蕉使用独立官方预设，其他模型继续使用原来的尺寸选择方式。
+  const bananaConfig = getBananaSizeConfig(imageModel)
+  const tiers = bananaConfig?.tiers ?? (allowedTiers?.length ? allowedTiers : TIERS)
+  const ratios = bananaConfig?.ratios.map((value) => ({ label: value, value })) ?? RATIOS
+  const allowCustomRatio = customRatioAllowed && !bananaConfig
+
   const mouseDownTargetRef = useRef<EventTarget | null>(null)
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -71,10 +78,12 @@ export default function SizePickerModal({ currentSize, allowedTiers, allowCustom
     mouseDownTargetRef.current = null
   }
 
-  const currentPreset = findPresetForSize(currentSize, tiers)
+  const currentPreset = bananaConfig
+    ? resolveBananaSizePreset(imageModel, currentSize)
+    : findPresetForSize(currentSize, allowedTiers)
   const [mode] = useState<Mode>('ratio')
 
-  const [tier, setTier] = useState<SizeTier>(currentPreset?.tier ?? tiers[0] ?? '1K')
+  const [tier, setTier] = useState<BananaSizeTier>(currentPreset?.tier ?? '1K')
   const [ratio, setRatio] = useState(currentPreset?.ratio ?? '1:1')
   const [customRatio, setCustomRatio] = useState('16:9')
 
@@ -100,9 +109,11 @@ export default function SizePickerModal({ currentSize, allowedTiers, allowCustom
   )
 
   const previewSize = useMemo(() => {
+    if (bananaConfig) return bananaConfig.presets.find((preset) => preset.tier === tier && preset.ratio === activeRatio)?.size ?? ''
+    if (tier === '512px') return ''
     const size = calculateImageSize(tier, activeRatio)
     return size ? normalizeImageSize(size) : ''
-  }, [tier, activeRatio])
+  }, [tier, activeRatio, bananaConfig])
 
   const isClamped = useMemo(() => {
     if (!previewSize) return false
@@ -151,11 +162,14 @@ export default function SizePickerModal({ currentSize, allowedTiers, allowCustom
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm animate-overlay-in" />
       <div
         ref={modalRef}
-        className="relative z-10 w-full max-w-md rounded-3xl border border-white/50 bg-white/95 p-5 shadow-2xl ring-1 ring-black/5 animate-modal-in dark:border-white/[0.08] dark:bg-gray-900/95 dark:ring-white/10"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="image-size-modal-title"
+        className="relative z-10 max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-3xl border border-white/50 bg-white/95 p-5 shadow-2xl ring-1 ring-black/5 animate-modal-in dark:border-white/[0.08] dark:bg-gray-900/95 dark:ring-white/10"
       >
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-base font-semibold text-gray-800 dark:text-gray-100">设置图像尺寸</h3>
+            <h3 id="image-size-modal-title" className="text-base font-semibold text-gray-800 dark:text-gray-100">设置图像尺寸</h3>
             <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">当前：{currentSize || '1024x1024'}</p>
           </div>
           <button
@@ -175,9 +189,9 @@ export default function SizePickerModal({ currentSize, allowedTiers, allowCustom
               <div className="space-y-5 animate-fade-in">
                 <section>
                   <div className="mb-2 text-xs font-medium text-gray-400 dark:text-gray-500">基准分辨率</div>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className={`grid gap-2 ${tiers.length === 4 ? 'grid-cols-4' : 'grid-cols-3'}`}>
                     {tiers.map((item) => (
-                      <button key={item} className={buttonClass(tier === item)} onClick={() => setTier(item)}>
+                      <button key={item} aria-pressed={tier === item} className={buttonClass(tier === item)} onClick={() => setTier(item)}>
                         {item}
                       </button>
                     ))}
@@ -187,13 +201,14 @@ export default function SizePickerModal({ currentSize, allowedTiers, allowCustom
                 <section>
                   <div className="mb-2 text-xs font-medium text-gray-400 dark:text-gray-500">图像比例</div>
                   <div className="grid grid-cols-4 gap-2">
-                    {RATIOS.map((item) => {
+                    {ratios.map((item) => {
                       const [w, h] = item.value.split(':').map(Number)
                       const isHorizontal = w > h
                       const isSquare = w === h
                       return (
                         <button
                           key={item.value}
+                          aria-pressed={ratio === item.value}
                           className={`${buttonClass(ratio === item.value)} flex flex-col items-center justify-center gap-1.5 !py-2.5`}
                           onClick={() => setRatio(item.value)}
                         >
