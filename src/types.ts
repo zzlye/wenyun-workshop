@@ -221,6 +221,8 @@ export interface AppSettings {
   appearanceBackgroundBlur: number
   /** 夜间外观模式，开启后使用深色界面配色 */
   appearanceNightMode: boolean
+  /** 主播模式仅固定主页背景，不改变工坊内部外观。 */
+  homeStreamerMode: boolean
   /** 旧版文字/视频混合 API 地址：保留用于历史配置迁移 */
   textVideoBaseUrl: string
   /** 旧版文字/视频混合 API Key：保留用于历史配置迁移 */

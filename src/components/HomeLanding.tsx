@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Copy, Link, LogIn, Pause, Play, RefreshCw, Settings, X } from 'lucide-react'
 import { LOCKED_WENYUN_PROFILE_ID } from '../lib/apiProfiles'
 import { useStore } from '../store'
-import { createHomeBackgroundLoader } from '../lib/homeBackground'
+import { createHomeBackgroundLoader, HOME_STREAMER_BACKGROUND_PATH } from '../lib/homeBackground'
 import AccountLoginModal from './AccountLoginModal'
 import { AnimatedThemeToggler } from '../infiniteCanvasSource/components/ui/animated-theme-toggler'
 
@@ -21,12 +21,15 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
   const [showLogin, setShowLogin] = useState(false)
   const [showBackgroundUrl, setShowBackgroundUrl] = useState(false)
   const appearanceNightMode = useStore((state) => state.settings.appearanceNightMode)
+  const homeStreamerMode = useStore((state) => state.settings.homeStreamerMode)
   const setSettings = useStore((state) => state.setSettings)
   const activeBackgroundIndexRef = useRef(0)
   const backgroundLoaderRef = useRef<ReturnType<typeof createHomeBackgroundLoader> | null>(null)
   const accountSession = useStore((state) => state.settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] ?? null)
 
   useEffect(() => {
+    // 主播模式不创建随机加载器；切换时清理旧请求，迟到响应也不能更新背景。
+    if (homeStreamerMode) return
     const loader = createHomeBackgroundLoader({
       prepare: (url) => {
         const nextIndex = activeBackgroundIndexRef.current === 0 ? 1 : 0
@@ -50,23 +53,36 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
       loader.dispose()
       backgroundLoaderRef.current = null
     }
-  }, [])
+  }, [homeStreamerMode])
 
   useEffect(() => {
-    if (isPaused || !isBackgroundReady) return
+    if (homeStreamerMode || isPaused || !isBackgroundReady) return
     const timer = window.setInterval(() => {
       void backgroundLoaderRef.current?.rotate()
     }, BACKGROUND_ROTATION_MS)
     return () => window.clearInterval(timer)
-  }, [isPaused, isBackgroundReady])
+  }, [homeStreamerMode, isPaused, isBackgroundReady])
 
   const refreshBackground = () => {
+    if (homeStreamerMode) return
     void backgroundLoaderRef.current?.refresh()
   }
 
+  const currentBackgroundUrl = homeStreamerMode
+    ? new URL(HOME_STREAMER_BACKGROUND_PATH, window.location.href).href
+    : backgroundUrls[activeBackgroundIndex]
+
   return (
     <div className="home-landing min-h-screen overflow-hidden bg-[#20242d] text-white">
-      {backgroundUrls.map((url, index) => (
+      {/* 使用独立图层直接替换随机背景，加载固定图时也不透出旧缓存或过渡中的随机图。 */}
+      {homeStreamerMode ? (
+        <div
+          key="streamer"
+          aria-hidden
+          className="home-landing-background home-landing-background-active"
+          style={{ backgroundImage: `url(${JSON.stringify(currentBackgroundUrl)})` }}
+        />
+      ) : backgroundUrls.map((url, index) => (
         <div
           key={index}
           aria-hidden
@@ -103,8 +119,10 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
         </div>
       </main>
       <div className="fixed bottom-5 right-5 z-20 flex items-center gap-2 sm:bottom-7 sm:right-7">
-        <button type="button" className="home-landing-pause !px-2.5" onClick={() => setIsPaused((value) => !value)} aria-label={isPaused ? '继续轮播' : '暂停轮播'} title={isPaused ? '继续轮播' : '暂停轮播'}>{isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}</button>
-        <button type="button" className="home-landing-pause !px-2.5" onClick={refreshBackground} aria-label="刷新背景" title="刷新背景"><RefreshCw className="size-3.5" /></button>
+        {!homeStreamerMode && <>
+          <button type="button" className="home-landing-pause !px-2.5" onClick={() => setIsPaused((value) => !value)} aria-label={isPaused ? '继续轮播' : '暂停轮播'} title={isPaused ? '继续轮播' : '暂停轮播'}>{isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}</button>
+          <button type="button" className="home-landing-pause !px-2.5" onClick={refreshBackground} aria-label="刷新背景" title="刷新背景"><RefreshCw className="size-3.5" /></button>
+        </>}
         <div className="relative">
           <button type="button" className="home-landing-pause !px-2.5" onClick={() => setShowBackgroundUrl((value) => !value)} aria-label="查看主页背景地址" title="查看主页背景地址"><Link className="size-3.5" /></button>
           {showBackgroundUrl && (
@@ -114,8 +132,8 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
                   <button type="button" onClick={() => setShowBackgroundUrl(false)} aria-label="关闭背景地址"><X className="size-3.5" /></button>
                 </div>
                 <div className="flex items-start gap-2">
-                  <code className="min-w-0 flex-1 break-all text-[11px] leading-5 text-gray-500">{backgroundUrls[activeBackgroundIndex] || '背景尚未加载'}</code>
-                  <button type="button" className="shrink-0 rounded-md p-1.5 text-gray-500 transition hover:bg-gray-200" onClick={() => void navigator.clipboard?.writeText(backgroundUrls[activeBackgroundIndex] || '')} aria-label="复制背景地址" title="复制背景地址"><Copy className="size-3.5" /></button>
+                  <code className="min-w-0 flex-1 break-all text-[11px] leading-5 text-gray-500">{currentBackgroundUrl || '背景尚未加载'}</code>
+                  <button type="button" className="shrink-0 rounded-md p-1.5 text-gray-500 transition hover:bg-gray-200" onClick={() => void navigator.clipboard?.writeText(currentBackgroundUrl || '')} aria-label="复制背景地址" title="复制背景地址"><Copy className="size-3.5" /></button>
                 </div>
               </div>
           )}

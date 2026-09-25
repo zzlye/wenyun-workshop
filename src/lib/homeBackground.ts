@@ -1,6 +1,8 @@
 import { PIXIV_RANDOM_BACKGROUND_API_URL } from './apiProfiles'
 
 export const HOME_BACKGROUND_STORAGE_KEY = 'wenyun-home-background-url'
+// 图片随站点发布，使用带内容哈希的固定地址，不依赖随机图接口或第三方图床。
+export const HOME_STREAMER_BACKGROUND_PATH = '/assets/home-streamer-d482b116.webp'
 const FALLBACK_BACKGROUND_URL = 'https://www.loliapi.com/acg/pc/'
 
 // 随机入口不能作为固定图片保存，兼容清理旧版本缓存中的两种随机接口。

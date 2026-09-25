@@ -22,6 +22,7 @@ import Select from './Select'
 import { Checkbox } from './Checkbox'
 
 import PriceTableButton from './PriceTableButton'
+import HomeStreamerSetting from './HomeStreamerSetting'
 import { CloseIcon, CopyIcon, TrashIcon, ExportIcon, ImportIcon } from './icons'
 
 const GlobalVideoSettings = lazy(() => import('./GlobalVideoSettings'))
@@ -1210,6 +1211,7 @@ export default function SettingsModal() {
             
             {activeTab === 'appearance' && (
               <div className="space-y-5">
+                <HomeStreamerSetting enabled={draft.homeStreamerMode} onChange={(enabled) => commitSettings({ ...draft, homeStreamerMode: enabled })} />
                 <div className="block">
                   <div className="mb-1.5 flex items-center justify-between gap-3">
                     <span className="block text-sm text-gray-600 dark:text-gray-300">当前背景</span>

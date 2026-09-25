@@ -5,6 +5,28 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
+describe('主页主播模式', () => {
+  it('旧配置默认关闭，只接受明确的布尔开启值', () => {
+    expect(DEFAULT_SETTINGS.homeStreamerMode).toBe(false)
+    for (const homeStreamerMode of [undefined, null, 'true', 'false', 1, false]) {
+      expect(normalizeSettings({ homeStreamerMode }).homeStreamerMode).toBe(false)
+    }
+    expect(normalizeSettings({ homeStreamerMode: true }).homeStreamerMode).toBe(true)
+  })
+
+  it('开关及配置序列化不改变工坊背景', () => {
+    const background = 'https://images.example/workshop.jpg'
+    const enabled = normalizeSettings({ homeStreamerMode: true, appearanceBackgroundImageUrl: background, appearanceBackgroundOpacity: 0.5, appearanceBackgroundBlur: 10 })
+    const restored = normalizeSettings(JSON.parse(JSON.stringify(enabled)))
+    expect(restored.homeStreamerMode).toBe(true)
+    for (const settings of [restored, normalizeSettings({ ...restored, homeStreamerMode: false })]) {
+      expect(settings.appearanceBackgroundImageUrl).toBe(background)
+      expect(settings.appearanceBackgroundOpacity).toBe(0.5)
+      expect(settings.appearanceBackgroundBlur).toBe(10)
+    }
+  })
+})
+
 describe('image API format', () => {
   it('defaults old profiles to automatic OpenAI-compatible detection', () => {
     expect(normalizeApiFormat(undefined)).toBe('auto')
