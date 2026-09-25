@@ -33,6 +33,18 @@ async function inViewport(locator, page, name) {
   assert.ok(rect && rect.x >= -1 && rect.y >= -1 && rect.x + rect.width <= viewport.width + 1 && rect.y + rect.height <= viewport.height + 1, `${name}越界：${JSON.stringify(rect)}`)
 }
 
+// 价格属于生成按钮上方的提示，不能参与上传按钮的垂直居中计算。
+async function checkMobileActions(page, label) {
+  const row = page.locator('[data-mobile-composer-actions]')
+  const metrics = await row.evaluate((element) => {
+    const upload = element.querySelector(':scope > div:first-child > button').getBoundingClientRect()
+    const submit = element.querySelector(':scope > div:last-child > button').getBoundingClientRect()
+    return { topDelta: upload.top - submit.top, bottomDelta: upload.bottom - submit.bottom, uploadHeight: upload.height, submitHeight: submit.height }
+  })
+  await row.screenshot({ path: path.join(out, `actions-${label}.png`), animations: 'disabled' })
+  assert.ok(Math.abs(metrics.topDelta) <= 1 && Math.abs(metrics.bottomDelta) <= 1 && metrics.uploadHeight >= 44 && metrics.submitHeight >= 44, `手机操作按钮未对齐（${label}）：${JSON.stringify(metrics)}`)
+}
+
 async function run() {
   const browser = await chromium.launch({ headless: true, ...(process.env.BROWSER_EXECUTABLE ? { executablePath: process.env.BROWSER_EXECUTABLE } : {}) })
   const results = []
@@ -79,6 +91,7 @@ async function run() {
       if (width < 640) {
         assert.ok(metrics.barHeight < 250, '手机输入区默认占用过大')
         assert.ok(metrics.promptFont >= 16, '手机编辑字号过小')
+        await checkMobileActions(page, `${width}-collapsed`)
         await page.getByRole('button', { name: '更多功能', exact: true }).click()
         await inViewport(page.getByRole('navigation', { name: '工坊更多功能' }), page, '更多菜单')
         await page.getByRole('button', { name: '更多功能', exact: true }).click()
@@ -86,6 +99,7 @@ async function run() {
         await page.getByRole('combobox', { name: '品质', exact: true }).selectOption('high')
         await page.getByRole('button', { name: '收起生成参数', exact: true }).waitFor()
         await page.screenshot({ path: path.join(out, `parameters-${width}.png`), animations: 'disabled' })
+        await checkMobileActions(page, `${width}-expanded`)
         await page.getByTitle('选择尺寸', { exact: true }).filter({ visible: true }).click()
         await inViewport(page.getByRole('dialog', { name: '设置图像尺寸' }), page, '尺寸选择')
         await page.getByRole('button', { name: '取消', exact: true }).click()
@@ -146,11 +160,13 @@ async function run() {
           visualViewport.dispatchEvent(new Event('resize'))
         })
         await page.waitForFunction(() => document.querySelector('[data-input-bar]').getBoundingClientRect().bottom <= 450)
+        await checkMobileActions(page, 'keyboard')
         await page.screenshot({ path: path.join(out, 'keyboard-simulated.png') })
         await page.evaluate(() => { delete visualViewport.height; delete visualViewport.offsetTop; visualViewport.dispatchEvent(new Event('resize')) })
         await page.getByRole('button', { name: '更多功能', exact: true }).click()
         await page.getByRole('button', { name: '切换到夜间模式', exact: true }).filter({ visible: true }).click()
         await page.screenshot({ path: path.join(out, 'workshop-dark.png') })
+        await checkMobileActions(page, 'dark')
       }
       assert.deepEqual(errors, [], '浏览器存在运行错误')
       results.push({ width, height, ...metrics, status: 'PASS' })

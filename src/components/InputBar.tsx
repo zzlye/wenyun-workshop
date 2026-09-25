@@ -2228,9 +2228,10 @@ export default function InputBar() {
                 </div>
               </div>
 
-              <div data-mobile-composer-actions className="flex items-center gap-2">
+              {/* 价格提示在生成按钮上方，操作行按底边对齐，避免上传按钮被整组高度抬高。 */}
+              <div data-mobile-composer-actions className="flex items-end gap-2">
                 <div
-                  className="relative"
+                  className="relative flex shrink-0"
                   onMouseEnter={() => setAttachHover(true)}
                   onMouseLeave={() => setAttachHover(false)}
                 >
@@ -2241,7 +2242,7 @@ export default function InputBar() {
                         setShowMobileUploadMenu(!showMobileUploadMenu)
                       }
                     }}
-                    className={`p-2.5 rounded-xl transition-all shadow-sm flex-shrink-0 ${
+                    className={`inline-flex h-11 w-11 items-center justify-center rounded-xl transition-all shadow-sm flex-shrink-0 ${
                       atImageLimit
                         ? 'bg-gray-200 dark:bg-white/[0.04] text-gray-300 dark:text-gray-500 cursor-not-allowed'
                         : 'bg-gray-200 dark:bg-white/[0.06] hover:bg-gray-300 dark:hover:bg-white/[0.1] text-gray-500 dark:text-gray-300'
