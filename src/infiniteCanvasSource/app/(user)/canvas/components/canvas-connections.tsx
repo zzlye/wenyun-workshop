@@ -10,17 +10,16 @@ type ConnectionPathProps = {
     from: CanvasNodeData;
     to: CanvasNodeData;
     active: boolean;
-    selected?: boolean;
     flowReversed: boolean;
-    onSelect: (connectionId: string, additive: boolean) => void;
+    onSelect: (connectionId: string) => void;
 };
 
-export const ConnectionPath = memo(function ConnectionPath({ connection, from, to, active, selected, flowReversed, onSelect }: ConnectionPathProps) {
+export const ConnectionPath = memo(function ConnectionPath({ connection, from, to, active, flowReversed, onSelect }: ConnectionPathProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const pathD = getConnectionPathGeometry(from, to, connection).path;
 
     return (
-        <g data-connection-id={connection.id} data-connection-selected={selected ? "true" : undefined}>
+        <g data-connection-id={connection.id}>
             <path
                 d={pathD}
                 stroke="transparent"
@@ -29,7 +28,7 @@ export const ConnectionPath = memo(function ConnectionPath({ connection, from, t
                 style={{ cursor: "pointer", pointerEvents: "stroke" }}
                 onClick={(event) => {
                     event.stopPropagation();
-                    onSelect(connection.id, event.shiftKey || event.ctrlKey || event.metaKey);
+                    onSelect(connection.id);
                 }}
             />
             <path
