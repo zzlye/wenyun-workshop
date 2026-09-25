@@ -105,3 +105,40 @@ describe('image task client', () => {
     expect(keys.size).toBe(100)
   })
 })
+
+describe('图片任务恢复', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  it('查询短暂断网后继续原任务，不因创建超时参数而中止轮询', async () => {
+    vi.useFakeTimers()
+    const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(response({ taskId: 'task-recover', accessToken: 'token', status: 'running' }, 202))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(response({ status: 'running' }))
+      .mockResolvedValueOnce(response({ status: 'succeeded' }))
+      .mockResolvedValueOnce(response({ data: [{ b64_json: 'b2s=' }] }))
+    const promise = fetchImageTask('images/generations', { method: 'POST', body: '{}' }, { timeoutMs: 10 })
+    // 立即绑定断言，异步异常会作为本用例失败报告，不泄漏为未处理拒绝。
+    const assertion = expect(promise.then((result) => result.json())).resolves.toEqual({ data: [{ b64_json: 'b2s=' }] })
+    await vi.advanceTimersByTimeAsync(5_000)
+    await assertion
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+    expect(fetchMock.mock.calls.slice(1).map(([url]) => url)).toEqual([
+      '/image-tasks/task-recover', '/image-tasks/task-recover', '/image-tasks/task-recover', '/image-tasks/task-recover/result',
+    ])
+  })
+
+  it('服务端确定失败时停止查询并保留原错误，不重新创建任务', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ status: 'failed', error: { message: '上游生成失败' } }), { status: 200 }))
+    await expect(fetchImageTask('images/generations', { method: 'POST', body: '{}' }, {
+      timeoutMs: 10,
+      reference: { taskId: 'failed-task', accessToken: 'token', idempotencyKey: 'same-key' },
+    })).rejects.toThrow('上游生成失败')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0][1]?.method).not.toBe('POST')
+  })
+})

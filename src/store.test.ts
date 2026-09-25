@@ -1,7 +1,8 @@
+// @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { strToU8, zipSync } from 'fflate'
 import { DEFAULT_PARAMS } from './types'
-import { createDefaultFalProfile, createDefaultOpenAIProfile, DEFAULT_RESPONSES_MODEL, DEFAULT_SETTINGS, normalizeSettings } from './lib/apiProfiles'
+import { createDefaultOpenAIProfile, DEFAULT_RESPONSES_MODEL, DEFAULT_SETTINGS, LOCKED_PUBLIC_PROFILE_ID, LOCKED_WENYUN_PROFILE_ID, normalizeSettings } from './lib/apiProfiles'
 import type { AgentConversation, ExportData, StoredImage, StoredImageThumbnail, TaskRecord } from './types'
 import { getSelectedImageMentionLabel } from './lib/promptImageMentions'
 vi.mock('./lib/db', () => {
@@ -1815,13 +1816,13 @@ describe('agent assistant regeneration', () => {
 
 describe('reused task API profile', () => {
   const openaiProfile = createDefaultOpenAIProfile({ id: 'openai-profile', apiKey: 'openai-key' })
-  const falProfile = createDefaultFalProfile({ id: 'fal-profile', name: 'fal 配置', apiKey: 'fal-key' })
+  const publicProfile = createDefaultOpenAIProfile({ id: LOCKED_PUBLIC_PROFILE_ID, apiKey: 'public-key' })
 
   beforeEach(() => {
     useStore.setState({
       settings: normalizeSettings({
         ...DEFAULT_SETTINGS,
-        profiles: [openaiProfile, falProfile],
+        profiles: [openaiProfile, publicProfile],
         activeProfileId: openaiProfile.id,
         reuseTaskApiProfileTemporarily: true,
       }),
@@ -1841,16 +1842,16 @@ describe('reused task API profile', () => {
   })
 
   it('resolves a task API profile by stored profile id', () => {
-    const resolved = getTaskApiProfile(useStore.getState().settings, task({ apiProvider: 'fal', apiProfileId: falProfile.id }))
+    const resolved = getTaskApiProfile(useStore.getState().settings, task({ apiProvider: 'openai', apiProfileId: publicProfile.id }))
 
-    expect(resolved?.id).toBe(falProfile.id)
+    expect(resolved?.id).toBe(publicProfile.id)
   })
 
   it('does not resolve a task API profile by stored name or model', () => {
     const resolved = getTaskApiProfile(useStore.getState().settings, task({
-      apiProvider: 'fal',
-      apiProfileName: falProfile.name,
-      apiModel: falProfile.model,
+      apiProvider: 'openai',
+      apiProfileName: publicProfile.name,
+      apiModel: publicProfile.model,
     }))
 
     expect(resolved).toBeNull()
@@ -1858,16 +1859,16 @@ describe('reused task API profile', () => {
 
   it('reuses the task API profile temporarily without switching the active profile', async () => {
     await reuseConfig(task({
-      apiProvider: 'fal',
-      apiProfileId: falProfile.id,
+      apiProvider: 'openai',
+      apiProfileId: publicProfile.id,
       params: { ...DEFAULT_PARAMS, n: 8, size: 'auto', quality: 'auto' },
     }))
 
     const state = useStore.getState()
     expect(state.settings.activeProfileId).toBe(openaiProfile.id)
-    expect(state.reusedTaskApiProfileId).toBe(falProfile.id)
-    expect(state.params).toMatchObject({ n: 4, size: '1360x1024', quality: 'high' })
-    expect(state.showToast).toHaveBeenCalledWith('已临时复用该任务的 API 配置「fal 配置」', 'success')
+    expect(state.reusedTaskApiProfileId).toBe(publicProfile.id)
+    expect(state.params).toMatchObject({ n: 8, size: '1024x1024', quality: 'auto' })
+    expect(state.showToast).toHaveBeenCalledWith('已临时复用该任务的 API 配置「公益站」', 'success')
   })
 
   it('keeps selected image mentions when reusing a task with different current input images', async () => {
@@ -1897,12 +1898,12 @@ describe('reused task API profile', () => {
   })
 
   it('clears temporary reuse when switching current settings to the reused API profile', async () => {
-    await reuseConfig(task({ apiProvider: 'fal', apiProfileId: falProfile.id }))
+    await reuseConfig(task({ apiProvider: 'openai', apiProfileId: publicProfile.id }))
 
-    useStore.getState().setSettings({ activeProfileId: falProfile.id })
+    useStore.getState().setSettings({ activeProfileId: publicProfile.id })
 
     const state = useStore.getState()
-    expect(state.settings.activeProfileId).toBe(falProfile.id)
+    expect(state.settings.activeProfileId).toBe(publicProfile.id)
     expect(state.reusedTaskApiProfileId).toBeNull()
     expect(state.reusedTaskApiProfileMissing).toBe(false)
   })
@@ -1916,28 +1917,78 @@ describe('reused task API profile', () => {
     })
 
     await reuseConfig(task({
-      apiProvider: 'fal',
-      apiProfileId: falProfile.id,
+      apiProvider: 'openai',
+      apiProfileId: publicProfile.id,
       params: { ...DEFAULT_PARAMS, n: 8, size: 'auto', quality: 'auto' },
     }))
 
     const state = useStore.getState()
     expect(state.settings.activeProfileId).toBe(openaiProfile.id)
     expect(state.reusedTaskApiProfileId).toBeNull()
-    expect(state.params).toMatchObject({ n: 8, size: 'auto', quality: 'auto' })
+    expect(state.params).toMatchObject({ n: 8, size: '1024x1024', quality: 'auto' })
   })
 
   it('asks whether to submit with current API profile when the reused API profile is missing', async () => {
-    await reuseConfig(task({ apiProvider: 'fal', apiProfileId: 'missing-profile' }))
+    await reuseConfig(task({ apiProvider: 'openai', apiProfileId: 'missing-profile' }))
 
     const state = useStore.getState()
     expect(state.tasks).toEqual([])
     expect(state.setConfirmDialog).toHaveBeenCalledWith(expect.objectContaining({
       title: '找不到 API 配置',
-      message: '找不到复用任务所使用的 API 配置「未知配置」，要使用当前的 API 配置「默认」提交任务吗？',
+      message: '找不到复用任务所使用的 API 配置「未知配置」，要使用当前的 API 配置「文运站」提交任务吗？',
       confirmText: '使用当前配置提交',
       cancelText: '放弃提交',
     }))
     expect(state.showSettings).toBe(false)
+  })
+})
+
+describe('固定站点任务复用', () => {
+  const model = 'gpt-image-2.5-sunburst-满血'
+
+  beforeEach(() => {
+    // 通过真实站点配置复现用户点击复用按钮的路径，生成接口全部使用模拟响应。
+    vi.mocked(callImageApi).mockClear()
+    useStore.setState({
+      settings: normalizeSettings({
+        ...DEFAULT_SETTINGS,
+        profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({ ...profile, apiKey: 'test-key' })),
+        activeProfileId: LOCKED_WENYUN_PROFILE_ID,
+      }),
+      prompt: '', inputImages: [], maskDraft: null, params: { ...DEFAULT_PARAMS }, tasks: [],
+      reusedTaskApiProfileId: null, reusedTaskApiProfileMissing: false,
+      showToast: vi.fn(), setConfirmDialog: vi.fn(),
+    })
+  })
+
+  it.each([false, true])('同站点复用时恢复模型和透明背景，临时配置开关=%s', async (temporary) => {
+    useStore.getState().setSettings({ reuseTaskApiProfileTemporarily: temporary })
+    await reuseConfig(task({
+      apiProvider: 'openai', apiProfileId: LOCKED_WENYUN_PROFILE_ID, apiModel: model,
+      prompt: '历史提示词', params: { ...DEFAULT_PARAMS, size: '2560x1440', background: 'transparent' },
+    }))
+    const state = useStore.getState()
+    expect(state.settings.model).toBe(model)
+    expect(state.prompt).toBe('历史提示词')
+    expect(state.params).toMatchObject({ size: '2560x1440', background: 'transparent' })
+    expect(callImageApi).not.toHaveBeenCalled()
+    await submitTask()
+    expect(useStore.getState().tasks[0]).toMatchObject({ apiModel: model, params: { background: 'transparent' } })
+    await vi.waitFor(() => expect(callImageApi).toHaveBeenCalled())
+    expect(vi.mocked(callImageApi).mock.calls[0][0].settings.model).toBe(model)
+  })
+
+  it('跨站点临时复用恢复历史模型，保留当前站点和各自密钥', async () => {
+    useStore.getState().setSettings({ reuseTaskApiProfileTemporarily: true })
+    await reuseConfig(task({
+      apiProvider: 'openai', apiProfileId: LOCKED_PUBLIC_PROFILE_ID, apiModel: model,
+      params: { ...DEFAULT_PARAMS, background: 'transparent' },
+    }))
+    const state = useStore.getState()
+    expect(state.settings.activeProfileId).toBe(LOCKED_WENYUN_PROFILE_ID)
+    expect(state.settings.profiles.find((p) => p.id === LOCKED_PUBLIC_PROFILE_ID)).toMatchObject({ model, apiKey: 'test-key' })
+    expect(state.reusedTaskApiProfileId).toBe(LOCKED_PUBLIC_PROFILE_ID)
+    expect(state.params.background).toBe('transparent')
+    expect(callImageApi).not.toHaveBeenCalled()
   })
 })

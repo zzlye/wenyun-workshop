@@ -23,7 +23,6 @@ import type {
 import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_STREAM_PARTIAL_IMAGES } from '../types'
 import { normalizeBaseUrl, shouldUseApiProxyForBaseUrl } from './devProxy'
 import { readRuntimeEnv } from './runtimeEnv'
-import { isImportableConfigUrl } from './customProviderConfigUrl'
 import { normalizeImageSizeForMaxTier, type SizeTier } from './size'
 import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_MODEL, CANVAS_VIDEO_TIMEOUT, normalizeCanvasVideoModel } from './videoModel'
 import {
@@ -68,13 +67,9 @@ export const LOCKED_WENYUN_BASE_URL = 'https://api.zzlye.xyz/v1'
 export const LOCKED_PUBLIC_BASE_URL = 'https://1520635.xyz:3901/v1'
 export const LOCKED_OPENAI_BASE_URL = LOCKED_WENYUN_BASE_URL
 export const PIXIV_RANDOM_BACKGROUND_API_URL = 'https://i.mukyu.ru/random?redirect=1&r18=0&ai_type=0&illust_type=illust&orientation=landscape&min_width=1920&min_height=1080&min_pixels=2500000&attempts=3&pixiv_cat=1&pximg_mirror_host=re'
-const OPENAI_DEFAULT_BASE_URL = LOCKED_OPENAI_BASE_URL
-const RAW_DEFAULT_API_URL = readRuntimeEnv(import.meta.env.VITE_DEFAULT_API_URL)
 const DEFAULT_OPENAI_API_PROXY = readRuntimeEnv(import.meta.env.VITE_API_PROXY_AVAILABLE) === 'true'
-const DOCKER_DEPLOYMENT = readRuntimeEnv(import.meta.env.VITE_DOCKER_DEPLOYMENT) === 'true'
-const DEFAULT_BASE_URL = isImportableConfigUrl(RAW_DEFAULT_API_URL)
-  ? ''
-  : RAW_DEFAULT_API_URL || (DOCKER_DEPLOYMENT && DEFAULT_OPENAI_API_PROXY ? '' : OPENAI_DEFAULT_BASE_URL)
+// 站点固定后，默认配置不再从环境变量读取服务商链接或第三方接口地址。
+const DEFAULT_BASE_URL = LOCKED_OPENAI_BASE_URL
 export const DEFAULT_RESPONSES_MODEL = 'gpt-5.5'
 export const DEFAULT_FAL_BASE_URL = 'https://fal.run'
 export const DEFAULT_FAL_MODEL = 'openai/gpt-image-2'

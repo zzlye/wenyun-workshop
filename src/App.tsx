@@ -1,13 +1,12 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { AppProviders } from './infiniteCanvasSource/components/layout/app-providers'
 import { useThemeStore } from './infiniteCanvasSource/stores/use-theme-store'
-import { getActiveApiProfile, LOCKED_WENYUN_BASE_URL, mergeImportedSettings, normalizeSettings, setApiPriceSnapshot } from './lib/apiProfiles'
+import { getActiveApiProfile, LOCKED_WENYUN_BASE_URL, normalizeSettings, setApiPriceSnapshot } from './lib/apiProfiles'
 import { getEffectiveImageApiProfile } from './lib/accountApiKey'
 import { flushSync } from 'react-dom'
 import { initStore } from './store'
 import { useStore } from './store'
-import { buildSettingsFromUrlParams, clearUrlSettingParams, hasUrlSettingParams } from './lib/urlSettings'
-import { getCustomProviderConfigUrl, loadCustomProviderSettingsFromUrl } from './lib/customProviderConfigUrl'
+import { clearUrlSettingParams, hasUrlSettingParams } from './lib/urlSettings'
 import { fetchNewApiNotice, queryNewApiPriceTable, type NewApiNoticeItem } from './lib/newApi'
 import { requestPersistentStorage } from './lib/persistentStorage'
 import { useDockerApiUrlMigrationNotice } from './hooks/useDockerApiUrlMigrationNotice'
@@ -26,7 +25,6 @@ const Lightbox = lazy(() => import('./components/Lightbox'))
 const MaskEditorModal = lazy(() => import('./components/MaskEditorModal'))
 const DataSyncManager = lazy(() => import('./components/DataSyncManager'))
 
-let customProviderConfigUrlImportStarted = false
 
 function getAnnouncementHash(content: string) {
   let hash = 0
@@ -164,9 +162,7 @@ export default function App() {
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search)
-    const nextSettings = buildSettingsFromUrlParams(useStore.getState().settings, searchParams)
-
-    setSettings(nextSettings)
+    // 固定站点不再接受链接导入接口配置；清理旧链接中的密钥，保留页面路由。
 
     if (hasUrlSettingParams(searchParams)) {
       clearUrlSettingParams(searchParams)
@@ -176,21 +172,8 @@ export default function App() {
       window.history.replaceState(null, '', nextUrl)
     }
 
-    const customProviderConfigUrl = getCustomProviderConfigUrl()
-    if (customProviderConfigUrl && !customProviderConfigUrlImportStarted) {
-      customProviderConfigUrlImportStarted = true
-      void loadCustomProviderSettingsFromUrl(customProviderConfigUrl)
-        .then((importedSettings) => {
-          if (!importedSettings) return
-          const state = useStore.getState()
-          state.setSettings(mergeImportedSettings(state.settings, importedSettings))
-        })
-        .catch((error) => {
-          console.warn('Failed to import custom provider config URL:', error)
-        })
-    }
 
-  }, [setSettings])
+  }, [])
 
   useEffect(() => {
     const preventPageImageDrag = (e: DragEvent) => {

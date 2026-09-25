@@ -19,6 +19,7 @@ import type {
 } from './types'
 import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_PARAMS } from './types'
 import { DEFAULT_SETTINGS, getActiveApiProfile, getCustomProviderDefinition, mergeImportedSettings, normalizeSettings, validateApiProfile } from './lib/apiProfiles'
+import { getFixedImagePricing } from './lib/modelPricing'
 import { getEffectiveImageApiProfile, validateEffectiveImageApiProfile } from './lib/accountApiKey'
 import { dismissAllTooltips } from './lib/tooltipDismiss'
 import { remapImageMentionsForOrder, replaceImageMentionsForApi } from './lib/promptImageMentions'
@@ -1714,7 +1715,11 @@ export function getTaskApiProfile(settings: AppSettings, task: TaskRecord): ApiP
   if (!task.apiProfileId) return null
 
   const byId = normalized.profiles.find((profile) => profile.id === task.apiProfileId)
-  if (byId && (!provider || byId.provider === provider)) return byId
+  if (byId && (!provider || byId.provider === provider)) {
+    // 历史任务记录生成时的模型；站点后续切换模型不能改变已提交任务的执行和恢复请求。
+    const historicalModel = task.apiModel ? getFixedImagePricing(task.apiModel)?.model : undefined
+    return historicalModel ? { ...byId, model: historicalModel } : byId
+  }
   return null
 }
 
@@ -4262,14 +4267,21 @@ export async function retryTask(task: TaskRecord) {
 
 /** 复用配置 */
 export async function reuseConfig(task: TaskRecord) {
-  const { settings, setPrompt, setParams, setInputImages, setMaskDraft, clearMaskDraft, showToast, setConfirmDialog, setReusedTaskApiProfile } = useStore.getState()
+  const { settings, setSettings, setPrompt, setParams, setInputImages, setMaskDraft, clearMaskDraft, showToast, setConfirmDialog, setReusedTaskApiProfile } = useStore.getState()
   const normalizedSettings = normalizeSettings(settings)
   const currentProfile = getActiveApiProfile(settings)
   const matchedProfile = normalizedSettings.reuseTaskApiProfileTemporarily ? getTaskApiProfile(normalizedSettings, task) : null
   const shouldTemporarilyReuseProfile = Boolean(matchedProfile && matchedProfile.id !== currentProfile.id)
   const missingReusedProfile = normalizedSettings.reuseTaskApiProfileTemporarily && !matchedProfile
   const taskProfileName = matchedProfile?.name ?? getTaskApiProfileName(task)
-  const paramsSettings = shouldTemporarilyReuseProfile && matchedProfile ? createSettingsForApiProfile(normalizedSettings, matchedProfile) : normalizedSettings
+  const targetProfile = matchedProfile ?? currentProfile
+  const historicalModel = task.apiModel ? getFixedImagePricing(task.apiModel)?.model : undefined
+  const reusedProfile = historicalModel ? { ...targetProfile, model: historicalModel } : targetProfile
+  // 先恢复模型再校验尺寸和透明背景。跨站点复用只更新目标站点的模型，密钥和当前站点保持原值。
+  if (historicalModel && !missingReusedProfile) {
+    setSettings({ profiles: normalizedSettings.profiles.map((profile) => profile.id === reusedProfile.id ? reusedProfile : profile) })
+  }
+  const paramsSettings = createSettingsForApiProfile(normalizedSettings, reusedProfile)
 
   setParams(normalizeParamsForSettings(task.params, paramsSettings, { hasInputImages: task.inputImageIds.length > 0 }))
   setReusedTaskApiProfile(
