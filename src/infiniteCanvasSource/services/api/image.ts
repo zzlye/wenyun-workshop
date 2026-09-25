@@ -12,7 +12,7 @@ import { normalizeParamsForSettings } from "../../../lib/paramCompatibility";
 import { normalizeImageBackground } from "../../../lib/modelPricing";
 import { buildApiUrl as buildDevApiUrl, readClientDevProxyConfig } from "../../../lib/devProxy";
 import { sanitizeApiErrorMessage } from "../../../lib/imageApiShared";
-import { createImageTaskIdempotencyKey, shouldUseImageTasks } from "../../../lib/imageTasks";
+import { createImageTaskIdempotencyKey, hasImageTaskCredentials, shouldUseImageTasks } from "../../../lib/imageTasks";
 import type { ImageTaskReference } from "../../../lib/imageTasks";
 import { useStore } from "../../../store";
 import { flushCanvasStorePersistence } from "../../app/(user)/canvas/stores/use-canvas-store";
@@ -259,7 +259,7 @@ export async function requestGeneration(
     try {
         const settings = buildCanvasImageSettings(config, taskReference?.apiProfileId);
         const profile = getEffectiveImageApiProfile(settings);
-        const useImageTasks = shouldUseImageTasks(profile.baseUrl);
+        const useImageTasks = hasImageTaskCredentials(taskReference) || shouldUseImageTasks(profile.baseUrl);
         const imageTask = useImageTasks ? taskReference ?? {
             taskId: "",
             accessToken: "",
@@ -297,7 +297,7 @@ export async function requestEdit(
     try {
         const settings = buildCanvasImageSettings(config, taskReference?.apiProfileId);
         const profile = getEffectiveImageApiProfile(settings);
-        const useImageTasks = shouldUseImageTasks(profile.baseUrl);
+        const useImageTasks = hasImageTaskCredentials(taskReference) || shouldUseImageTasks(profile.baseUrl);
         const imageTask = useImageTasks ? taskReference ?? {
             taskId: "",
             accessToken: "",
@@ -309,7 +309,9 @@ export async function requestEdit(
             onTaskCreated?.(imageTask);
             await flushCanvasStorePersistence();
         }
-        const inputImageDataUrls = (
+        // 续查只需要任务凭据，不重新解析已经删除的本地图片和遮罩。
+        const resumingTask = hasImageTaskCredentials(imageTask);
+        const inputImageDataUrls = resumingTask ? [] : (
             await Promise.all(
                 references.map(async (image) => {
                     const dataUrl = await imageToDataUrl(image);
@@ -317,7 +319,7 @@ export async function requestEdit(
                 }),
             )
         ).filter((dataUrl): dataUrl is string => Boolean(dataUrl));
-        const maskImage = references.find((image) => image.isMaskTarget && (image.maskDataUrl || image.maskStorageKey));
+        const maskImage = resumingTask ? undefined : references.find((image) => image.isMaskTarget && (image.maskDataUrl || image.maskStorageKey));
         const maskDataUrl = maskImage
             ? await imageToDataUrl({ dataUrl: maskImage.maskDataUrl, storageKey: maskImage.maskStorageKey })
             : undefined;

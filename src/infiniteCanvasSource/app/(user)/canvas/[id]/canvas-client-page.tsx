@@ -45,6 +45,7 @@ import { CanvasNodeContextMenu } from "../components/canvas-context-menu";
 import { CanvasNodeAngleDialog, type CanvasImageAngleParams } from "../components/canvas-node-angle-dialog";
 import { CanvasNodeCropDialog, type CanvasImageCropRect } from "../components/canvas-node-crop-dialog";
 import { buildCanvasImageFailureMessage, buildConnectedPromptText, buildNodeChatMessages, buildNodeGenerationContext, buildNodeGenerationInputs, hydrateNodeGenerationContext, mergeNodeReferenceAudios, mergeNodeReferenceImages, stripConnectedPromptSuffix, type NodeGenerationInput } from "../components/canvas-node-generation";
+import { hasImageTaskCredentials } from "../../../../../lib/imageTasks";
 import { CanvasNodeHoverToolbar, CanvasNodeInfoModal } from "../components/canvas-node-hover-toolbar";
 import { InfiniteCanvas } from "../components/infinite-canvas";
 import { Minimap } from "../components/canvas-mini-map";
@@ -554,9 +555,11 @@ function InfiniteCanvasPage() {
                     count: "1",
                 };
                 const requestPrompt = (metadata.generationPrompt || metadata.prompt || "").trim();
-                if (!requestPrompt) throw new Error("恢复图片任务时找不到提示词");
-                const references = metadata.generationType === "edit" ? await resolveMetadataReferences(metadata) : [];
-                if (metadata.generationType === "edit" && !references) throw new Error("恢复图片任务时参考图片已不存在");
+                // 服务端收到请求后，提示词及参考图只属于历史记录，不再作为续查前置条件。
+                const resumingTask = hasImageTaskCredentials(taskReference);
+                if (!resumingTask && !requestPrompt) throw new Error("恢复图片任务时找不到提示词");
+                const references = !resumingTask && metadata.generationType === "edit" ? await resolveMetadataReferences(metadata) : [];
+                if (!resumingTask && metadata.generationType === "edit" && !references) throw new Error("恢复图片任务时参考图片已不存在");
 
                 const image = metadata.generationType === "edit"
                     ? await requestEdit(

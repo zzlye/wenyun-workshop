@@ -1131,3 +1131,22 @@ describe('callImageApi', () => {
   })
 
 })
+
+describe('已提交图片恢复边界回归', () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'disabled') })
+  it.each(['gpt-image-2', 'Nano-Banana-Pro'])('恢复 %s 时忽略已失效素材及后续协议设置，只查询原任务', async (model) => {
+    vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'disabled')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (input === '/image-tasks/recover-api') return new Response(JSON.stringify({ status: 'succeeded' }))
+      if (input === '/image-tasks/recover-api/result') return new Response(JSON.stringify({ data: [{ b64_json: 'b2s=' }] }), { headers: { 'Content-Type': 'application/json' } })
+      throw new Error('不应请求旧素材或创建新任务：' + String(input))
+    })
+    const result = await callImageApi({
+      settings: { ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map((p) => ({ ...p, model, apiFormat: 'gemini' as const })) },
+      prompt: '', params: { ...DEFAULT_PARAMS }, inputImageDataUrls: ['blob:expired'], maskDataUrl: 'blob:expired-mask',
+      imageTask: { taskId: 'recover-api', accessToken: 'token', idempotencyKey: 'key' },
+    })
+    expect(result.images).toEqual(['data:image/png;base64,b2s='])
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/image-tasks/recover-api', '/image-tasks/recover-api/result'])
+  })
+})

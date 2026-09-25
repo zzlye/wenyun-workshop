@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { strToU8, zipSync } from 'fflate'
 import { DEFAULT_PARAMS } from './types'
 import { createDefaultOpenAIProfile, DEFAULT_RESPONSES_MODEL, DEFAULT_SETTINGS, LOCKED_PUBLIC_PROFILE_ID, LOCKED_WENYUN_PROFILE_ID, normalizeSettings } from './lib/apiProfiles'
@@ -50,7 +50,7 @@ vi.mock('./lib/db', () => {
       agentConversations.clear()
       for (const conversation of conversations) agentConversations.set(conversation.id, conversation)
     },
-    getImage: async (id: string) => images.get(id),
+    getImage: vi.fn(async (id: string) => images.get(id)),
     getImageThumbnail: async (id: string) => thumbnails.get(id),
     getStoredFreshImageThumbnail: async (id: string) => thumbnails.get(id),
     getAllImageIds: async () => [...images.keys()],
@@ -99,7 +99,7 @@ vi.mock('./lib/agentApi', () => ({
     }
   }),
 }))
-import { clearAgentConversations, clearImages, getAllAgentConversations, getAllTasks, putAgentConversation, putImage, putTask as putDbTask } from './lib/db'
+import { clearAgentConversations, clearImages, clearTasks as clearDbTasks, getImage, getAllAgentConversations, getAllTasks, putAgentConversation, putImage, putTask as putDbTask } from './lib/db'
 import { callAgentResponsesApi, callBatchImageSingle } from './lib/agentApi'
 import { callImageApi, type CallApiResult } from './lib/api'
 import { cleanStaleAgentInputDrafts, deleteAgentRoundFromConversation, editOutputs, getActiveAgentRounds, getErrorToastMessage, getPersistedState, getTaskApiProfile, importData, initStore, markInterruptedOpenAIRunningTasks, migratePersistedState, regenerateAgentAssistantMessage, remapAgentRoundMentionsForPathChange, removeTask, reuseConfig, shouldRecoverImageTask, submitAgentMessage, submitTask, updateTaskInStore, useStore } from './store'
@@ -1991,4 +1991,85 @@ describe('固定站点任务复用', () => {
     expect(state.params.background).toBe('transparent')
     expect(callImageApi).not.toHaveBeenCalled()
   })
+})
+
+describe('任务状态边界回归', () => {
+  beforeEach(async () => {
+    await clearDbTasks()
+    vi.mocked(getImage).mockReset().mockResolvedValue(undefined)
+    vi.mocked(callImageApi).mockReset().mockResolvedValue({ images: [], actualParams: {}, actualParamsList: [] })
+    useStore.setState({
+      settings: normalizeSettings({ ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map((p) => ({ ...p, apiKey: 'test-key' })) }),
+      prompt: '原输入', params: { ...DEFAULT_PARAMS }, inputImages: [], maskDraft: null,
+      tasks: [], agentConversations: [], agentInputDrafts: {}, galleryInputDraft: null,
+      reusedTaskApiProfileId: null, reusedTaskApiProfileMissing: false,
+      showToast: vi.fn(), setConfirmDialog: vi.fn(),
+    })
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  })
+
+  it('连续复用两个任务时，较早任务的慢读图不能覆盖后一次选择', async () => {
+    let resolveImage!: (image: StoredImage) => void
+    vi.mocked(getImage).mockImplementationOnce(() => new Promise((resolve) => { resolveImage = resolve }))
+    const pending = reuseConfig(task({ id: 'slow-task', prompt: '较早任务', inputImageIds: ['slow-reuse-image'], apiModel: 'Nano-Banana-Pro' }))
+    await reuseConfig(task({ id: 'latest-task', prompt: '最后选择', apiModel: 'gpt-image-2' }))
+    resolveImage({ id: 'slow-reuse-image', dataUrl: 'data:image/png;base64,c2xvdw==', source: 'upload', createdAt: 1 })
+    await pending
+    expect(useStore.getState()).toMatchObject({ prompt: '最后选择', inputImages: [], settings: { model: 'gpt-image-2' } })
+  })
+
+  it('复用读取图片期间的新输入不会被旧异步结果覆盖', async () => {
+    let resolveImage!: (image: StoredImage) => void
+    vi.mocked(getImage).mockImplementationOnce(() => new Promise((resolve) => { resolveImage = resolve }))
+    const pending = reuseConfig(task({ prompt: '旧提示词', inputImageIds: ['typing-reuse-image'] }))
+    useStore.getState().setPrompt('刚刚输入的新提示词')
+    resolveImage({ id: 'typing-reuse-image', dataUrl: 'data:image/png;base64,dHlwZQ==', source: 'upload', createdAt: 1 })
+    await pending
+    expect(useStore.getState().prompt).toBe('刚刚输入的新提示词')
+    expect(useStore.getState().inputImages).toEqual([])
+  })
+
+  it('参考图已丢失时明确报错，原输入和模型保持完整', async () => {
+    await reuseConfig(task({ prompt: '依赖参考图', inputImageIds: ['missing-reuse-image'], apiModel: 'Nano-Banana-Pro', params: { ...DEFAULT_PARAMS, size: '2560x1440' } }))
+    expect(useStore.getState()).toMatchObject({ prompt: '原输入', inputImages: [], settings: { model: 'gpt-image-2' }, params: DEFAULT_PARAMS })
+    expect(useStore.getState().showToast).toHaveBeenCalledWith(expect.stringContaining('参考图片'), 'error')
+    expect(callImageApi).not.toHaveBeenCalled()
+  })
+
+  it('已获得任务编号的图片刷新恢复，不依赖原图和遮罩仍在本地', async () => {
+    const record = task({
+      id: 'resume-missing-assets', status: 'running', apiProvider: 'openai', apiProfileId: LOCKED_WENYUN_PROFILE_ID,
+      inputImageIds: ['missing-original'], maskImageId: 'missing-mask',
+      imageTaskId: 'server-task', imageTaskAccessToken: 'server-token', imageTaskIdempotencyKey: 'original-key',
+    })
+    await putDbTask(record)
+    await initStore()
+    await vi.waitFor(() => expect(callImageApi).toHaveBeenCalledOnce())
+    expect(vi.mocked(callImageApi).mock.calls[0][0]).toMatchObject({ inputImageDataUrls: [], imageTask: { taskId: 'server-task', accessToken: 'server-token' } })
+    await vi.waitFor(() => expect(useStore.getState().tasks[0].status).toBe('done'))
+  })
+
+  it('服务端明确失败且错误包含超时时，保持失败终态而非无限恢复', async () => {
+    vi.useFakeTimers()
+    const { waitForImageTask } = await import('./lib/imageTasks')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ status: 'failed', error: { message: '上游生成超时 timeout' } })))
+    const error = await waitForImageTask({ taskId: 'terminal-task', accessToken: 'token', idempotencyKey: 'key' }).catch((e: unknown) => e)
+    vi.mocked(callImageApi).mockRejectedValue(error)
+    await putDbTask(task({ id: 'terminal-record', status: 'running', apiProvider: 'openai', apiProfileId: LOCKED_WENYUN_PROFILE_ID, imageTaskId: 'terminal-task', imageTaskAccessToken: 'token', imageTaskIdempotencyKey: 'key' }))
+    await initStore()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(useStore.getState().tasks[0]).toMatchObject({ status: 'error', error: '上游生成超时 timeout' })
+  })
+})
+
+it('复用读取失败边界回归：存储异常只提示错误，不修改输入或泄漏异步异常', async () => {
+  vi.mocked(getImage).mockRejectedValueOnce(new Error('本地图片读取失败'))
+  useStore.setState({ settings: DEFAULT_SETTINGS, prompt: '保留的输入', inputImages: [], params: { ...DEFAULT_PARAMS }, showToast: vi.fn() })
+  await expect(reuseConfig(task({ inputImageIds: ['storage-error-image'], prompt: '不能覆盖原输入' }))).resolves.toBeUndefined()
+  expect(useStore.getState().prompt).toBe('保留的输入')
+  expect(useStore.getState().showToast).toHaveBeenCalledWith('本地图片读取失败', 'error')
 })

@@ -54,7 +54,7 @@ import { collectAgentRoundOutputImageSlots, extractAgentReferenceIds, getAgentCu
 import { getImageRequestTimeoutSeconds, IMAGE_FETCH_CORS_HINT } from './lib/imageApiShared'
 import { getFalErrorMessage, getFalQueuedImageResult } from './lib/falAiImageApi'
 import { getCustomQueuedImageResult } from './lib/openaiCompatibleImageApi'
-import { createImageTaskIdempotencyKey, shouldUseImageTasks, type ImageTaskReference } from './lib/imageTasks'
+import { createImageTaskIdempotencyKey, hasImageTaskCredentials, isRecoverableImageTaskError, shouldUseImageTasks, type ImageTaskReference } from './lib/imageTasks'
 import { validateMaskMatchesImage } from './lib/canvasImage'
 import { orderInputImagesForMask } from './lib/mask'
 import { getChangedParams, normalizeParamsForSettings } from './lib/paramCompatibility'
@@ -1944,13 +1944,13 @@ async function recoverImageTask(taskId: string) {
     const activeProfile = getEffectiveImageApiProfile(settings, taskProfile)
     const requestSettings = createSettingsForApiProfile(settings, activeProfile)
     const inputDataUrls: string[] = []
-    for (const imageId of task.inputImageIds) {
+    for (const imageId of hasImageTaskCredentials(reference) ? [] : task.inputImageIds) {
       const dataUrl = await ensureImageCached(imageId)
       if (!dataUrl) throw new Error('输入图片已不存在')
       inputDataUrls.push(dataUrl)
     }
     let maskDataUrl: string | undefined
-    if (task.maskImageId) {
+    if (!hasImageTaskCredentials(reference) && task.maskImageId) {
       maskDataUrl = await ensureImageCached(task.maskImageId)
       if (!maskDataUrl) throw new Error('遮罩图片已不存在')
     }
@@ -1973,7 +1973,7 @@ async function recoverImageTask(taskId: string) {
     clearImageTaskRecoveryTimer(taskId)
     await completeRecoveredImageTask(task, result)
   } catch (error) {
-    if (isFalConnectionRecoverableError(error)) {
+    if (isRecoverableImageTaskError(error)) {
       scheduleImageTaskRecovery(taskId, CUSTOM_RECOVERY_POLL_MS)
       return
     }
@@ -4152,7 +4152,7 @@ async function executeTask(taskId: string) {
       : null)
     const latestCustomTaskInfo = customTaskInfo ?? (latestTask.customTaskId ? { taskId: latestTask.customTaskId } : null)
     const latestImageTask = getStoredImageTaskReference(latestTask)
-    if (latestImageTask && isFalConnectionRecoverableError(err)) {
+    if (latestImageTask && isRecoverableImageTaskError(err)) {
       updateTaskInStore(taskId, {
         status: 'running',
         error: '图片任务连接暂时中断，正在继续查询同一任务结果。',
@@ -4265,9 +4265,45 @@ export async function retryTask(task: TaskRecord) {
   void executeTask(taskId)
 }
 
-/** 复用配置 */
+// 后一次复用或用户的新输入优先，慢返回的本地素材不能覆盖当前编辑。
+let reuseConfigSequence = 0
+
+/** 复用配置：先完整读取素材，再一次性恢复整套输入。 */
 export async function reuseConfig(task: TaskRecord) {
-  const { settings, setSettings, setPrompt, setParams, setInputImages, setMaskDraft, clearMaskDraft, showToast, setConfirmDialog, setReusedTaskApiProfile } = useStore.getState()
+  const sequence = ++reuseConfigSequence
+  const source = useStore.getState()
+  const { settings, setSettings, setPrompt, setParams, setInputImages, setMaskDraft, clearMaskDraft, showToast, setConfirmDialog, setReusedTaskApiProfile } = source
+  const isCurrent = () => {
+    const current = useStore.getState()
+    return sequence === reuseConfigSequence && current.prompt === source.prompt
+      && current.inputImages === source.inputImages && current.params === source.params
+      && current.maskDraft === source.maskDraft && current.settings === settings
+  }
+  const imgs: InputImage[] = []
+  let restoredMask: MaskDraft | null = null
+  try {
+    for (const imgId of task.inputImageIds) {
+      const dataUrl = await ensureImageCached(imgId)
+      if (!isCurrent()) return
+      if (!dataUrl) throw new Error('参考图片已不存在，请重新添加后再复用。')
+      imgs.push({ id: imgId, dataUrl })
+    }
+    const maskTargetImageId = task.maskTargetImageId ?? (task.maskImageId ? task.inputImageIds[0] : null)
+    if (task.maskImageId) {
+      if (!maskTargetImageId || !imgs.some((img) => img.id === maskTargetImageId)) {
+        throw new Error('遮罩对应的参考图片已不存在，请重新添加后再复用。')
+      }
+      const maskDataUrl = await ensureImageCached(task.maskImageId)
+      if (!isCurrent()) return
+      if (!maskDataUrl) throw new Error('遮罩图片已不存在，请重新编辑遮罩后再复用。')
+      restoredMask = { targetImageId: maskTargetImageId, maskDataUrl, updatedAt: Date.now() }
+    }
+  } catch (error) {
+    if (isCurrent()) showToast(error instanceof Error ? error.message : '读取参考图片失败，请重试。', 'error')
+    return
+  }
+  if (!isCurrent()) return
+
   const normalizedSettings = normalizeSettings(settings)
   const currentProfile = getActiveApiProfile(settings)
   const matchedProfile = normalizedSettings.reuseTaskApiProfileTemporarily ? getTaskApiProfile(normalizedSettings, task) : null
@@ -4277,64 +4313,30 @@ export async function reuseConfig(task: TaskRecord) {
   const targetProfile = matchedProfile ?? currentProfile
   const historicalModel = task.apiModel ? getFixedImagePricing(task.apiModel)?.model : undefined
   const reusedProfile = historicalModel ? { ...targetProfile, model: historicalModel } : targetProfile
-  // 先恢复模型再校验尺寸和透明背景。跨站点复用只更新目标站点的模型，密钥和当前站点保持原值。
+  // 素材全部就绪后再恢复模型，避免失败时只改了一半配置或丢失透明背景。
   if (historicalModel && !missingReusedProfile) {
     setSettings({ profiles: normalizedSettings.profiles.map((profile) => profile.id === reusedProfile.id ? reusedProfile : profile) })
   }
   const paramsSettings = createSettingsForApiProfile(normalizedSettings, reusedProfile)
-
-  setParams(normalizeParamsForSettings(task.params, paramsSettings, { hasInputImages: task.inputImageIds.length > 0 }))
-  setReusedTaskApiProfile(
-    shouldTemporarilyReuseProfile && matchedProfile ? matchedProfile.id : null,
-    missingReusedProfile,
-    taskProfileName,
-  )
+  setParams(normalizeParamsForSettings(task.params, paramsSettings, { hasInputImages: imgs.length > 0 }))
+  setReusedTaskApiProfile(shouldTemporarilyReuseProfile && matchedProfile ? matchedProfile.id : null, missingReusedProfile, taskProfileName)
   clearMaskDraft()
-
-  // 恢复输入图片
-  const imgs: InputImage[] = []
-  for (const imgId of task.inputImageIds) {
-    const dataUrl = await ensureImageCached(imgId)
-    if (dataUrl) {
-      imgs.push({ id: imgId, dataUrl })
-    }
-  }
   setInputImages(imgs)
   setPrompt(task.prompt)
-  const maskTargetImageId = task.maskTargetImageId ?? (task.maskImageId ? task.inputImageIds[0] : null)
-  if (maskTargetImageId && task.maskImageId && imgs.some((img) => img.id === maskTargetImageId)) {
-    const maskDataUrl = await ensureImageCached(task.maskImageId)
-    if (maskDataUrl) {
-      setMaskDraft({
-        targetImageId: maskTargetImageId,
-        maskDataUrl,
-        updatedAt: Date.now(),
-      })
-    } else {
-      clearMaskDraft()
-    }
-  } else {
-    clearMaskDraft()
-  }
+  if (restoredMask) setMaskDraft(restoredMask)
+
   if (missingReusedProfile) {
     setConfirmDialog({
       title: '找不到 API 配置',
       message: `找不到复用任务所使用的 API 配置「${taskProfileName}」，要使用当前的 API 配置「${currentProfile.name}」提交任务吗？`,
       confirmText: '使用当前配置提交',
       cancelText: '放弃提交',
-      action: () => {
-        void submitTask({ useCurrentApiProfileWhenReusedMissing: true })
-      },
+      action: () => { void submitTask({ useCurrentApiProfileWhenReusedMissing: true }) },
     })
     return
   }
-
-  showToast(
-    shouldTemporarilyReuseProfile && matchedProfile
-      ? `已临时复用该任务的 API 配置「${matchedProfile.name}」`
-      : '已复用配置到输入框',
-    'success',
-  )
+  showToast(shouldTemporarilyReuseProfile && matchedProfile
+    ? `已临时复用该任务的 API 配置「${matchedProfile.name}」` : '已复用配置到输入框', 'success')
 }
 
 /** 编辑输出：将输出图加入输入 */

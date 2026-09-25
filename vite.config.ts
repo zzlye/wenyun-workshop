@@ -413,7 +413,8 @@ export default defineConfig(({ command }) => {
 
   return {
     plugins: [lockedFetchProxyPlugin(), react()],
-    base: './',
+    // 页面使用域名根目录的历史路由，深层地址刷新时仍从根目录加载资源。
+    base: '/',
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
       __DEV_PROXY_CONFIG__: JSON.stringify(devProxyConfig),

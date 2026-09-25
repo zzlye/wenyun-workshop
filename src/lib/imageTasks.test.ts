@@ -142,3 +142,72 @@ describe('图片任务恢复', () => {
     expect(fetchMock.mock.calls[0][1]?.method).not.toBe('POST')
   })
 })
+
+describe('图片查询边界回归', () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
+
+  it.each([429, 502, 503, 504])('查询暂时返回 %s 后继续原任务', async (status) => {
+    vi.useFakeTimers()
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('网关暂时不可用', { status }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'succeeded' })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ b64_json: 'b2s=' }] })))
+    const promise = fetchImageTask('images/generations', { method: 'POST' }, { timeoutMs: 100, reference: { taskId: 'existing', accessToken: 'token', idempotencyKey: 'key' } })
+    const assertion = expect(promise.then((r) => r.json())).resolves.toEqual({ data: [{ b64_json: 'b2s=' }] })
+    // 先安装断言并捕获失败，避免验证旧实现时产生未处理的 Promise 拒绝。
+    const settled = assertion.then(() => undefined, (error) => error)
+    await vi.advanceTimersByTimeAsync(3_000)
+    const failure = await settled
+    if (failure) throw failure
+    expect(fetchMock.mock.calls.every(([, init]) => init?.method !== 'POST')).toBe(true)
+  })
+
+  it('结果读取的网关故障只重读结果，不重建任务', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'succeeded' })))
+      .mockResolvedValueOnce(new Response('', { status: 502 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ b64_json: 'b2s=' }] })))
+    const assertion = expect(fetchImageTask('images/generations', { method: 'POST' }, { timeoutMs: 100, reference: { taskId: 'result-task', accessToken: 'token', idempotencyKey: 'key' } }).then((r) => r.json())).resolves.toEqual({ data: [{ b64_json: 'b2s=' }] })
+    const settled = assertion.then(() => undefined, (error) => error)
+    await vi.advanceTimersByTimeAsync(3_000)
+    const failure = await settled
+    if (failure) throw failure
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/image-tasks/result-task', '/image-tasks/result-task/result', '/image-tasks/result-task/result'])
+  })
+})
+
+describe('图片任务故障边界回归', () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
+
+  it('结果连续下载中断超过五次后仍可取回，不把成功任务改成失败', async () => {
+    vi.useFakeTimers()
+    let downloads = 0
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (String(url).endsWith('/result')) {
+        if (++downloads <= 7) throw new TypeError('Failed to fetch')
+        return new Response(JSON.stringify({ data: [{ b64_json: 'b2s=' }] }))
+      }
+      return new Response(JSON.stringify({ status: 'succeeded' }))
+    })
+    const assertion = expect(fetchImageTask('images/generations', { method: 'POST' }, { timeoutMs: 100, reference: { taskId: 'long-download', accessToken: 'token', idempotencyKey: 'key' } }).then((r) => r.json())).resolves.toEqual({ data: [{ b64_json: 'b2s=' }] })
+    const settled = assertion.then(() => undefined, (error) => error)
+    await vi.advanceTimersByTimeAsync(21_000)
+    const failure = await settled
+    if (failure) throw failure
+    expect(downloads).toBe(8)
+    expect(fetchMock.mock.calls.every(([, init]) => init?.method !== 'POST')).toBe(true)
+  })
+
+  it('无权读取任务时立即停止，不将鉴权失败当成临时故障', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ error: { message: '访问凭据过期' } }), { status: 401 }))
+    await expect(fetchImageTask('images/generations', { method: 'POST' }, { timeoutMs: 100, reference: { taskId: 'unauthorized', accessToken: 'token', idempotencyKey: 'key' } })).rejects.toThrow('访问凭据过期')
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it('创建任务遇到网关错误不自动再次提交', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 503 }))
+    await expect(fetchImageTask('images/generations', { method: 'POST' }, { timeoutMs: 100 })).rejects.toThrow('创建图片任务失败')
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+})

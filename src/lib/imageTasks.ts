@@ -10,6 +10,19 @@ export interface ImageTaskReference {
   apiProfileId?: string
 }
 
+/** 已提交任务凭据齐全时只允许续查，不能再次进入生成或协议转换。 */
+export function hasImageTaskCredentials(reference?: Partial<ImageTaskReference> | null): boolean {
+  return Boolean(reference?.taskId?.trim() && reference.accessToken?.trim())
+}
+
+/** 查询临时故障与服务端生成失败必须分开，不能通过错误文字猜测终态。 */
+export class ImageTaskError extends Error {
+  constructor(message: string, readonly recoverable: boolean) {
+    super(message)
+    this.name = 'ImageTaskError'
+  }
+}
+
 interface ImageTaskSnapshot {
   taskId: string
   status: ImageTaskStatus
@@ -26,7 +39,6 @@ interface CreateImageTaskPayload extends ImageTaskSnapshot {
 
 const TASK_POLL_INTERVAL_MS = 2_000
 const RECOVERABLE_POLL_RETRY_MS = 3_000
-const RESULT_RETRY_COUNT = 5
 const IMAGE_TASK_CLIENT_VERSION = '2'
 
 function createRandomKey(prefix: string): string {
@@ -39,21 +51,23 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-function isRecoverableNetworkError(error: unknown): boolean {
+export function isRecoverableImageTaskError(error: unknown): boolean {
+  if (error instanceof ImageTaskError) return error.recoverable
   if (typeof DOMException !== 'undefined' && error instanceof DOMException && error.name === 'AbortError') return false
   const message = error instanceof Error ? error.message : String(error)
   return /network|failed to fetch|fetch failed|load failed|timeout|连接|断开|中断/i.test(message)
 }
 
-async function readTaskError(response: Response, fallback: string): Promise<Error> {
+async function readTaskError(response: Response, fallback: string, readingExistingTask = false): Promise<ImageTaskError> {
+  const recoverable = readingExistingTask && [408, 429, 500, 502, 503, 504].includes(response.status)
   try {
     const payload = await response.json() as { error?: { message?: string } }
     const message = payload.error?.message?.trim()
-    if (message) return new Error(message)
+    if (message) return new ImageTaskError(message, recoverable)
   } catch {
     // 服务端错误体不可读时使用当前阶段的统一提示。
   }
-  return new Error(fallback)
+  return new ImageTaskError(fallback, recoverable)
 }
 
 function taskHeaders(reference: Pick<ImageTaskReference, 'accessToken'>): HeadersInit {
@@ -78,7 +92,7 @@ export async function createImageTask(
   timeoutMs: number,
   reference?: ImageTaskReference,
 ): Promise<ImageTaskReference> {
-  if (reference?.taskId && reference.accessToken) return reference
+  if (reference && hasImageTaskCredentials(reference)) return reference
 
   const idempotencyKey = reference?.idempotencyKey || createImageTaskIdempotencyKey()
   // 创建请求只发送一次；响应丢失时保留失败记录，由用户确认后手动重试，避免后台重复扣费。
@@ -109,7 +123,7 @@ export async function getImageTaskSnapshot(reference: ImageTaskReference): Promi
     headers: taskHeaders(reference),
     cache: 'no-store',
   })
-  if (!response.ok) throw await readTaskError(response, `查询图片任务失败（HTTP ${response.status}）`)
+  if (!response.ok) throw await readTaskError(response, `查询图片任务失败（HTTP ${response.status}）`, true)
   return response.json() as Promise<ImageTaskSnapshot>
 }
 
@@ -119,14 +133,14 @@ export async function waitForImageTask(reference: ImageTaskReference): Promise<I
     try {
       snapshot = await getImageTaskSnapshot(reference)
     } catch (error) {
-      if (!isRecoverableNetworkError(error)) throw error
+      if (!isRecoverableImageTaskError(error)) throw error
       await wait(RECOVERABLE_POLL_RETRY_MS)
       continue
     }
 
     if (snapshot.status === 'succeeded') return snapshot
     if (snapshot.status === 'failed') {
-      throw new Error(snapshot.error?.message?.trim() || '图片生成任务失败')
+      throw new ImageTaskError(snapshot.error?.message?.trim() || '图片生成任务失败', false)
     }
     await wait(TASK_POLL_INTERVAL_MS)
   }
@@ -134,14 +148,14 @@ export async function waitForImageTask(reference: ImageTaskReference): Promise<I
 
 export async function getImageTaskResult(reference: ImageTaskReference): Promise<Response> {
   let result: { body: ArrayBuffer; status: number; statusText: string; headers: Headers } | null = null
-  let lastError: unknown
-  for (let attempt = 0; attempt < RESULT_RETRY_COUNT; attempt += 1) {
+  // 结果已经生成，临时网络故障继续读取同一份结果；过期、鉴权失败等永久错误才结束。
+  while (!result) {
     try {
       const response = await fetch(`/image-tasks/${encodeURIComponent(reference.taskId)}/result`, {
         headers: taskHeaders(reference),
         cache: 'no-store',
       })
-      if (!response.ok) throw await readTaskError(response, `读取图片任务结果失败（HTTP ${response.status}）`)
+      if (!response.ok) throw await readTaskError(response, `读取图片任务结果失败（HTTP ${response.status}）`, true)
       const upstreamStatus = Number(response.headers.get('x-wenyun-upstream-status') || 200)
       const upstreamStatusText = decodeURIComponent(response.headers.get('x-wenyun-upstream-status-text') || '')
       const headers = new Headers(response.headers)
@@ -155,14 +169,12 @@ export async function getImageTaskResult(reference: ImageTaskReference): Promise
       }
       break
     } catch (error) {
-      lastError = error
-      if (!isRecoverableNetworkError(error) || attempt === RESULT_RETRY_COUNT - 1) throw error
+      if (!isRecoverableImageTaskError(error)) throw error
       // 图片已在任务内存中，下载中断时只重新读取结果，不会重新生成。
       await wait(RECOVERABLE_POLL_RETRY_MS)
     }
   }
 
-  if (!result) throw lastError instanceof Error ? lastError : new Error('读取图片任务结果失败')
   return new Response(result.body, {
     status: result.status,
     statusText: result.statusText,

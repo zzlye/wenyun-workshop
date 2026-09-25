@@ -2,7 +2,7 @@ import { DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type CustomProviderDefi
 import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './canvasImage'
 import { getFixedImageRequestModel, isBananaImageModel, resolveImageApiFormat } from './apiProfiles'
 import { buildApiUrl, getLockedNewApiProxyPrefix, isLockedApiProxyTarget, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from './devProxy'
-import { fetchImageTask, shouldUseImageTasks } from './imageTasks'
+import { fetchImageTask, hasImageTaskCredentials, shouldUseImageTasks } from './imageTasks'
 import { formatImageRatio, normalizeImageSize, parseRatio } from './size'
 import { normalizeImageBackground, supportsTransparentImageBackground } from './modelPricing'
 import { findBananaSizePreset, resolveBananaSizePreset } from './bananaImageSize'
@@ -889,6 +889,8 @@ async function parseResponsesApiStreamResponse(
 }
 
 export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile: ApiProfile, customProvider?: CustomProviderDefinition | null): Promise<CallApiResult> {
+  // 已保存的任务独立于当前协议设置，禁止恢复时走香蕉协议回退并再次生成。
+  if (hasImageTaskCredentials(opts.imageTask)) return callImagesApi(opts, profile)
   if (customProvider) {
     return callCustomHttpImageApi(opts, profile, customProvider)
   }
@@ -1018,7 +1020,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
   const proxyConfig = readClientDevProxyConfig()
   const isLockedImageApi = isLockedApiProxyTarget(profile.baseUrl)
   const usesOfficialImageParams = supportsTransparentImageBackground(profile.model)
-  const useImageTasks = Boolean(opts.imageTask) && shouldUseImageTasks(profile.baseUrl)
+  const useImageTasks = hasImageTaskCredentials(opts.imageTask) || (Boolean(opts.imageTask) && shouldUseImageTasks(profile.baseUrl))
   // 文运站使用短轮询异步任务；其他内置站点和自定义接口继续保持原路径。
   const useApiProxy = shouldUseApiProxyForBaseUrl(profile.apiProxy, profile.baseUrl, proxyConfig) && !isLockedImageApi
   const requestHeaders = createRequestHeaders(profile)

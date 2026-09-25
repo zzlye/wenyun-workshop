@@ -448,3 +448,25 @@ describe("canvas image api", () => {
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZWRpdGVk" }]);
     });
 });
+
+it('画布图片恢复边界回归：任务已提交后不再读取素材或使用新协议', async () => {
+    const initial = useStore.getState().settings;
+    vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'disabled');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        if (input === '/image-tasks/canvas-existing') return new Response(JSON.stringify({ status: 'succeeded' }));
+        if (input === '/image-tasks/canvas-existing/result') return new Response(JSON.stringify({ data: [{ b64_json: 'b2s=' }] }), { headers: { 'Content-Type': 'application/json' } });
+        throw new Error('恢复不应请求素材或重新生成：' + String(input));
+    });
+    try {
+        useStore.setState({ settings: DEFAULT_SETTINGS });
+        const images = await requestEdit({ ...defaultConfig, model: 'gpt-image-2', imageModel: 'gpt-image-2' }, '', [
+            { id: 'expired', name: '失效参考图', type: 'image/png', dataUrl: 'blob:expired', isMaskTarget: true, maskDataUrl: 'blob:expired-mask' },
+        ], 'restore', { taskId: 'canvas-existing', accessToken: 'token', idempotencyKey: 'old-key', apiProfileId: DEFAULT_SETTINGS.activeProfileId });
+        expect(images[0].dataUrl).toBe('data:image/png;base64,b2s=');
+        expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/image-tasks/canvas-existing', '/image-tasks/canvas-existing/result']);
+    } finally {
+        useStore.setState({ settings: initial });
+        vi.restoreAllMocks();
+        vi.unstubAllEnvs();
+    }
+});
