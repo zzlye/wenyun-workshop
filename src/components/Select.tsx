@@ -22,9 +22,12 @@ interface SelectProps {
   options: Option[]
   disabled?: boolean
   className?: string
+  /** 手机参数使用系统选择器，避免菜单被输入区或软键盘裁切。 */
+  native?: boolean
+  ariaLabel?: string
 }
 
-export default function Select({ value, onChange, onReorder, options, disabled, className }: SelectProps) {
+export default function Select({ value, onChange, onReorder, options, disabled, className, native = false, ariaLabel }: SelectProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [menuMaxHeight, setMenuMaxHeight] = useState(DEFAULT_DROPDOWN_MAX_HEIGHT)
   const [placement, setPlacement] = useState<'bottom' | 'top'>('bottom')
@@ -149,6 +152,15 @@ export default function Select({ value, onChange, onReorder, options, disabled, 
       dragScrollIntervalRef.current = null
     }
   }
+
+  if (native) return (
+    <div className="relative min-w-0 w-full">
+      <select value={value} disabled={disabled} aria-label={ariaLabel} onChange={(event) => onChange(options.find((option) => String(option.value) === event.target.value)?.value ?? event.target.value)} className={`w-full min-w-0 appearance-none pr-8 ${className ?? ''}`}>
+        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+      <ChevronDownIcon aria-hidden className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-gray-400" />
+    </div>
+  )
 
   return (
     <div ref={containerRef} className="relative w-full">

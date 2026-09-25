@@ -418,9 +418,9 @@ export default function TaskCard({
           </svg>
         </div>
       )}
-      <div className="flex h-40">
+      <div data-task-layout className="flex h-40">
         {/* 左侧图片区域 */}
-        <div className="w-40 min-w-[10rem] h-full bg-gray-100 dark:bg-black/20 relative flex items-center justify-center overflow-hidden flex-shrink-0">
+        <div data-task-image className="w-40 min-w-[10rem] h-full bg-gray-100 dark:bg-black/20 relative flex items-center justify-center overflow-hidden flex-shrink-0">
           {task.status === 'running' && streamPreviewSrc && (
             <>
               <img
@@ -534,7 +534,7 @@ export default function TaskCard({
             </svg>
           )}
           {/* 运行中显示耗时，完成后显示封面图比例与分辨率标签 */}
-          <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
+          <div data-task-image-badges className="absolute top-1.5 left-1.5 flex items-center gap-1">
             {showRunningTimer || task.status !== 'done' || !coverRatio || !coverSize ? (
               <span className="flex items-center gap-1 bg-black/50 text-white text-[10px] sm:text-xs px-1.5 py-0.5 rounded backdrop-blur-sm font-mono">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -556,7 +556,7 @@ export default function TaskCard({
         </div>
 
         {/* 右侧信息区域 */}
-        <div className="flex-1 p-3 flex flex-col min-w-0">
+        <div data-task-info className="flex-1 p-3 flex flex-col min-w-0">
           <div className="flex-1 min-h-0 mb-2 overflow-hidden">
             {showPendingPrompt ? (
               <div className="leading-relaxed">
@@ -630,6 +630,7 @@ export default function TaskCard({
             </div>
             {/* 操作按钮 */}
             <div
+              data-task-actions
               data-tag-scroll-area
               className="flex items-center gap-1 flex-shrink-0 mt-0.5 ml-auto max-w-full overflow-x-auto hide-scrollbar mask-edge-r pr-2"
               onClick={(e) => e.stopPropagation()}

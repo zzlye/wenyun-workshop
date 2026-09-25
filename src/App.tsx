@@ -297,7 +297,7 @@ export default function App() {
           />
         </>
       )}
-      <div className={`relative z-10 min-h-screen ${appearanceNightMode ? 'appearance-night' : ''}`}>
+      <div data-workspace={showHome ? 'home' : workspaceMode} className={`relative z-10 min-h-screen ${appearanceNightMode ? 'appearance-night' : ''}`}>
         {showHome ? (
           <HomeLanding
             onOpenGallery={() => switchWorkspaceMode('gallery')}
@@ -331,6 +331,7 @@ export default function App() {
         <Toast />
         {!showHome && <button
           type="button"
+          data-workshop-announcement={workspaceMode === 'gallery' ? '' : undefined}
           onClick={openAnnouncement}
           className="fixed bottom-4 left-4 z-50 rounded-full border border-gray-200/70 bg-white/85 px-3 py-2 text-xs font-medium text-gray-700 shadow-lg backdrop-blur transition hover:bg-white hover:text-gray-900 dark:border-white/[0.08] dark:bg-gray-900/85 dark:text-gray-200 dark:hover:bg-gray-800"
         >

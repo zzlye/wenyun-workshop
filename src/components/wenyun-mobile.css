@@ -1,0 +1,153 @@
+/* 所有规则均限定文运入口，画布沿用自己的布局和触控行为。 */
+.workspace-mode-view-gallery {
+  /* 入场后释放透明度层叠上下文，详情弹窗不再被外层公告按钮盖住。 */
+  animation-fill-mode: backwards;
+  will-change: auto;
+}
+
+[data-workspace='gallery'] [data-settings-dialog] {
+  max-height: calc(100dvh - max(16px, var(--safe-area-top)) - max(16px, var(--safe-area-bottom)));
+}
+
+/* 公告在各尺寸都低于详情和设置，横屏也不遮挡弹窗内容。 */
+[data-workshop-announcement] { z-index: 20; }
+.workshop-header .workshop-account-button { max-width: 120px; }
+
+@media (max-width: 639px) {
+  [data-workspace='gallery'] .safe-area-x {
+    padding-left: max(12px, var(--safe-area-left));
+    padding-right: max(12px, var(--safe-area-right));
+  }
+
+  .workshop-header .workshop-desktop-action { display: none; }
+  .workshop-header button { min-width: 44px; min-height: 44px; }
+  .workshop-header .workshop-account-button { max-width: 76px; }
+  .workshop-header h1 { line-height: 1.5; }
+  .workshop-menu-item {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    text-align: left;
+    font-size: 14px;
+  }
+  .workshop-menu-item:hover { background: rgb(128 128 128 / 10%); }
+  #workshop-mobile-menu {
+    position: fixed;
+    top: calc(max(8px, var(--safe-area-top)) + 56px);
+    left: max(12px, var(--safe-area-left));
+    right: max(12px, var(--safe-area-right));
+    width: auto;
+    max-height: calc(100dvh - 90px);
+    overflow-y: auto;
+  }
+
+  /* 16px 编辑字号避免 iOS 聚焦后放大页面；预览和占位文字保持相同度量。 */
+  [data-workspace='gallery'] input:not([type='checkbox']):not([type='range']),
+  [data-workspace='gallery'] textarea,
+  [data-workspace='gallery'] select,
+  [data-workspace='gallery'] [contenteditable],
+  [data-workspace='gallery'] .prompt-placeholder { font-size: 16px; }
+  .workshop-search input,
+  .workshop-search button,
+  .workshop-search .cursor-pointer { min-height: 44px; }
+
+  .workspace-mode-view-gallery [data-input-bar] {
+    bottom: calc(var(--composer-bottom-inset, 0px) + max(8px, var(--safe-area-bottom)));
+    padding-left: max(8px, var(--safe-area-left));
+    padding-right: max(8px, var(--safe-area-right));
+    transition: none;
+  }
+  .workspace-mode-view-gallery [data-composer-card] {
+    max-height: calc(var(--composer-viewport-height, 100dvh) - 76px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background-color: rgb(255 255 255 / 96%);
+  }
+  .dark .workspace-mode-view-gallery [data-composer-card] { background-color: rgb(17 24 39 / 96%); }
+  .workspace-mode-view-gallery [data-composer-expanded='true'] {
+    top: calc(var(--composer-top-inset, 0px) + max(8px, var(--safe-area-top)));
+    bottom: calc(var(--composer-bottom-inset, 0px) + max(8px, var(--safe-area-bottom)));
+    padding: 0;
+  }
+  .workspace-mode-view-gallery [data-composer-expanded='true'] [data-composer-card] { max-height: 100%; }
+  .workspace-mode-view-gallery [contenteditable] { min-height: 64px; line-height: 1.5; }
+  .workspace-mode-view-gallery .prompt-placeholder { line-height: 1.5; }
+  .workshop-mobile-params input,
+  .workshop-mobile-params select,
+  .workshop-mobile-params button { min-height: 44px; }
+  .workshop-mobile-params { row-gap: 10px; }
+  .workspace-mode-view-gallery [data-mobile-composer-actions] button { min-height: 44px; }
+  .workspace-mode-view-gallery [data-task-actions] button { min-height: 44px; min-width: 44px; }
+  /* 窄屏缩略图让出操作空间，按钮可以换行而不是藏进横向滚动条。 */
+  .workspace-mode-view-gallery [data-task-layout] { height: auto; min-height: 160px; }
+  .workspace-mode-view-gallery [data-task-image] { width: clamp(88px, 25vw, 144px); min-width: 0; height: auto; }
+  .workspace-mode-view-gallery [data-task-image] > img { position: absolute; inset: 0; }
+  .workspace-mode-view-gallery [data-task-image-badges] { right: 6px; flex-wrap: wrap; }
+  .workspace-mode-view-gallery [data-task-info] { min-height: 160px; padding: 10px; }
+  .workspace-mode-view-gallery [data-task-actions] {
+    flex-wrap: wrap;
+    gap: 0;
+    margin-left: 0;
+    padding-right: 0;
+    overflow: visible;
+    mask-image: none;
+  }
+  .workspace-mode-view-gallery .task-card-wrapper { min-width: 0; }
+  .workspace-mode-view-gallery .task-card-wrapper p { overflow-wrap: anywhere; }
+
+  /* 公告移到输入区上方，且不再覆盖详情弹窗和上传按钮。 */
+  [data-workshop-announcement] {
+    bottom: calc(var(--input-bar-clearance, 12rem) + 8px);
+    left: max(12px, var(--safe-area-left));
+  }
+  /* 参数和键盘展开期间把空间留给当前操作，收起后恢复公告入口。 */
+  [data-workspace='gallery']:has(.workshop-parameter-toggle[aria-expanded='true']) [data-workshop-announcement],
+  [data-workspace='gallery']:has([contenteditable]:focus) [data-workshop-announcement] { visibility: hidden; }
+  [data-workspace='gallery'] [data-settings-dialog] {
+    height: calc(100dvh - max(24px, var(--safe-area-top)) - max(24px, var(--safe-area-bottom)));
+    max-height: 880px;
+  }
+}
+
+@media (max-width: 767px) {
+  .workspace-mode-view-gallery .workshop-detail-overlay {
+    padding: max(8px, var(--safe-area-top)) max(8px, var(--safe-area-right)) max(8px, var(--safe-area-bottom)) max(8px, var(--safe-area-left));
+  }
+  .workspace-mode-view-gallery [data-workshop-detail] {
+    height: calc(100dvh - max(8px, var(--safe-area-top)) - max(8px, var(--safe-area-bottom)));
+    max-height: 880px;
+    border-radius: 20px;
+  }
+  .workspace-mode-view-gallery .workshop-detail-close { height: 48px; }
+  .workspace-mode-view-gallery .workshop-detail-close button { width: 44px; height: 44px; }
+  .workspace-mode-view-gallery [data-detail-image] { min-height: 0; height: clamp(100px, 30dvh, 260px); }
+  .workspace-mode-view-gallery [data-detail-info] { flex: 1; padding: 12px 16px; }
+  .workspace-mode-view-gallery [data-detail-actions] { padding-top: 10px; margin-top: 8px; }
+  .workspace-mode-view-gallery [data-detail-actions] button { min-height: 44px; }
+  .workspace-mode-view-gallery [data-detail-scroll] { overflow-wrap: anywhere; }
+}
+
+/* 横屏短视口保留内部滚动，避免输入框或操作按钮被挤到屏幕外。 */
+@media (max-height: 500px) and (max-width: 950px) {
+  .workspace-mode-view-gallery [data-composer-card] { max-height: calc(var(--composer-viewport-height, 100dvh) - 80px); overflow-y: auto; }
+  .workspace-mode-view-gallery [data-composer-expanded='true'] [data-composer-card] { max-height: 100%; }
+  .workspace-mode-view-gallery [data-detail-image] { min-height: 0; }
+}
+
+@media (pointer: coarse) and (max-width: 950px) {
+  /* 手机横屏同样跟随软键盘，不只处理竖屏的窄视口。 */
+  .workspace-mode-view-gallery [data-input-bar] {
+    bottom: calc(var(--composer-bottom-inset, 0px) + max(8px, var(--safe-area-bottom)));
+    transition: none;
+  }
+  .workspace-mode-view-gallery [data-composer-expanded='true'] {
+    top: calc(var(--composer-top-inset, 0px) + max(8px, var(--safe-area-top)));
+  }
+  [data-workspace='gallery'] input:not([type='checkbox']):not([type='range']),
+  [data-workspace='gallery'] textarea,
+  [data-workspace='gallery'] select,
+  [data-workspace='gallery'] [contenteditable],
+  [data-workspace='gallery'] .prompt-placeholder { font-size: 16px; }
+}

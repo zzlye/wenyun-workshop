@@ -13,6 +13,7 @@ import { dismissAllTooltips } from '../lib/tooltipDismiss'
 import { getSafeBoundingClientRect } from '../lib/domRect'
 import { collectAgentRoundOutputImageSlots } from '../lib/agentImageReferences'
 import { getEffectiveImageApiProfile } from '../lib/accountApiKey'
+import { getMobileComposerViewport } from '../lib/mobileComposerViewport'
 import { useHintTooltip } from '../hooks/useHintTooltip'
 import { downloadImageIds, formatExportFileTime } from '../lib/downloadImages'
 import { Maximize2, Minimize2 } from 'lucide-react'
@@ -523,7 +524,7 @@ export default function InputBar() {
   const [submitHover, setSubmitHover] = useState(false)
   const [attachHover, setAttachHover] = useState(false)
   const [imageHintId, setImageHintId] = useState<string | null>(null)
-  const [mobileCollapsed, setMobileCollapsed] = useState(false)
+  const [mobileCollapsed, setMobileCollapsed] = useState(() => window.innerWidth < 640)
   const [showSizePicker, setShowSizePicker] = useState(false)
   const [showMobileUploadMenu, setShowMobileUploadMenu] = useState(false)
   const [maskPreviewUrl, setMaskPreviewUrl] = useState('')
@@ -532,7 +533,7 @@ export default function InputBar() {
   const [atImageMenuIndex, setAtImageMenuIndex] = useState(0)
   const [atImageMenuDismissed, setAtImageMenuDismissed] = useState(false)
   const [touchDragPreview, setTouchDragPreview] = useState<{ src: string; x: number; y: number } | null>(null)
-  const handleRef = useRef<HTMLDivElement>(null)
+  const handleRef = useRef<HTMLButtonElement>(null)
   const dragTouchRef = useRef({ startY: 0, moved: false })
   const suppressHandleClickUntilRef = useRef(0)
   const imageDragIndexRef = useRef<number | null>(null)
@@ -552,6 +553,11 @@ export default function InputBar() {
     const bar = cardRef.current?.closest<HTMLElement>('[data-input-bar]')
     if (!bar) return
 
+    // 只给当前输入区提供可视高度；样式限于文运工坊，不改变画布布局。
+    const viewport = getMobileComposerViewport(window.innerHeight, window.visualViewport, window.innerWidth < 640 || window.matchMedia('(pointer: coarse) and (max-width: 950px)').matches)
+    bar.style.setProperty('--composer-viewport-height', `${viewport.height}px`)
+    bar.style.setProperty('--composer-bottom-inset', `${viewport.bottomInset}px`)
+    bar.style.setProperty('--composer-top-inset', `${viewport.topInset}px`)
     const rect = bar.getBoundingClientRect()
     const clearance = Math.max(0, window.innerHeight - rect.top)
     document.documentElement.style.setProperty('--input-bar-clearance', `${Math.ceil(clearance)}px`)
@@ -1242,7 +1248,8 @@ export default function InputBar() {
     const fixedOverhead = imagesHeight + 140
 
     // textarea 最大高度 = 页面 40% 减去固定开销，至少保留 80px
-    const maxH = Math.max(window.innerHeight * 0.4 - fixedOverhead, 80)
+    const viewport = getMobileComposerViewport(window.innerHeight, window.visualViewport, window.innerWidth < 640 || window.matchMedia('(pointer: coarse) and (max-width: 950px)').matches)
+    const maxH = Math.max(viewport.height * 0.4 - fixedOverhead, 80)
 
     // 1. 关闭过渡动画，设高度为 0 以获取真实的文本内容高度
     el.style.transition = 'none'
@@ -1357,7 +1364,11 @@ export default function InputBar() {
 
   useEffect(() => {
     window.addEventListener('resize', adjustTextareaHeight)
-    return () => window.removeEventListener('resize', adjustTextareaHeight)
+    window.visualViewport?.addEventListener('resize', adjustTextareaHeight)
+    return () => {
+      window.removeEventListener('resize', adjustTextareaHeight)
+      window.visualViewport?.removeEventListener('resize', adjustTextareaHeight)
+    }
   }, [adjustTextareaHeight])
 
   useEffect(() => {
@@ -1741,10 +1752,12 @@ export default function InputBar() {
 
   // 参数按内容设置基础宽度，再按比例伸缩铺满每行，保持紧凑间距。
   const renderParams = (mobile = false) => (
-    <div className={`${mobile ? 'grid grid-cols-2 [&>label:last-child:nth-child(even)]:col-span-2' : 'flex flex-wrap items-end'} gap-2 text-xs`}>
+    <div className={`${mobile ? 'workshop-mobile-params grid grid-cols-2' : 'flex flex-wrap items-end'} gap-2 text-xs`}>
       <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? 'col-span-2' : 'flex-[2_1_15rem]'}`}>
         <span className="text-gray-400 dark:text-gray-500 ml-1">模型</span>
         <Select
+          native={mobile}
+          ariaLabel="模型"
           value={selectedModelOption?.value ?? FIXED_IMAGE_MODEL_OPTIONS[0].value}
           onChange={(model) => setSettings({ model: String(model) })}
           options={modelOptions}
@@ -1755,6 +1768,8 @@ export default function InputBar() {
         <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1_1_7rem]'}`}>
           <span className="text-gray-400 dark:text-gray-500 ml-1">香蕉协议</span>
           <Select
+            native={mobile}
+            ariaLabel="香蕉协议"
             value={normalizeApiFormat(activeProfile.apiFormat)}
             onChange={(apiFormat) => setSettings({ apiFormat: normalizeApiFormat(apiFormat) })}
             options={[
@@ -1782,6 +1797,8 @@ export default function InputBar() {
       <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1_1_5rem]'}`}>
         <span className="text-gray-400 dark:text-gray-500 ml-1">品质</span>
         <Select
+          native={mobile}
+          ariaLabel="品质"
           value={params.quality}
           onChange={(quality) => setParams({ quality })}
           options={supportsExtendedImageQuality(activeProfile.model) ? EXTENDED_QUALITY_OPTIONS : QUALITY_OPTIONS}
@@ -1792,6 +1809,8 @@ export default function InputBar() {
         <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1_1_7rem]'}`}>
           <span className="text-gray-400 dark:text-gray-500 ml-1">背景</span>
           <Select
+            native={mobile}
+            ariaLabel="背景"
             value={params.background || 'auto'}
             onChange={(background) => setParams({ background })}
             options={[{ value: 'auto', label: '自动' }, { value: 'opaque', label: '不透明' }, { value: 'transparent', label: '透明背景' }]}
@@ -1832,6 +1851,8 @@ export default function InputBar() {
           }}
           disabled={agentAutoImageCount}
           type={agentAutoImageCount ? 'text' : 'number'}
+          inputMode="numeric"
+          aria-label="生成数量"
           min={agentAutoImageCount ? undefined : 1}
           max={agentAutoImageCount ? undefined : outputImageLimit}
           className={`min-w-0 w-full px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] focus:outline-none text-xs transition-all duration-200 shadow-sm ${
@@ -1903,6 +1924,7 @@ export default function InputBar() {
       )}
       <div
         data-input-bar
+        data-composer-expanded={isPromptExpanded}
         onWheel={(event) => event.stopPropagation()}
         className={isPromptExpanded
           ? 'fixed inset-2 sm:inset-6 z-50 w-auto max-w-none transition-all duration-300'
@@ -1978,13 +2000,18 @@ export default function InputBar() {
         )}
         <div
           ref={cardRef}
+          data-composer-card
           onWheel={(event) => event.stopPropagation()}
           className={`bg-white/70 dark:bg-gray-900/70 backdrop-blur-2xl border border-white/50 dark:border-white/[0.08] shadow-[0_8px_30px_rgb(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)] ring-1 ring-black/5 dark:ring-white/10 ${isPromptExpanded ? 'flex h-full min-h-0 flex-col rounded-2xl p-3 sm:rounded-3xl sm:p-5' : 'rounded-2xl p-3 sm:rounded-3xl sm:p-4'}`}
         >
           {/* 移动端拖动条 */}
-          <div
+          <button
+            type="button"
             ref={handleRef}
-            className="sm:hidden flex justify-center pt-0.5 pb-2 -mt-1 cursor-pointer touch-none"
+            className="workshop-parameter-toggle sm:hidden mb-2 flex min-h-9 w-full items-center gap-2 rounded-lg px-1 text-xs text-gray-500 dark:text-gray-400 touch-none"
+            aria-label={mobileCollapsed ? '展开生成参数' : '收起生成参数'}
+            aria-expanded={!mobileCollapsed}
+            aria-controls="workshop-mobile-params"
             onClick={() => {
               if (Date.now() < suppressHandleClickUntilRef.current) {
                 suppressHandleClickUntilRef.current = 0
@@ -1993,8 +2020,10 @@ export default function InputBar() {
               setMobileCollapsed((v) => !v)
             }}
           >
-            <div className={`w-10 h-1 rounded-full bg-gray-300 dark:bg-white/[0.06] transition-transform duration-200 ${mobileCollapsed ? 'scale-x-75' : ''}`} />
-          </div>
+            <span className="shrink-0 font-medium">参数</span>
+            <span className="min-w-0 flex-1 truncate text-left">{selectedModelOption?.label} · {displaySize}</span>
+            <span className="shrink-0 text-blue-500">{mobileCollapsed ? '展开' : '收起'}</span>
+          </button>
 
           {/* 输入图片行（移动端可折叠） */}
           {inputImages.length > 0 && (
@@ -2048,7 +2077,10 @@ export default function InputBar() {
             <div
               ref={textareaRef}
               contentEditable
+              role="textbox"
+              aria-multiline="true"
               suppressContentEditableWarning
+              onFocus={() => { if (isMobile) setMobileCollapsed(true) }}
               onInput={(e) => {
                 isUserInputRef.current = true
                 const el = e.currentTarget
@@ -2189,14 +2221,14 @@ export default function InputBar() {
 
             {/* 移动端布局 */}
             <div className="sm:hidden flex flex-col gap-2">
-              <div className={`collapse-section${mobileCollapsed ? ' collapsed' : ''}`}>
+              <div id="workshop-mobile-params" inert={mobileCollapsed} aria-hidden={mobileCollapsed} className={`collapse-section${mobileCollapsed ? ' collapsed' : ''}`}>
                 <div className="collapse-inner">
                   {renderParams(true)}
                   <div className="h-2" />
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div data-mobile-composer-actions className="flex items-center gap-2">
                 <div
                   className="relative"
                   onMouseEnter={() => setAttachHover(true)}

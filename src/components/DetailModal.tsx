@@ -376,16 +376,20 @@ export default function DetailModal() {
   return (
     <div
       data-no-drag-select
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="workshop-detail-overlay fixed inset-0 z-50 flex items-center justify-center p-4"
       onClick={() => setDetailTaskId(null)}
     >
       <div className="absolute inset-0 bg-black/20 dark:bg-black/40 backdrop-blur-md animate-overlay-in" />
       <div
         ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="图片详情"
+        data-workshop-detail
         className="relative bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl border border-white/50 dark:border-white/[0.08] rounded-3xl shadow-[0_8px_40px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_40px_rgb(0,0,0,0.4)] max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col md:flex-row z-10 ring-1 ring-black/5 dark:ring-white/10 animate-modal-in"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex h-14 items-center justify-end px-4 md:hidden">
+        <div className="workshop-detail-close flex h-14 shrink-0 items-center justify-end px-4 md:hidden">
           <button
             onClick={() => setDetailTaskId(null)}
             className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-white/[0.06] transition text-gray-400"
@@ -396,7 +400,7 @@ export default function DetailModal() {
         </div>
 
         {/* 左侧：图片 */}
-        <div className="md:w-1/2 w-full h-64 md:h-auto bg-gray-100 dark:bg-black/20 relative flex items-center justify-center flex-shrink-0 min-h-[16rem]">
+        <div data-detail-image className="md:w-1/2 w-full h-64 md:h-auto bg-gray-100 dark:bg-black/20 relative flex items-center justify-center flex-shrink-0 min-h-[16rem]">
           {task.status === 'done' && outputLen > 0 && (
             <div className="absolute right-3 top-[15px] z-20 flex items-center gap-1.5">
               <div className="relative group flex">
@@ -714,7 +718,7 @@ export default function DetailModal() {
         </div>
 
         {/* 右侧：信息 */}
-        <div className="md:w-1/2 w-full p-5 overflow-y-auto overscroll-contain flex flex-col">
+        <div data-detail-info className="md:w-1/2 w-full min-h-0 min-w-0 p-5 overflow-hidden flex flex-col">
           <button
             onClick={() => setDetailTaskId(null)}
             className="absolute top-3 right-3 hidden p-1 rounded-full hover:bg-gray-100 dark:hover:bg-white/[0.06] transition text-gray-400 z-10 md:block"
@@ -723,7 +727,7 @@ export default function DetailModal() {
             <CloseIcon className="w-5 h-5" />
           </button>
 
-          <div data-selectable-text className="flex-1">
+          <div data-selectable-text data-detail-scroll className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain break-words">
             <div className="flex items-center gap-1.5 mb-2">
               <h3 className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">
                 输入内容
@@ -869,7 +873,7 @@ export default function DetailModal() {
           </div>
 
           {/* 操作按钮 */}
-          <div className="grid grid-cols-4 sm:flex gap-2 pt-4 border-t border-gray-100 dark:border-white/[0.08]">
+          <div data-detail-actions className="grid shrink-0 grid-cols-4 sm:flex gap-2 pt-4 border-t border-gray-100 dark:border-white/[0.08]">
             <button
               onClick={handleReuse}
               className="col-span-2 sm:flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 transition text-sm font-medium whitespace-nowrap"
