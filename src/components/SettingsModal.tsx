@@ -1,5 +1,5 @@
 import { useVideoModels } from '../hooks/useVideoModels'
-import { lazy, Suspense, useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 
 import { Cloud, CloudDownload, CloudUpload, HardDrive, RefreshCw } from 'lucide-react'
 import { normalizeBaseUrl } from '../lib/api'
@@ -24,8 +24,6 @@ import { Checkbox } from './Checkbox'
 import PriceTableButton from './PriceTableButton'
 import HomeStreamerSetting from './HomeStreamerSetting'
 import { CloseIcon, CopyIcon, TrashIcon, ExportIcon, ImportIcon } from './icons'
-
-const GlobalVideoSettings = lazy(() => import('./GlobalVideoSettings'))
 
 type ExternalApiTarget = 'text' | 'video'
 
@@ -167,7 +165,6 @@ async function getRandomBackgroundImageUrl() {
 type ExternalApiConfigSectionProps = {
   idPrefix: string
   title: string
-  description: string
   baseUrl: string
   apiKey: string
   model: string
@@ -194,7 +191,6 @@ type ExternalApiConfigSectionProps = {
 function ExternalApiConfigSection({
   idPrefix,
   title,
-  description,
   baseUrl,
   apiKey,
   model,
@@ -241,7 +237,7 @@ function ExternalApiConfigSection({
   }, [modelMenuOpen])
 
   return (
-    <section className="space-y-4 rounded-2xl border border-gray-200/70 bg-white/55 p-4 dark:border-white/[0.08] dark:bg-white/[0.025]" aria-label={title} title={description}>
+    <section className="space-y-4 rounded-2xl border border-gray-200/70 bg-white/55 p-4 dark:border-white/[0.08] dark:bg-white/[0.025]" aria-label={title}>
       <label className="block">
         <span className="mb-1.5 block text-sm text-gray-600 dark:text-gray-300">API URL</span>
         <input
@@ -1127,31 +1123,9 @@ export default function SettingsModal() {
 
             {activeTab === 'textApi' && (
               <div className="space-y-5">
-                <div className="block">
-                  <div className="mb-1.5 flex items-center justify-between gap-3">
-                    <span className="block text-sm text-gray-600 dark:text-gray-300">当前背景</span>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <button type="button" onClick={randomizeBackgroundFromApi} disabled={isRandomizingBackground} className="rounded-xl bg-blue-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50">
-                        {isRandomizingBackground ? '获取中...' : '随机'}
-                      </button>
-                      <button type="button" onClick={() => backgroundFileInputRef.current?.click()} className="rounded-xl bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1]">上传</button>
-                      <button type="button" onClick={() => commitSettings({ ...draft, appearanceBackgroundImageUrl: '' })} className="rounded-xl bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1]">清空</button>
-                    </div>
-                  </div>
-                  <input value={draft.appearanceBackgroundImageUrl} onChange={(e) => setDraft({ ...draft, appearanceBackgroundImageUrl: e.target.value })} onBlur={(e) => commitSettings({ ...draft, appearanceBackgroundImageUrl: e.target.value })} type="text" placeholder="随机后自动填入，也可以手动粘贴图片地址" className="w-full rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50" />
-                  <input ref={backgroundFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleBackgroundUpload} />
-                </div>
-
-                <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-500/15 dark:bg-blue-500/[0.08]">
-                  <h4 className="text-sm font-bold text-blue-700 dark:text-blue-300">文字 API 配置</h4>
-                  <p data-selectable-text className="mt-1 text-xs leading-relaxed text-blue-600/80 dark:text-blue-200/70">
-                    用于画布工坊里的文字问答和节点说明，和出图接口完全分开。
-                  </p>
-                </div>
                 <ExternalApiConfigSection
                   idPrefix="text-api"
                   title="文字 API 配置"
-                  description="用于画布工坊里的文字问答和节点说明，和出图接口完全分开。"
                   baseUrl={draft.textBaseUrl}
                   apiKey={draft.textApiKey}
                   model={draft.textModel}
@@ -1175,16 +1149,9 @@ export default function SettingsModal() {
 
             {activeTab === 'videoApi' && (
               <div className="space-y-5">
-                <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-500/15 dark:bg-blue-500/[0.08]">
-                  <h4 className="text-sm font-bold text-blue-700 dark:text-blue-300">视频 API 配置</h4>
-                  <p data-selectable-text className="mt-1 text-xs leading-relaxed text-blue-600/80 dark:text-blue-200/70">
-                    用于画布工坊里的视频生成。模型列表从视频 API 获取，选择后用于视频节点生成。
-                  </p>
-                </div>
                 <ExternalApiConfigSection
                   idPrefix="video-api"
                   title="视频 API 配置"
-                  description={`用于画布工坊里的视频生成，URL 固定为 ${CANVAS_VIDEO_BASE_URL}，超时固定为 ${CANVAS_VIDEO_TIMEOUT} 秒。`}
                   baseUrl={CANVAS_VIDEO_BASE_URL}
                   apiKey={draft.videoApiKey}
                   model={draft.videoModel}
@@ -1205,8 +1172,6 @@ export default function SettingsModal() {
                   fixedBaseUrl={CANVAS_VIDEO_BASE_URL}
                   fixedTimeout={CANVAS_VIDEO_TIMEOUT}
                 />
-                <Suspense fallback={<p className="text-sm">正在加载视频设置…</p>}><GlobalVideoSettings model={draft.videoModel} apiKey={draft.videoApiKey} proxy={Boolean(draft.videoApiProxy)} /></Suspense>
-
               </div>
             )}
             
