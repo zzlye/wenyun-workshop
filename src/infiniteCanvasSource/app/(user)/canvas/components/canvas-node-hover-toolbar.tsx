@@ -21,6 +21,7 @@ type CanvasNodeHoverToolbarProps = {
     node: CanvasNodeData | null;
     viewport: ViewportTransform;
     selectedCount?: number;
+    selectedConnectionCount?: number;
     selectionBounds?: CanvasToolbarBounds | null;
     group?: CanvasGroupData | null;
     groupBounds?: CanvasToolbarBounds | null;
@@ -56,6 +57,7 @@ export function CanvasNodeHoverToolbar({
     node,
     viewport,
     selectedCount = 0,
+    selectedConnectionCount = 0,
     selectionBounds,
     group,
     groupBounds,
@@ -86,7 +88,7 @@ export function CanvasNodeHoverToolbar({
     onToggleFreeResize,
     onDelete,
 }: CanvasNodeHoverToolbarProps) {
-    if (group && groupBounds) {
+    if (group && groupBounds && !selectedConnectionCount) {
         const { left, top } = getBoundsToolbarPosition(groupBounds, viewport);
         return (
             <div
@@ -127,19 +129,21 @@ export function CanvasNodeHoverToolbar({
         );
     }
 
-    if (selectionBounds && selectedCount > 1) {
+    if (selectionBounds && selectedCount + selectedConnectionCount > 1) {
         const { left, top } = getBoundsToolbarPosition(selectionBounds, viewport);
         return (
             <div
-                className="absolute z-[80] flex h-12 -translate-x-1/2 -translate-y-full items-center overflow-visible rounded-[18px] border border-black/10 bg-white text-[15px] text-[#242529] shadow-[0_8px_28px_rgba(15,23,42,.12)]"
+                className="absolute z-[80] flex h-12 max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-full items-center overflow-x-auto whitespace-nowrap rounded-[18px] border border-black/10 bg-white text-[15px] text-[#242529] shadow-[0_8px_28px_rgba(15,23,42,.12)] [&>*]:shrink-0"
                 style={{ left, top }}
                 onMouseDown={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
             >
-                <span className="px-4 text-sm font-semibold text-[#5f6368]">已选 {selectedCount} 个</span>
+                <span className="px-4 text-sm font-semibold text-[#5f6368]">
+                    {selectedConnectionCount ? `已选 ${selectedCount ? `${selectedCount} 个节点、` : ""}${selectedConnectionCount} 条线` : `已选 ${selectedCount} 个`}
+                </span>
                 <ToolbarDivider />
-                <ToolbarAction title="将选中节点打组" label="打组" icon={<Group className="size-4" />} onClick={onCreateGroup} />
-                <ToolbarAction title="删除选中节点" label="删除" icon={<Trash2 className="size-4" />} onClick={onDeleteSelection} danger />
+                {selectedCount > 1 ? <ToolbarAction title="将选中节点打组" label="打组" icon={<Group className="size-4" />} onClick={onCreateGroup} /> : null}
+                <ToolbarAction title={selectedConnectionCount ? "删除选中内容" : "删除选中节点"} label="删除" icon={<Trash2 className="size-4" />} onClick={onDeleteSelection} danger />
             </div>
         );
     }
