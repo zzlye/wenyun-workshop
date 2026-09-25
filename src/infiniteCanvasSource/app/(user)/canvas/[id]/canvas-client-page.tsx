@@ -2227,7 +2227,36 @@ function InfiniteCanvasPage() {
     );
 
     const handleNodeResize = useCallback((nodeId: string, width: number, height: number, position?: Position) => {
-        setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, width, height, position: position || node.position, metadata: { ...node.metadata, manualSize: true } } : node)));
+        setNodes((prev) => {
+            const node = prev.find((item) => item.id === nodeId);
+            const nextPosition = position || node?.position;
+            if (!node || (node.width === width && node.height === height && node.position.x === nextPosition.x && node.position.y === nextPosition.y)) return prev;
+            return prev.map((item) => item.id === nodeId ? { ...item, width, height, position: nextPosition, metadata: { ...item.metadata, manualSize: true } } : item);
+        });
+    }, []);
+
+    const handleNodeResizeStart = useCallback((nodeId: string) => {
+        // 缩放期间关闭跟随节点的工具栏，避免弹层在拖动中反复定位和更新。
+        closeNodeToolbarImmediately();
+        prepareNodeDragVisuals(new Set([nodeId]));
+        nodeDraggingRef.current = true;
+        setIsNodeDragging(true);
+    }, [closeNodeToolbarImmediately, prepareNodeDragVisuals]);
+
+    const handleNodeResizePreview = useCallback((nodeId: string, width: number, height: number, position: Position) => {
+        // 连线随预览尺寸移动，节点数据只在缩放结束后提交一次。
+        dragVisualRef.current?.connections.forEach(({ from, to, connection, paths }) => {
+            const previewFrom = from.id === nodeId ? { ...from, width, height, position } : from;
+            const previewTo = to.id === nodeId ? { ...to, width, height, position } : to;
+            const path = getConnectionPathGeometry(previewFrom, previewTo, connection).path;
+            paths.forEach((element) => element.setAttribute("d", path));
+        });
+    }, []);
+
+    const handleNodeResizeEnd = useCallback(() => {
+        dragVisualRef.current = null;
+        nodeDraggingRef.current = false;
+        setIsNodeDragging(false);
     }, []);
 
     const toggleNodeFreeResize = useCallback((nodeId: string) => {
@@ -3599,12 +3628,14 @@ function InfiniteCanvasPage() {
                             onHoverEnd={handleNodeHoverEnd}
                             onConnectStart={handleConnectStart}
                             onResize={handleNodeResize}
+                            onResizeStart={handleNodeResizeStart}
+                            onResizePreview={handleNodeResizePreview}
+                            onResizeEnd={handleNodeResizeEnd}
                             onContentChange={handleNodeContentChange}
                             onToggleBatch={toggleBatchExpanded}
                             onSetBatchPrimary={setBatchPrimary}
                             onRetry={handleNodeRetry}
                             onGenerateImage={generateImageFromTextNode}
-                            onUpload={handleUploadRequest}
                             onRename={renameCanvasNode}
                             onContextMenu={handleNodeContextMenu}
                         />

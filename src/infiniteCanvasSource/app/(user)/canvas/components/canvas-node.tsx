@@ -1,15 +1,15 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { AudioLines, ChevronRight, Clock, Image as ImageIcon, Plus, RefreshCw, Star, Upload, Video } from "lucide-react";
+import { AudioLines, ChevronRight, Clock, Image as ImageIcon, Plus, RefreshCw, Star, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { resolveImageUrl } from "@/services/image-storage";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData, type Position } from "../types";
 
-type ResizeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+import { useCanvasNodeResize, type ResizeCorner } from "./use-canvas-node-resize";
 const selectionBlue = "#2f80ff";
 
 type CanvasNodeProps = {
@@ -37,12 +37,14 @@ type CanvasNodeProps = {
     onHoverEnd: (nodeId: string) => void;
     onConnectStart: (event: React.MouseEvent, nodeId: string, handleType: "source" | "target") => void;
     onResize: (nodeId: string, width: number, height: number, position?: Position) => void;
+    onResizeStart?: (nodeId: string) => void;
+    onResizePreview?: (nodeId: string, width: number, height: number, position: Position) => void;
+    onResizeEnd?: () => void;
     onContentChange: (nodeId: string, content: string) => void;
     onToggleBatch?: (nodeId: string) => void;
     onSetBatchPrimary?: (node: CanvasNodeData) => void;
     onRetry?: (node: CanvasNodeData) => void;
     onGenerateImage?: (node: CanvasNodeData) => void;
-    onUpload?: (nodeId: string) => void;
     onRename?: (nodeId: string, title: string) => void;
     onContextMenu: (event: React.MouseEvent, nodeId: string) => void;
 };
@@ -91,12 +93,14 @@ export const CanvasNode = React.memo(function CanvasNode({
     onHoverEnd,
     onConnectStart,
     onResize,
+    onResizeStart,
+    onResizePreview,
+    onResizeEnd,
     onContentChange,
     onToggleBatch,
     onSetBatchPrimary,
     onRetry,
     onGenerateImage,
-    onUpload,
     onRename,
     onContextMenu,
 }: CanvasNodeProps) {
@@ -113,18 +117,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const isActive = isConnectionTarget || isSelected || isFocusRelated;
     const imageBorderColor = isActive ? selectionBlue : isRelated && !isBatchChild ? theme.node.muted : "transparent";
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const resizeRef = useRef({
-        isResizing: false,
-        corner: "bottom-right" as ResizeCorner,
-        startX: 0,
-        startY: 0,
-        startLeft: 0,
-        startTop: 0,
-        startWidth: 0,
-        startHeight: 0,
-        keepRatio: false,
-        ratio: 1,
-    });
+    const { elementRef, start: handleResizeMouseDown } = useCanvasNodeResize(data, scale, { onResize, onResizeStart, onResizePreview, onResizeEnd });
 
     useEffect(() => {
         const textarea = textareaRef.current;
@@ -166,72 +159,6 @@ export const CanvasNode = React.memo(function CanvasNode({
         return () => window.removeEventListener("pointerdown", handleOutsidePointerDown, true);
     }, [isEditingContent]);
 
-    const handleResizeMove = useCallback(
-        (event: MouseEvent) => {
-            if (!resizeRef.current.isResizing) return;
-
-            const dx = (event.clientX - resizeRef.current.startX) / scale;
-            const dy = (event.clientY - resizeRef.current.startY) / scale;
-            const minWidth = 220;
-            const minHeight = 160;
-            const startRight = resizeRef.current.startLeft + resizeRef.current.startWidth;
-            const startBottom = resizeRef.current.startTop + resizeRef.current.startHeight;
-            const fromLeft = resizeRef.current.corner.includes("left");
-            const fromTop = resizeRef.current.corner.includes("top");
-            const rawWidth = Math.max(minWidth, resizeRef.current.startWidth + (fromLeft ? -dx : dx));
-            const rawHeight = Math.max(minHeight, resizeRef.current.startHeight + (fromTop ? -dy : dy));
-            let width = rawWidth;
-            let height = rawHeight;
-            if (resizeRef.current.keepRatio) {
-                const ratio = resizeRef.current.ratio;
-                if (Math.abs(dx) >= Math.abs(dy)) {
-                    height = width / ratio;
-                } else {
-                    width = height * ratio;
-                }
-                if (height < minHeight) {
-                    height = minHeight;
-                    width = height * ratio;
-                }
-                if (width < minWidth) {
-                    width = minWidth;
-                    height = width / ratio;
-                }
-            }
-
-            onResize(data.id, width, height, {
-                x: fromLeft ? startRight - width : resizeRef.current.startLeft,
-                y: fromTop ? startBottom - height : resizeRef.current.startTop,
-            });
-        },
-        [data.id, onResize, scale],
-    );
-
-    const handleResizeUp = useCallback(() => {
-        resizeRef.current.isResizing = false;
-        window.removeEventListener("mousemove", handleResizeMove);
-        window.removeEventListener("mouseup", handleResizeUp);
-    }, [handleResizeMove]);
-
-    const handleResizeMouseDown = (event: React.MouseEvent, corner: ResizeCorner) => {
-        event.stopPropagation();
-        event.preventDefault();
-        resizeRef.current = {
-            isResizing: true,
-            corner,
-            startX: event.clientX,
-            startY: event.clientY,
-            startLeft: data.position.x,
-            startTop: data.position.y,
-            startWidth: data.width,
-            startHeight: data.height,
-            keepRatio: (data.type === CanvasNodeType.Image && !data.metadata?.freeResize) || data.type === CanvasNodeType.Video,
-            ratio: (data.metadata?.naturalWidth || data.width) / (data.metadata?.naturalHeight || data.height || 1),
-        };
-        window.addEventListener("mousemove", handleResizeMove);
-        window.addEventListener("mouseup", handleResizeUp);
-    };
-
     const finishTitleEdit = () => {
         const nextTitle = titleDraft.trim();
         if (nextTitle && nextTitle !== data.title) onRename?.(data.id, nextTitle);
@@ -239,15 +166,9 @@ export const CanvasNode = React.memo(function CanvasNode({
         setTitleDraft(nextTitle || data.title);
     };
 
-    useEffect(() => {
-        return () => {
-            window.removeEventListener("mousemove", handleResizeMove);
-            window.removeEventListener("mouseup", handleResizeUp);
-        };
-    }, [handleResizeMove, handleResizeUp]);
-
     return (
         <div
+            ref={elementRef}
             data-node-id={data.id}
             className={`node-element absolute flex select-none flex-col transition-shadow duration-200 ${isSelected ? "z-50" : "z-10"}`}
             style={{
@@ -374,31 +295,6 @@ export const CanvasNode = React.memo(function CanvasNode({
                     />
                 </div>
 
-                {hasImageContent && !isBatchRoot && !isBatchChild ? (
-                    <button
-                        type="button"
-                        className="absolute right-3 top-3 z-40 inline-flex h-8 items-center gap-1 rounded-full border px-2.5 text-xs font-medium opacity-85 backdrop-blur-md transition hover:scale-[1.02] hover:opacity-100"
-                        style={{ background: `${theme.toolbar.panel}dd`, borderColor: theme.node.stroke, color: theme.node.text }}
-                        title="替换图片"
-                        aria-label="替换图片"
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            onUpload?.(data.id);
-                        }}
-                        onMouseDown={(event) => {
-                            event.stopPropagation();
-                            event.preventDefault();
-                        }}
-                        onPointerDown={(event) => {
-                            event.stopPropagation();
-                            event.preventDefault();
-                        }}
-                    >
-                        <Upload className="size-3.5" />
-                        替换
-                    </button>
-                ) : null}
-
                 {showImageInfo && (data.type === CanvasNodeType.Image || data.type === CanvasNodeType.Video) ? <NodeInfoBar node={data} /> : null}
 
                 {!hasImageContent && !hasVideoContent && !hasAudioContent ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ background: `linear-gradient(to top, ${theme.canvas.background}66, transparent)` }} /> : null}
@@ -441,12 +337,14 @@ function areCanvasNodePropsEqual(previous: CanvasNodeProps, next: CanvasNodeProp
         previous.onHoverEnd !== next.onHoverEnd ||
         previous.onConnectStart !== next.onConnectStart ||
         previous.onResize !== next.onResize ||
+        previous.onResizeStart !== next.onResizeStart ||
+        previous.onResizePreview !== next.onResizePreview ||
+        previous.onResizeEnd !== next.onResizeEnd ||
         previous.onContentChange !== next.onContentChange ||
         previous.onToggleBatch !== next.onToggleBatch ||
         previous.onSetBatchPrimary !== next.onSetBatchPrimary ||
         previous.onRetry !== next.onRetry ||
         previous.onGenerateImage !== next.onGenerateImage ||
-        previous.onUpload !== next.onUpload ||
         previous.onRename !== next.onRename ||
         previous.onContextMenu !== next.onContextMenu
     ) {
@@ -619,7 +517,6 @@ function EmptyImageContent({ theme, isBatchRoot, batchCount, batchExpanded, batc
 function VideoNodeContent({ node, theme }: NodeContentRendererProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const videoUrl = node.metadata?.content || "";
-    if (!videoUrl) return <EmptyVideoContent theme={theme} />;
 
     useEffect(() => {
         const video = videoRef.current;
@@ -627,6 +524,9 @@ function VideoNodeContent({ node, theme }: NodeContentRendererProps) {
         video.autoplay = false;
         video.pause();
     }, [node.id, videoUrl]);
+
+    // 空节点也调用相同的 Hook，上传或恢复媒体后不会改变调用顺序。
+    if (!videoUrl) return <EmptyVideoContent theme={theme} />;
 
     return (
         <div className="h-full w-full overflow-hidden rounded-3xl bg-black">
@@ -667,7 +567,6 @@ function EmptyVideoContent({ theme }: Pick<NodeContentRendererProps, "theme">) {
 function AudioNodeContent({ node, theme }: NodeContentRendererProps) {
     const audioRef = useRef<HTMLAudioElement>(null);
     const audioUrl = node.metadata?.content || "";
-    if (!audioUrl) return <EmptyAudioContent theme={theme} />;
 
     useEffect(() => {
         const audio = audioRef.current;
@@ -675,6 +574,9 @@ function AudioNodeContent({ node, theme }: NodeContentRendererProps) {
         audio.autoplay = false;
         audio.pause();
     }, [node.id, audioUrl]);
+
+    // 音频加载前后保持 Hook 顺序一致。
+    if (!audioUrl) return <EmptyAudioContent theme={theme} />;
 
     return (
         <div className="flex h-full w-full flex-col justify-center gap-4 rounded-3xl border px-5" style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}>
@@ -877,7 +779,7 @@ function ResizeHandle({ corner, onMouseDown }: { corner: ResizeCorner; onMouseDo
         "bottom-right": "-bottom-[14px] -right-[14px] cursor-nwse-resize",
     }[corner];
 
-    return <div className={`absolute z-50 size-7 ${positionClass}`} onMouseDown={(event) => onMouseDown(event, corner)} />;
+    return <div className={`absolute z-50 size-7 ${positionClass}`} onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => onMouseDown(event, corner)} />;
 }
 
 function ConnectionHandleDot({ side, visible, pointerY, onMouseDown }: { side: "left" | "right"; visible: boolean; pointerY?: number | null; onMouseDown: (event: React.MouseEvent) => void }) {
