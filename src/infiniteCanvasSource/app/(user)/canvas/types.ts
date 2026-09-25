@@ -155,6 +155,8 @@ export type CanvasAssistantSession = {
 export type ConnectionHandle = {
     nodeId: string;
     handleType: "source" | "target";
+    // 拖线开始时保存多选起点，后续悬停或新建目标不改变本次连接范围。
+    nodeIds?: string[];
 };
 
 export type SelectionBox = {

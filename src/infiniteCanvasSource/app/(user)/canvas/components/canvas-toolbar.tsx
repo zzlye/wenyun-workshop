@@ -1,7 +1,7 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
 import { useRef, useState } from "react";
 import { Button, Segmented, Switch } from "antd";
-import { AudioLines, CircleDot, Eraser, FolderOpen, Grid2x2, Hand, Image as ImageIcon, Info, Library, Moon, MousePointer2, Paintbrush, Palette, Redo2, Settings2, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
+import { AudioLines, CircleDot, Eraser, FolderOpen, Grid2x2, Hand, Image as ImageIcon, Info, Library, Moon, MousePointer2, Paintbrush, Palette, Redo2, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { canvasThemes, type CanvasBackgroundMode, type CanvasColorTheme, type CanvasTheme } from "@/lib/canvas-theme";
@@ -20,7 +20,6 @@ export function CanvasToolbar({
     onAddVideo,
     onAddAudio,
     onAddText,
-    onAddConfig,
     onUndo,
     onRedo,
     onUpload,
@@ -43,7 +42,6 @@ export function CanvasToolbar({
     onAddVideo: () => void;
     onAddAudio: () => void;
     onAddText: () => void;
-    onAddConfig: () => void;
     onUndo: () => void;
     onRedo: () => void;
     onUpload: () => void;
@@ -102,9 +100,6 @@ export function CanvasToolbar({
                 </ToolbarButton>
                 <ToolbarButton id="tool-audio" label="音频" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddAudio}>
                     <AudioLines className="size-4.5" />
-                </ToolbarButton>
-                <ToolbarButton id="tool-config" label="生成配置" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddConfig}>
-                    <Settings2 className="size-4.5" />
                 </ToolbarButton>
                 <ToolbarButton id="tool-upload" label="上传媒体" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onUpload}>
                     <Upload className="size-4.5" />
@@ -303,7 +298,6 @@ function toolLabel(id: string) {
     if (id === "tool-image") return "图片";
     if (id === "tool-video") return "视频";
     if (id === "tool-audio") return "音频";
-    if (id === "tool-config") return "生成配置";
     if (id === "tool-upload") return "上传媒体";
     if (id === "tool-sketch") return "画笔";
     if (id === "tool-library") return "画布";

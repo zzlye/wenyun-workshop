@@ -69,5 +69,5 @@ export function ActiveConnectionPath({ node, targetNode, handle, mouseWorld }: {
     const target = targetNode ?? { ...node, position: mouseWorld, width: 0, height: 0 };
     const pathD = getConnectionPathGeometry(node, target, { fromSide, toSide }).path;
 
-    return <path d={pathD} stroke={theme.node.activeStroke} strokeWidth="2" fill="none" strokeDasharray="5,5" />;
+    return <path data-connection-preview={node.id} d={pathD} stroke={theme.node.activeStroke} strokeWidth="2" fill="none" strokeDasharray="5,5" />;
 }

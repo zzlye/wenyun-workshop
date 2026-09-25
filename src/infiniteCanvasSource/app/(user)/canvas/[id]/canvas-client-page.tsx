@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { flushSync } from "react-dom";
 import { useParams, useRouter } from "next/navigation";
-import { AudioLines, Home, ImageIcon, Images, List, Menu, Paintbrush, Plus, Redo2, Scissors, Settings, Settings2, Trash2, Undo2, Upload, Video, WandSparkles } from "lucide-react";
+import { AudioLines, Home, ImageIcon, Images, List, Menu, Paintbrush, Plus, Redo2, Scissors, Settings, Trash2, Undo2, Upload, Video, WandSparkles } from "lucide-react";
 import { saveAs } from "file-saver";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
@@ -36,7 +36,8 @@ import { cloneNodeMetadataForDuplicate } from "../utils/canvas-node-copy";
 import { layoutDroppedCanvasNodes } from "../utils/canvas-file-drop";
 import { fitNodeSize, nodeSizeFromRatio } from "../utils/canvas-node-size";
 import { getCanvasViewportBounds, getConnectionPathGeometry, getVisibleCanvasConnections, getVisibleCanvasNodes } from "../utils/canvas-viewport";
-import { normalizeConnection } from "../utils/canvas-connections";
+import { buildSelectionConnections, getConnectionSourceIds, mergeCanvasConnections } from "../utils/canvas-connections";
+import { alignCanvasNodeDrag, updateCanvasAlignmentGuides } from "../utils/canvas-alignment";
 import { App, Button, Dropdown, Input, Modal } from "antd";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "../constants";
 import { ActiveConnectionPath, ConnectionPath } from "../components/canvas-connections";
@@ -102,7 +103,7 @@ type PendingAssetSave = {
     category: AssetCategory;
 };
 
-type CreatableCanvasNodeType = CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio;
+type CreatableCanvasNodeType = CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Video | CanvasNodeType.Audio;
 
 type CanvasHistoryEntry = Pick<CanvasClipboard, "nodes" | "connections"> & {
     groups: CanvasGroupData[];
@@ -114,6 +115,8 @@ type CanvasHistoryEntry = Pick<CanvasClipboard, "nodes" | "connections"> & {
 
 type CanvasDragVisualState = {
     draggedNodeIds: Set<string>;
+    movingNodes: CanvasNodeData[];
+    alignmentTargets: CanvasNodeData[];
     nodeElements: Array<{ node: CanvasNodeData; element: HTMLElement }>;
     groupElements: HTMLElement[];
     connections: Array<{ from: CanvasNodeData; to: CanvasNodeData; connection: CanvasConnection; paths: SVGPathElement[] }>;
@@ -216,7 +219,7 @@ function ConnectionCreateMenu({ pending, onCreate, onClose }: { pending: Pending
         >
             <div className="mb-2 flex items-center justify-between px-1">
                 <span className="text-sm font-medium text-white/60">
-                    引用该节点生成
+                    {getConnectionSourceIds(pending.connection).length > 1 ? "引用所选节点生成" : "引用该节点生成"}
                 </span>
                 <button type="button" className="grid size-7 place-items-center rounded-lg text-base opacity-55 transition hover:bg-white/10 hover:opacity-100" onClick={onClose} aria-label="关闭">
                     ×
@@ -227,7 +230,6 @@ function ConnectionCreateMenu({ pending, onCreate, onClose }: { pending: Pending
                 <ConnectionCreateOption icon={<ImageIcon className="size-5" />} title="图片生成" onClick={() => onCreate(CanvasNodeType.Image)} />
                 <ConnectionCreateOption icon={<Video className="size-5" />} title="视频生成" onClick={() => onCreate(CanvasNodeType.Video)} />
                 <ConnectionCreateOption icon={<AudioLines className="size-5" />} title="音频" description="音频参考、配音素材" onClick={() => onCreate(CanvasNodeType.Audio)} />
-                <ConnectionCreateOption icon={<Settings2 className="size-5" />} title="配置节点" description="模型、尺寸、数量和输入顺序" onClick={() => onCreate(CanvasNodeType.Config)} />
             </div>
         </div>
     );
@@ -267,7 +269,6 @@ function QuickNodeCreateMenu({
                 <ConnectionCreateOption icon={<ImageIcon className="size-5" />} title="图片生成" onClick={() => onCreate(CanvasNodeType.Image)} />
                 <ConnectionCreateOption icon={<Video className="size-5" />} title="视频生成" onClick={() => onCreate(CanvasNodeType.Video)} />
                 <ConnectionCreateOption icon={<AudioLines className="size-5" />} title="音频" description="音频参考、配音素材" onClick={() => onCreate(CanvasNodeType.Audio)} />
-                <ConnectionCreateOption icon={<Settings2 className="size-5" />} title="配置节点" description="模型、尺寸、数量和输入顺序" onClick={() => onCreate(CanvasNodeType.Config)} />
                 <ConnectionCreateOption icon={<Upload className="size-5" />} title="上传" description="图片、视频、音频文件" onClick={onUpload} />
                 <ConnectionCreateOption icon={<Images className="size-5" />} title="画布" description="从当前画布选择插入" onClick={onOpenAssetLibrary} />
             </div>
@@ -335,6 +336,8 @@ function InfiniteCanvasPage() {
         initialSelectedNodes: [],
     });
     const dragVisualRef = useRef<CanvasDragVisualState | null>(null);
+    const alignmentGuidesRef = useRef<SVGSVGElement | null>(null);
+    const dragSnapDisabledRef = useRef(false);
 
     const config = useConfigStore((state) => state.config);
     const effectiveConfig = useEffectiveConfig();
@@ -985,35 +988,22 @@ function InfiniteCanvasPage() {
 
     const connectNodes = useCallback(
         (current: ConnectionHandle, targetNodeId: string, targetPoint: Position) => {
-            if (current.nodeId === targetNodeId) return;
-
             const targetNode = nodesRef.current.find((node) => node.id === targetNodeId);
             const targetSide = targetNode && targetPoint.x > targetNode.position.x + targetNode.width / 2 ? "right" : "left";
-            const connection = normalizeConnection(current.nodeId, targetNodeId, nodesRef.current, current.handleType, targetSide);
-            if (!connection) {
-                message.warning("配置节点之间不能连接");
-                return;
-            }
-            const { fromNodeId, toNodeId } = connection;
-            const exists = connectionsRef.current.some((conn) => conn.fromNodeId === fromNodeId && conn.toNodeId === toNodeId);
-            if (!exists) {
-                setConnections((prev) => [...prev, { id: nanoid(), ...connection }]);
-            } else {
-                // 同一数据连接重新拖线时更新端点，不新增重复的上游引用。
-                setConnections((prev) => prev.map((item) => item.fromNodeId === fromNodeId && item.toNodeId === toNodeId ? { ...item, ...connection } : item));
-            }
+            const additions = buildSelectionConnections(current, targetNodeId, nodesRef.current, targetSide);
+            const next = mergeCanvasConnections(connectionsRef.current, additions, nanoid);
+            connectionsRef.current = next;
+            setConnections(next);
             setContextMenu(null);
         },
-        [message],
+        [],
     );
 
     const createConnectedNode = useCallback(
-        (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio, pending: PendingConnectionCreate) => {
+        (type: CreatableCanvasNodeType, pending: PendingConnectionCreate) => {
             const sourceNode = nodesRef.current.find((node) => node.id === pending.connection.nodeId);
             const sourceMetadata = sourceNode?.metadata;
-            const metadata = type === CanvasNodeType.Config
-                ? { model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, count: 1 }
-                : type === CanvasNodeType.Image || type === CanvasNodeType.Video
+            const metadata = type === CanvasNodeType.Image || type === CanvasNodeType.Video
                     ? {
                           model: sourceMetadata?.model || effectiveConfig.imageModel || effectiveConfig.model,
                           size: sourceMetadata?.size || effectiveConfig.size,
@@ -1023,13 +1013,14 @@ function InfiniteCanvasPage() {
                       }
                     : undefined;
             const newNode = createCanvasNode(type, pending.position, metadata);
-            const connection = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
-            if (!connection) {
-                message.warning("配置节点之间不能连接");
-                return;
-            }
-            setNodes((prev) => [...prev, newNode]);
-            setConnections((prev) => [...prev, { id: nanoid(), ...connection }]);
+            const nextNodes = [...nodesRef.current, newNode];
+            const additions = buildSelectionConnections(pending.connection, newNode.id, nextNodes);
+            if (!additions.length) return;
+            const nextConnections = mergeCanvasConnections(connectionsRef.current, additions, nanoid);
+            nodesRef.current = nextNodes;
+            connectionsRef.current = nextConnections;
+            setNodes(nextNodes);
+            setConnections(nextConnections);
             setSelectedNodeIds(new Set([newNode.id]));
             setSelectedGroupId(null);
             setSelectedConnectionId(null);
@@ -1037,7 +1028,7 @@ function InfiniteCanvasPage() {
             setPendingConnectionCreate(null);
             setConnecting(null);
         },
-        [effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, message, setConnecting],
+        [effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, effectiveConfig.quality, effectiveConfig.imageBackground, setConnecting],
     );
 
     const cancelPendingConnectionCreate = useCallback(() => {
@@ -1049,17 +1040,18 @@ function InfiniteCanvasPage() {
         (clientX: number, clientY: number, current: ConnectionHandle) => {
             const world = screenToCanvas(clientX, clientY);
             const hitPadding = 56 / Math.max(viewportRef.current.k, 0.35);
+            const sourceIds = new Set(getConnectionSourceIds(current));
             const target = [...nodesRef.current]
                 .filter((node) => !isHiddenBatchChild(node, nodesRef.current))
                 .reverse()
                 .find((node) => {
-                    if (node.id === current.nodeId) return false;
-                    if (!normalizeConnection(current.nodeId, node.id, nodesRef.current, current.handleType)) return false;
+                    if (sourceIds.has(node.id)) return false;
                     const left = node.position.x - hitPadding;
                     const right = node.position.x + node.width + hitPadding;
                     const top = node.position.y - hitPadding;
                     const bottom = node.position.y + node.height + hitPadding;
                     if (world.x < left || world.x > right || world.y < top || world.y > bottom) return false;
+                    if (!buildSelectionConnections(current, node.id, nodesRef.current).length) return false;
 
                     // 靠近目标节点左右边缘时优先吸附，节点间距很近时也能稳定选中。
                     const nearLeftHandle = Math.abs(world.x - node.position.x) <= hitPadding;
@@ -1209,16 +1201,10 @@ function InfiniteCanvasPage() {
     }, [connections, nodes]);
 
     const createNode = useCallback(
-        (type: CanvasNodeType, position?: Position) => {
+        (type: CreatableCanvasNodeType, position?: Position) => {
             const targetPosition = position || getCanvasCenter();
             const configMetadata =
-                type === CanvasNodeType.Config
-                    ? {
-                          model: effectiveConfig.imageModel || effectiveConfig.model,
-                          size: effectiveConfig.size,
-                          count: 1,
-                      }
-                    : type === CanvasNodeType.Image || type === CanvasNodeType.Video
+                type === CanvasNodeType.Image || type === CanvasNodeType.Video
                         ? {
                               model: effectiveConfig.imageModel || effectiveConfig.model,
                               size: effectiveConfig.size,
@@ -1234,7 +1220,7 @@ function InfiniteCanvasPage() {
             setSelectedConnectionId(null);
             if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio) setDialogNodeId(newNode.id);
         },
-        [effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, getCanvasCenter],
+        [effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, effectiveConfig.quality, effectiveConfig.count, getCanvasCenter],
     );
 
     const openSketchDialog = useCallback(
@@ -1711,6 +1697,8 @@ function InfiniteCanvasPage() {
     );
 
     const prepareNodeDragVisuals = useCallback((draggedNodeIds: Set<string>) => {
+        updateCanvasAlignmentGuides(alignmentGuidesRef.current, []);
+        dragSnapDisabledRef.current = false;
         const container = containerRef.current;
         if (!container) {
             dragVisualRef.current = null;
@@ -1742,6 +1730,8 @@ function InfiniteCanvasPage() {
 
         dragVisualRef.current = {
             draggedNodeIds: new Set(draggedNodeIds),
+            movingNodes: currentNodes.filter((node) => draggedNodeIds.has(node.id) && !isHiddenBatchChild(node, currentNodes)),
+            alignmentTargets: currentNodes.filter((node) => !draggedNodeIds.has(node.id) && !isHiddenBatchChild(node, currentNodes)),
             nodeElements,
             groupElements,
             connections: connectionVisuals,
@@ -1764,6 +1754,12 @@ function InfiniteCanvasPage() {
             const path = getConnectionPathGeometry(previewFrom, previewTo, connection).path;
             paths.forEach((element) => element.setAttribute("d", path));
         });
+    }, []);
+
+    const getAlignedDrag = useCallback((dx: number, dy: number) => {
+        const visuals = dragVisualRef.current;
+        if (!visuals || !dragRef.current.hasMoved) return { delta: { x: dx, y: dy }, guides: [] };
+        return alignCanvasNodeDrag(visuals.movingNodes, visuals.alignmentTargets, { x: dx, y: dy }, viewportRef.current.k, dragSnapDisabledRef.current);
     }, []);
 
     const handleNodeMouseDown = useCallback((event: ReactMouseEvent, nodeId: string) => {
@@ -1865,7 +1861,7 @@ function InfiniteCanvasPage() {
         setIsNodeDragging(true);
     }, [closeNodeToolbarImmediately, prepareNodeDragVisuals]);
 
-    const finishNodeDrag = useCallback((clientX?: number, clientY?: number) => {
+    const finishNodeDrag = useCallback((clientX?: number, clientY?: number, disableSnap?: boolean) => {
         if (rafRef.current) {
             cancelAnimationFrame(rafRef.current);
             rafRef.current = null;
@@ -1877,8 +1873,11 @@ function InfiniteCanvasPage() {
         const clickedGroupId = dragRef.current.groupId;
         const clickedNodeId = dragRef.current.initialSelectedNodes[0]?.id;
         const currentViewport = viewportRef.current;
-        const dx = clientX == null ? dragRef.current.lastDx : (clientX - dragRef.current.startX) / currentViewport.k;
-        const dy = clientY == null ? dragRef.current.lastDy : (clientY - dragRef.current.startY) / currentViewport.k;
+        const rawDx = clientX == null ? dragRef.current.lastDx : (clientX - dragRef.current.startX) / currentViewport.k;
+        const rawDy = clientY == null ? dragRef.current.lastDy : (clientY - dragRef.current.startY) / currentViewport.k;
+        if (disableSnap !== undefined) dragSnapDisabledRef.current = disableSnap;
+        // 松手也使用同一套吸附结果，避免预览对齐后提交时跳回鼠标原始位置。
+        const { delta: { x: dx, y: dy } } = getAlignedDrag(rawDx, rawDy);
         const initialPositions = dragRef.current.initialSelectedNodes;
 
         historyPausedRef.current = false;
@@ -1905,6 +1904,7 @@ function InfiniteCanvasPage() {
             element.style.transform = "";
         });
         dragVisualRef.current = null;
+        updateCanvasAlignmentGuides(alignmentGuidesRef.current, []);
 
         dragRef.current.isDraggingNode = false;
         dragRef.current.isDraggingGroup = false;
@@ -1920,7 +1920,7 @@ function InfiniteCanvasPage() {
             const clickedNode = nodesRef.current.find((node) => node.id === clickedNodeId);
             setDialogNodeId(clickedNode?.type === CanvasNodeType.Audio ? null : clickedNodeId);
         }
-    }, [previewNodeDrag]);
+    }, [getAlignedDrag, previewNodeDrag]);
 
     const handleGlobalMouseMove = useCallback(
         (event: MouseEvent) => {
@@ -1934,10 +1934,13 @@ function InfiniteCanvasPage() {
                 }
                 dragRef.current.lastDx = dx;
                 dragRef.current.lastDy = dy;
+                dragSnapDisabledRef.current = event.altKey;
 
                 if (rafRef.current) return;
                 rafRef.current = requestAnimationFrame(() => {
-                    previewNodeDrag(dragRef.current.lastDx, dragRef.current.lastDy);
+                    const aligned = getAlignedDrag(dragRef.current.lastDx, dragRef.current.lastDy);
+                    previewNodeDrag(aligned.delta.x, aligned.delta.y);
+                    updateCanvasAlignmentGuides(alignmentGuidesRef.current, aligned.guides);
                     rafRef.current = null;
                 });
                 return;
@@ -1950,7 +1953,7 @@ function InfiniteCanvasPage() {
                 setMouseWorld(screenToCanvas(event.clientX, event.clientY));
             }
         },
-        [finishNodeDrag, getConnectableNodeAtPoint, previewNodeDrag, screenToCanvas],
+        [getAlignedDrag, getConnectableNodeAtPoint, previewNodeDrag, screenToCanvas],
     );
 
     const handleGlobalPointerMove = useCallback(
@@ -1989,7 +1992,7 @@ function InfiniteCanvasPage() {
 
     const handleGlobalMouseUp = useCallback(
         (event: MouseEvent) => {
-            finishNodeDrag(event.clientX, event.clientY);
+            finishNodeDrag(event.clientX, event.clientY, event.altKey);
 
             selectionBoxRef.current = null;
             setSelectionBox(null);
@@ -1998,7 +2001,12 @@ function InfiniteCanvasPage() {
 
             const currentConnection = connectingParamsRef.current;
             if (currentConnection) {
-                const targetNodeId = getConnectableNodeAtPoint(event.clientX, event.clientY, currentConnection) || connectionTargetNodeIdRef.current;
+                const hitNodeId = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-node-id]")?.dataset.nodeId : undefined;
+                if (hitNodeId && getConnectionSourceIds(currentConnection).includes(hitNodeId)) {
+                    setConnecting(null);
+                    return;
+                }
+                const targetNodeId = getConnectableNodeAtPoint(event.clientX, event.clientY, currentConnection);
                 if (targetNodeId) {
                     connectNodes(currentConnection, targetNodeId, screenToCanvas(event.clientX, event.clientY));
                     setConnecting(null);
@@ -2013,8 +2021,11 @@ function InfiniteCanvasPage() {
     );
 
     useEffect(() => {
-        const handlePointerUp = (event: PointerEvent) => finishNodeDrag(event.clientX, event.clientY);
-        const cancelNodeDrag = () => finishNodeDrag();
+        const handlePointerUp = (event: PointerEvent) => finishNodeDrag(event.clientX, event.clientY, event.altKey);
+        const cancelNodeDrag = () => {
+            finishNodeDrag();
+            cancelPendingConnectionCreate();
+        };
         window.addEventListener("mousemove", handleGlobalMouseMove);
         window.addEventListener("mouseup", handleGlobalMouseUp);
         window.addEventListener("pointerup", handlePointerUp);
@@ -2029,7 +2040,7 @@ function InfiniteCanvasPage() {
             window.removeEventListener("blur", cancelNodeDrag);
             window.removeEventListener("pointermove", handleGlobalPointerMove);
         };
-    }, [finishNodeDrag, handleGlobalMouseMove, handleGlobalMouseUp, handleGlobalPointerMove]);
+    }, [cancelPendingConnectionCreate, finishNodeDrag, handleGlobalMouseMove, handleGlobalMouseUp, handleGlobalPointerMove]);
 
     const createImageFileNode = useCallback(async (file: File, position: Position) => {
         const image = await uploadImage(file);
@@ -2163,6 +2174,11 @@ function InfiniteCanvasPage() {
             }
 
             if (event.key === "Escape") {
+                if (dragRef.current.isDraggingNode) {
+                    // 取消拖动时还原预览位置，同时撤下辅助线，不留下半次移动。
+                    dragRef.current.hasMoved = false;
+                    finishNodeDrag();
+                }
                 setSelectedNodeIds(new Set());
                 setSelectedGroupId(null);
                 setSelectedConnectionId(null);
@@ -2182,7 +2198,7 @@ function InfiniteCanvasPage() {
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [copySelectedNodes, deleteNodes, deleteSelectedConnection, redoCanvas, selectedConnectionId, setConnecting, undoCanvas]);
+    }, [copySelectedNodes, deleteNodes, deleteSelectedConnection, finishNodeDrag, redoCanvas, selectedConnectionId, setConnecting, undoCanvas]);
 
     useEffect(() => {
         const handlePaste = (event: ClipboardEvent) => {
@@ -2219,8 +2235,16 @@ function InfiniteCanvasPage() {
     const handleConnectStart = useCallback(
         (event: ReactMouseEvent, nodeId: string, handleType: "source" | "target") => {
             event.stopPropagation();
+            if (event.button !== 0) return;
+            event.preventDefault();
+            const selected = selectedNodeIdsRef.current;
+            const nodeIds = selected.has(nodeId)
+                ? nodesRef.current.filter((node) => selected.has(node.id) && !isHiddenBatchChild(node, nodesRef.current)).map((node) => node.id)
+                : [nodeId];
+            setDialogNodeId(null);
+            setPendingConnectionCreate(null);
             setMouseWorld(screenToCanvas(event.clientX, event.clientY));
-            setConnecting({ nodeId, handleType });
+            setConnecting({ nodeId, handleType, nodeIds });
             connectionTargetNodeIdRef.current = null;
             setConnectionTargetNodeId(null);
             setNodeHandlePointer(null);
@@ -3269,9 +3293,10 @@ function InfiniteCanvasPage() {
             }
             const sourceNode = nodesRef.current.find((item) => item.id === node.id);
             if (!sourceNode) return;
-            const nodeSize = getNodeSpec(CanvasNodeType.Config);
-            const configNode = createCanvasNode(
-                CanvasNodeType.Config,
+            // 文本生图直接创建普通图片节点，使用已有的图片参数面板。
+            const nodeSize = getNodeSpec(CanvasNodeType.Image);
+            const imageNode = createCanvasNode(
+                CanvasNodeType.Image,
                 {
                     x: sourceNode.position.x + sourceNode.width + 96 + nodeSize.width / 2,
                     y: sourceNode.position.y + sourceNode.height / 2,
@@ -3283,17 +3308,17 @@ function InfiniteCanvasPage() {
                     count: 1,
                 },
             );
-            const connection = { id: nanoid(), fromNodeId: sourceNode.id, toNodeId: configNode.id };
-            const nextNodes = nodesRef.current.map((item) => (item.id === sourceNode.id ? { ...item, metadata: { ...item.metadata, content: prompt, prompt, status: NODE_STATUS_SUCCESS } } : item)).concat(configNode);
+            const connection = { id: nanoid(), fromNodeId: sourceNode.id, toNodeId: imageNode.id };
+            const nextNodes = nodesRef.current.map((item) => (item.id === sourceNode.id ? { ...item, metadata: { ...item.metadata, content: prompt, prompt, status: NODE_STATUS_SUCCESS } } : item)).concat(imageNode);
             const nextConnections = [...connectionsRef.current, connection];
             nodesRef.current = nextNodes;
             connectionsRef.current = nextConnections;
             setNodes(nextNodes);
             setConnections(nextConnections);
-            setSelectedNodeIds(new Set([configNode.id]));
+            setSelectedNodeIds(new Set([imageNode.id]));
             setSelectedGroupId(null);
             setSelectedConnectionId(null);
-            setDialogNodeId(configNode.id);
+            setDialogNodeId(imageNode.id);
         },
         [effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, message],
     );
@@ -3552,7 +3577,13 @@ function InfiniteCanvasPage() {
                                 />
                             );
                         })}
-                        {connectingParams ? <ActiveConnectionPath node={nodeById.get(connectingParams.nodeId)} targetNode={connectionTargetNodeId ? nodeById.get(connectionTargetNodeId) : undefined} handle={connectingParams} mouseWorld={mouseWorld} /> : null}
+                        {connectingParams ? getConnectionSourceIds(connectingParams).map((nodeId) => (
+                            <ActiveConnectionPath key={nodeId} node={nodeById.get(nodeId)} targetNode={connectionTargetNodeId ? nodeById.get(connectionTargetNodeId) : undefined} handle={{ nodeId, handleType: connectingParams.handleType }} mouseWorld={mouseWorld} />
+                        )) : null}
+                    </svg>
+
+                    <svg ref={alignmentGuidesRef} data-canvas-alignment-guides aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-px w-px overflow-visible" style={{ zIndex: 45 }}>
+                        {["x", "y"].map((axis) => <line key={axis} data-axis={axis} visibility="hidden" stroke={theme.node.activeStroke} strokeWidth="1" strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />)}
                     </svg>
 
                     {selectedConnectionActionPosition ? (
@@ -3797,7 +3828,6 @@ function InfiniteCanvasPage() {
                     onAddVideo={() => createNode(CanvasNodeType.Video)}
                     onAddAudio={() => createNode(CanvasNodeType.Audio)}
                     onAddText={() => createNode(CanvasNodeType.Text)}
-                    onAddConfig={() => createNode(CanvasNodeType.Config)}
                     onUndo={undoCanvas}
                     onRedo={redoCanvas}
                     onUpload={() => handleUploadRequest()}
