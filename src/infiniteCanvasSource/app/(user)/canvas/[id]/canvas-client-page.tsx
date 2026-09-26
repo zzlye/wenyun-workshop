@@ -38,6 +38,7 @@ import { fitNodeSize, nodeSizeFromRatio } from "../utils/canvas-node-size";
 import { getCanvasViewportBounds, getConnectionPathGeometry, getVisibleCanvasConnections, getVisibleCanvasNodes } from "../utils/canvas-viewport";
 import { buildSelectionConnections, getConnectionSourceIds, mergeCanvasConnections } from "../utils/canvas-connections";
 import { alignCanvasNodeDrag, updateCanvasAlignmentGuides } from "../utils/canvas-alignment";
+import { getCanvasNodeLayoutPositions } from "../utils/canvas-layout";
 import { App, Button, Dropdown, Input, Modal } from "antd";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "../constants";
 import { ActiveConnectionPath, ConnectionPath } from "../components/canvas-connections";
@@ -342,6 +343,7 @@ function InfiniteCanvasPage() {
     const config = useConfigStore((state) => state.config);
     const effectiveConfig = useEffectiveConfig();
     const settings = useStore((state) => state.settings);
+    const showCanvasAlignmentGuides = settings.showCanvasAlignmentGuides !== false;
     const activeProfile = useMemo(() => getActiveApiProfile(normalizeSettings(settings)), [settings]);
     const setLightboxImageId = useStore((state) => state.setLightboxImageId);
     const [isPureBackground, setIsPureBackground] = useState(false);
@@ -1338,41 +1340,25 @@ function InfiniteCanvasPage() {
         const groupNodes = group.nodeIds.map((id) => nodesRef.current.find((node) => node.id === id)).filter((node): node is CanvasNodeData => Boolean(node));
         if (!groupNodes.length) return;
         setGroups((prev) => prev.map((item) => (item.id === groupId ? { ...item, layout } : item)));
-        if (layout === "free") return;
-
-        const gap = 36;
-        const minLeft = Math.min(...groupNodes.map((node) => node.position.x));
-        const minTop = Math.min(...groupNodes.map((node) => node.position.y));
-        const sortedNodes = [...groupNodes].sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
-        const nextPositionById = new Map<string, Position>();
-
-        if (layout === "horizontal") {
-            let x = minLeft;
-            sortedNodes.forEach((node) => {
-                nextPositionById.set(node.id, { x, y: minTop });
-                x += node.width + gap;
-            });
-        } else if (layout === "vertical") {
-            let y = minTop;
-            sortedNodes.forEach((node) => {
-                nextPositionById.set(node.id, { x: minLeft, y });
-                y += node.height + gap;
-            });
-        } else {
-            const columns = Math.ceil(Math.sqrt(sortedNodes.length));
-            const columnWidths = Array.from({ length: columns }, (_, column) => Math.max(...sortedNodes.filter((_, index) => index % columns === column).map((node) => node.width), 0));
-            const rowHeights = Array.from({ length: Math.ceil(sortedNodes.length / columns) }, (_, row) => Math.max(...sortedNodes.slice(row * columns, row * columns + columns).map((node) => node.height), 0));
-            sortedNodes.forEach((node, index) => {
-                const column = index % columns;
-                const row = Math.floor(index / columns);
-                const x = minLeft + columnWidths.slice(0, column).reduce((sum, value) => sum + value + gap, 0);
-                const y = minTop + rowHeights.slice(0, row).reduce((sum, value) => sum + value + gap, 0);
-                nextPositionById.set(node.id, { x, y });
-            });
-        }
-
+        const nextPositionById = getCanvasNodeLayoutPositions(groupNodes, layout);
         setNodes((prev) => prev.map((node) => (nextPositionById.has(node.id) ? { ...node, position: nextPositionById.get(node.id)! } : node)));
     }, []);
+
+    const arrangeSelection = useCallback(() => {
+        const nodeIds = Array.from(selectedNodeIdsRef.current).filter((id) => nodesRef.current.some((node) => node.id === id && !isHiddenBatchChild(node, nodesRef.current)));
+        const selectedNodes = nodeIds.map((id) => nodesRef.current.find((node) => node.id === id)).filter((node): node is CanvasNodeData => Boolean(node));
+        if (selectedNodes.length < 2) {
+            message.warning("至少选择两个节点才能整理");
+            return;
+        }
+
+        // 普通多选直接整理为宫格，不创建组，也不改变节点间的连线关系。
+        const nextPositionById = getCanvasNodeLayoutPositions(selectedNodes, "grid");
+        setNodes((prev) => prev.map((node) => (nextPositionById.has(node.id) ? { ...node, position: nextPositionById.get(node.id)! } : node)));
+        setSelectedGroupId(null);
+        setSelectedConnectionId(null);
+        setContextMenu(null);
+    }, [message]);
 
     const deleteNodes = useCallback(
         (ids: Set<string>) => {
@@ -1940,7 +1926,7 @@ function InfiniteCanvasPage() {
                 rafRef.current = requestAnimationFrame(() => {
                     const aligned = getAlignedDrag(dragRef.current.lastDx, dragRef.current.lastDy);
                     previewNodeDrag(aligned.delta.x, aligned.delta.y);
-                    updateCanvasAlignmentGuides(alignmentGuidesRef.current, aligned.guides);
+                    updateCanvasAlignmentGuides(alignmentGuidesRef.current, showCanvasAlignmentGuides ? aligned.guides : []);
                     rafRef.current = null;
                 });
                 return;
@@ -1953,7 +1939,7 @@ function InfiniteCanvasPage() {
                 setMouseWorld(screenToCanvas(event.clientX, event.clientY));
             }
         },
-        [getAlignedDrag, getConnectableNodeAtPoint, previewNodeDrag, screenToCanvas],
+        [getAlignedDrag, getConnectableNodeAtPoint, previewNodeDrag, screenToCanvas, showCanvasAlignmentGuides],
     );
 
     const handleGlobalPointerMove = useCallback(
@@ -3791,6 +3777,7 @@ function InfiniteCanvasPage() {
                     onKeep={keepNodeToolbar}
                     onLeave={hideNodeToolbar}
                     onCreateGroup={createGroupFromSelection}
+                    onArrangeSelection={arrangeSelection}
                     onDeleteSelection={() => deleteNodes(new Set(selectedNodeIds))}
                     onGroupLayout={applyGroupLayout}
                     onGroupColor={changeGroupColor}

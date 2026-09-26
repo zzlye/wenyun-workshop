@@ -27,6 +27,7 @@ type CanvasNodeHoverToolbarProps = {
     onKeep: (nodeId: string) => void;
     onLeave: () => void;
     onCreateGroup?: () => void;
+    onArrangeSelection?: () => void;
     onDeleteSelection?: () => void;
     onGroupLayout?: (groupId: string, layout: CanvasGroupLayout) => void;
     onGroupColor?: (groupId: string, color: string) => void;
@@ -62,6 +63,7 @@ export function CanvasNodeHoverToolbar({
     onKeep,
     onLeave,
     onCreateGroup,
+    onArrangeSelection,
     onDeleteSelection,
     onGroupLayout,
     onGroupColor,
@@ -138,6 +140,7 @@ export function CanvasNodeHoverToolbar({
             >
                 <span className="px-4 text-sm font-semibold text-[#5f6368]">已选 {selectedCount} 个</span>
                 <ToolbarDivider />
+                <ToolbarAction title="整理选中节点" label="整理" icon={<LayoutGrid className="size-4" />} onClick={onArrangeSelection} />
                 <ToolbarAction title="将选中节点打组" label="打组" icon={<Group className="size-4" />} onClick={onCreateGroup} />
                 <ToolbarAction title="删除选中节点" label="删除" icon={<Trash2 className="size-4" />} onClick={onDeleteSelection} danger />
             </div>

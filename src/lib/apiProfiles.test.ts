@@ -27,6 +27,15 @@ describe('主页主播模式', () => {
   })
 })
 
+describe('画布习惯设置', () => {
+  it('旧配置默认显示对齐辅助线，并支持持久化关闭', () => {
+    expect(DEFAULT_SETTINGS.showCanvasAlignmentGuides).toBe(true)
+    expect(normalizeSettings({}).showCanvasAlignmentGuides).toBe(true)
+    expect(normalizeSettings({ showCanvasAlignmentGuides: false }).showCanvasAlignmentGuides).toBe(false)
+    expect(normalizeSettings({ showCanvasAlignmentGuides: true }).showCanvasAlignmentGuides).toBe(true)
+  })
+})
+
 describe('image API format', () => {
   it('defaults old profiles to automatic OpenAI-compatible detection', () => {
     expect(normalizeApiFormat(undefined)).toBe('auto')

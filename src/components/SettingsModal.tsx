@@ -969,6 +969,24 @@ export default function SettingsModal() {
                     开启后，即使任务成功生成，也会在任务卡片和详情页显示重试按钮。
                   </div>
                 </div>
+                <div className="block">
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="block text-sm text-gray-600 dark:text-gray-300">显示画布对齐辅助线</span>
+                    <button
+                      type="button"
+                      onClick={() => commitSettings({ ...draft, showCanvasAlignmentGuides: !draft.showCanvasAlignmentGuides })}
+                      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${draft.showCanvasAlignmentGuides ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+                      role="switch"
+                      aria-checked={draft.showCanvasAlignmentGuides}
+                      aria-label="显示画布对齐辅助线"
+                    >
+                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${draft.showCanvasAlignmentGuides ? 'translate-x-[14px]' : 'translate-x-[2px]'}`} />
+                    </button>
+                  </div>
+                  <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
+                    关闭后，拖动节点时不显示虚线，但仍会保留自动对齐。
+                  </div>
+                </div>
               </div>
             )}
 

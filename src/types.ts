@@ -209,6 +209,8 @@ export interface AppSettings {
   persistInputOnRestart: boolean
   reuseTaskApiProfileTemporarily: boolean
   alwaysShowRetryButton: boolean
+  /** 画布拖动时是否显示对齐辅助线，关闭后仍保留对齐吸附 */
+  showCanvasAlignmentGuides: boolean
   enterSubmit: boolean
   referenceImageEditAction: ReferenceImageEditAction
   /** 背景随机图 API 地址，可接入 P站随机图接口 */
