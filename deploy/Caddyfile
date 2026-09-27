@@ -1,0 +1,34 @@
+{
+    servers :443 {
+        protocols h1 h2
+    }
+}
+
+zzlye.xyz, xn--v5z30ywuk.com {
+
+    encode zstd gzip
+
+    reverse_proxy 127.0.0.1:8080
+}
+
+api.zzlye.xyz, api.zzlye.site {
+
+    reverse_proxy 127.0.0.1:3001
+}
+
+ak.zzlye.site {
+
+    encode zstd gzip
+
+    reverse_proxy 127.0.0.1:8080
+}
+
+# 裸 IP 仅提供 HTTP 访问，避免跳转到无证书的 HTTPS 地址。
+http://38.244.15.80 {
+    reverse_proxy 127.0.0.1:8080
+}
+
+# 保留原有直连端口，统一转发到新版实例。
+http://:3000 {
+    reverse_proxy 127.0.0.1:3001
+}
