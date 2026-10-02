@@ -66,9 +66,10 @@ afterEach(async () => {
 })
 
 describe('视频 API 设置精简', () => {
-  it('不显示模型用途说明和全局视频参数，保留连接配置', () => {
+  it('保留视频配置标题和简短用途，仅移除指定说明与全局视频参数', () => {
     expect(host.textContent).not.toContain('模型列表从视频 API 获取')
-    expect(host.textContent).not.toContain('用于画布工坊里的视频生成')
+    expect(host.querySelector('h4')?.textContent).toBe('视频 API 配置')
+    expect(host.querySelector('h4')?.nextElementSibling?.textContent?.trim()).toBe('用于画布工坊里的视频生成。')
     expect(host.textContent).not.toContain('视频设置')
     expect(host.textContent).not.toContain('生成模式')
     expect(host.textContent).not.toContain('清晰度')

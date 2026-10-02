@@ -1165,9 +1165,15 @@ export default function SettingsModal() {
               </div>
             )}
 
-            {/* 视频页仅保留 API 连接与模型选择，生成参数由画布节点单独设置。 */}
+            {/* 保留标题卡片及简短用途说明，生成参数仍由画布节点单独设置。 */}
             {activeTab === 'videoApi' && (
               <div className="space-y-5">
+                <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-500/15 dark:bg-blue-500/[0.08]">
+                  <h4 className="text-sm font-bold text-blue-700 dark:text-blue-300">视频 API 配置</h4>
+                  <p data-selectable-text className="mt-1 text-xs leading-relaxed text-blue-600/80 dark:text-blue-200/70">
+                    用于画布工坊里的视频生成。
+                  </p>
+                </div>
                 <ExternalApiConfigSection
                   idPrefix="video-api"
                   title="视频 API 配置"
