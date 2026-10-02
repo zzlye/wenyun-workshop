@@ -40,8 +40,8 @@ export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
   // 保留渠道的完整路由名，避免去掉“满血”后被中转分配到其他渠道；价格由实际渠道查询。
   { model: GPT_IMAGE_2_5_FLARE_FULL_MODEL, label: GPT_IMAGE_2_5_FLARE_FULL_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_FULL_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   { model: GPT_IMAGE_2_5_SUNBURST_FULL_MODEL, label: GPT_IMAGE_2_5_SUNBURST_FULL_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_FULL_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
-  { model: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, label: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
-  { model: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, label: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
+  { model: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, label: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K' },
+  { model: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, label: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K' },
   { model: 'Nano-Banana-2', label: 'Nano Banana 2', requestModel: 'nano-banana-2', unitCostText: 'HUHN 0.09', resolutionText: '1K、2K、4K' },
   { model: 'Nano-Banana-Pro', label: 'Nano Banana Pro', requestModel: 'nano-banana-pro', unitCostText: 'HUHN 0.15', resolutionText: '1K、2K、4K' },
 ]
@@ -112,6 +112,8 @@ export function getFixedImageRequestModel(model: string): string {
 
 export function getImageSizeTiersForModel(model: string): SizeTier[] {
   const normalized = getFixedImageRequestModel(model).toLowerCase()
+  // 无后缀的两个基础路由仅支持一 K，不影响四 K 和满血路由。
+  if (normalized === GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL || normalized === GPT_IMAGE_2_5_FLARE_LEGACY_MODEL) return ['1K']
   if (normalized === SEEDREAM_5_PRO_MODEL) return ['1K', '2K']
   return ['1K', '2K', '4K']
 }

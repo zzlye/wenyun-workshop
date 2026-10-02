@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { buildFixedModelPriceRows, FIXED_IMAGE_MODEL_OPTIONS, getFixedImageRequestModel, getImageSizeTiersForModel } from './modelPricing'
+import { normalizeImageSizeForProfile } from './apiProfiles'
 
 describe('fixed image model pricing', () => {
   it('maps legacy vip and super-resolution names to the 4K model', () => {
@@ -30,10 +31,17 @@ describe('fixed image model pricing', () => {
     expect(getImageSizeTiersForModel('seedream-5-pro')).toEqual(['1K', '2K'])
   })
 
-  it('allows all supported resolutions for every GPT Image 2.5 route', () => {
+  it('基础2.5模型仅支持1K，列表和参数能力保持一致', () => {
+    for (const model of ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']) {
+      expect(getImageSizeTiersForModel(model)).toEqual(['1K'])
+      expect(getImageSizeTiersForModel(model.toUpperCase())).toEqual(['1K'])
+      expect(buildFixedModelPriceRows('wenyun-site').find((row) => row.model === model)?.resolutionText).toBe('1K')
+      expect(normalizeImageSizeForProfile('3840x2160', 'wenyun-site', model)).toBe('1280x720')
+    }
+  })
+
+  it('四K和满血路由继续保留全部清晰度', () => {
     const models = [
-      'gpt-image-2.5-flare',
-      'gpt-image-2.5-sunburst',
       'gpt-image-2.5-flare-4k',
       'gpt-image-2.5-sunburst-4k',
       'gpt-image-2.5-flare-满血',

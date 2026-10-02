@@ -4,7 +4,9 @@ vi.mock("../../../lib/videoCapabilities", async importOriginal => ({...await imp
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 import { CANVAS_VIDEO_MODEL } from "../../../lib/videoModel";
-import { defaultConfig } from "../../stores/use-config-store";
+import { defaultConfig, useConfigStore } from "../../stores/use-config-store";
+import { DEFAULT_SETTINGS, LOCKED_WENYUN_PROFILE_ID } from "../../../lib/apiProfiles";
+import { syncInfiniteCanvasConfigFromSettings } from "../../../lib/syncInfiniteCanvasConfig";
 import { requestVideoGeneration } from "./video";
 
 vi.mock("axios", () => ({
@@ -29,6 +31,41 @@ describe("画布视频异步接口", () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+    });
+
+    it("视频Key留空时从登录账号同步，提交、轮询和下载使用同一API令牌", async () => {
+        const previous = useConfigStore.getState();
+        try {
+            // 使用模拟上游验证完整调用，不触发真实生成费用。
+            useConfigStore.setState({ config: defaultConfig });
+            syncInfiniteCanvasConfigFromSettings({
+                ...DEFAULT_SETTINGS, videoApiKey: "", accountApiKeyMode: "account",
+                newApiAccountSessions: {
+                    [LOCKED_WENYUN_PROFILE_ID]: {
+                        siteProfileId: LOCKED_WENYUN_PROFILE_ID, username: "demo",
+                        accessToken: "management-token", boundApiKey: "account-video-key",
+                    },
+                },
+            });
+            (axios.post as Mock).mockResolvedValueOnce({ data: { id: "account-task", status: "processing" } });
+            (axios.get as Mock)
+                .mockResolvedValueOnce({ data: { id: "account-task", status: "completed" } })
+                .mockResolvedValueOnce({ data: videoBlob() });
+            const config = useConfigStore.getState().config;
+            const result = await requestVideoGeneration(config, "海边日出");
+            expect(fetchVideoCapabilities).toHaveBeenCalledWith("account-video-key", config.videoApiProxy, config.videoModel);
+            expect(axios.post).toHaveBeenCalledExactlyOnceWith(VIDEO_API_PROXY_BASE + "/videos", expect.any(Object), expect.objectContaining({
+                headers: expect.objectContaining({ Authorization: "Bearer account-video-key", Prefer: "respond-async" }),
+            }));
+            for (const path of ["/videos/account-task", "/videos/account-task/content"]) {
+                expect(axios.get).toHaveBeenCalledWith(VIDEO_API_PROXY_BASE + path, expect.objectContaining({
+                    headers: expect.objectContaining({ Authorization: "Bearer account-video-key" }),
+                }));
+            }
+            expect(result.type).toBe("video/mp4");
+        } finally {
+            useConfigStore.setState({ config: previous.config, publicSettings: previous.publicSettings });
+        }
     });
 
     it("固定使用 NewAPI 同源代理、文档字段和异步轮询", async () => {

@@ -146,6 +146,7 @@ describe('主页主播模式界面与生命周期', () => {
       return <HomeStreamerSetting enabled={enabled} onChange={setEnabled} />
     }
     await act(async () => root.render(<Setting />))
+    expect(host.textContent).toContain('打开后主页背景将不在随机。')
     const checkbox = host.querySelector<HTMLInputElement>('input[type="checkbox"]')!
     expect(checkbox.checked).toBe(false)
     await act(async () => checkbox.click())

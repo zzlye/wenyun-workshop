@@ -3,7 +3,9 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SettingsModal from './SettingsModal'
-import { DEFAULT_SETTINGS, normalizeSettings } from '../lib/apiProfiles'
+import { DEFAULT_SETTINGS, LOCKED_WENYUN_PROFILE_ID, normalizeSettings } from '../lib/apiProfiles'
+import { CANVAS_VIDEO_BASE_URL } from '../lib/videoModel'
+import type { AppSettings } from '../types'
 
 // 隔离账号、素材和网络，只验证用户实际看到的设置及模型选择行为。
 const fixture = vi.hoisted(() => ({
@@ -14,6 +16,8 @@ const fixture = vi.hoisted(() => ({
   refetch: vi.fn(),
   setSettings: vi.fn(),
   showToast: vi.fn(),
+  modelsQuery: vi.fn(),
+  copy: vi.fn(),
 }))
 vi.mock('../store', () => ({
   useStore: Object.assign(
@@ -23,7 +27,14 @@ vi.mock('../store', () => ({
   exportData: vi.fn(), importData: vi.fn(), clearData: vi.fn(),
 }))
 vi.mock('../hooks/useVideoModels', () => ({
-  useVideoModels: () => ({ data: fixture.models, isFetching: false, refetch: fixture.refetch }),
+  useVideoModels: (...args: unknown[]) => {
+    fixture.modelsQuery(...args)
+    return { data: fixture.models, isFetching: false, refetch: fixture.refetch }
+  },
+}))
+vi.mock('../lib/clipboard', () => ({
+  copyTextToClipboard: (...args: unknown[]) => fixture.copy(...args),
+  getClipboardFailureMessage: (message: string) => message,
 }))
 vi.mock('../lib/localFileSync', () => ({
   getLocalSyncFileInfo: async () => null,
@@ -45,6 +56,7 @@ let root: Root
 beforeEach(async () => {
   vi.clearAllMocks()
   fixture.refetch.mockResolvedValue({ data: fixture.models })
+  fixture.copy.mockReset().mockResolvedValue(undefined)
   fixture.state = {
     showSettings: true,
     settingsTabRequest: 'videoApi',
@@ -66,6 +78,39 @@ afterEach(async () => {
 })
 
 describe('视频 API 设置精简', () => {
+  it('固定视频地址可复制，复制失败也有提示', async () => {
+    const button = host.querySelector<HTMLButtonElement>('button[aria-label="复制视频 API URL"]')
+    expect(button).not.toBeNull()
+    await act(async () => button!.click())
+    expect(fixture.copy).toHaveBeenCalledWith(CANVAS_VIDEO_BASE_URL)
+    expect(fixture.showToast).toHaveBeenCalledWith('API URL 已复制', 'success')
+    fixture.copy.mockRejectedValueOnce(new Error('clipboard unavailable'))
+    await act(async () => button!.click())
+    expect(fixture.showToast).toHaveBeenCalledWith('复制 API URL 失败', 'error')
+  })
+
+  it('登录后视频留空Key仍使用账号获取模型，退出后不继续使用或保存账号Key', async () => {
+    fixture.state.settings = normalizeSettings({
+      ...DEFAULT_SETTINGS, videoApiKey: '', accountApiKeyMode: 'account',
+      newApiAccountSessions: {
+        [LOCKED_WENYUN_PROFILE_ID]: {
+          siteProfileId: LOCKED_WENYUN_PROFILE_ID, username: 'demo',
+          accessToken: 'management-token', boundApiKey: 'account-video-key',
+        },
+      },
+    })
+    await act(async () => root.render(<SettingsModal key="account" />))
+    expect(fixture.modelsQuery).toHaveBeenLastCalledWith('account-video-key', expect.any(Boolean), true)
+    expect((host.querySelector('input[type="password"]') as HTMLInputElement).value).toBe('')
+    expect(host.textContent).toContain('已使用登录账号 Key，无需填写。')
+    fixture.state.settings = { ...(fixture.state.settings as AppSettings), newApiAccountSessions: {} }
+    await act(async () => root.render(<SettingsModal key="account" />))
+    expect(fixture.modelsQuery).toHaveBeenLastCalledWith('', expect.any(Boolean), true)
+    const option = Array.from(host.querySelectorAll('button')).find((button) => button.textContent === 'video-second')
+    await act(async () => option!.click())
+    expect(fixture.setSettings).toHaveBeenCalledWith(expect.objectContaining({ videoApiKey: '', newApiAccountSessions: {} }))
+  })
+
   it('保留视频配置标题和简短用途，仅移除指定说明与全局视频参数', () => {
     expect(host.textContent).not.toContain('模型列表从视频 API 获取')
     expect(host.querySelector('h4')?.textContent).toBe('视频 API 配置')

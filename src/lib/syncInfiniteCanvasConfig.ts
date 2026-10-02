@@ -1,6 +1,6 @@
 import { useConfigStore } from '../infiniteCanvasSource/stores/use-config-store'
 import type { AppSettings } from '../types'
-import { getEffectiveImageApiProfile } from './accountApiKey'
+import { getEffectiveImageApiProfile, getEffectiveVideoApiKey } from './accountApiKey'
 import { getActiveApiProfile, normalizeSettings } from './apiProfiles'
 import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_TIMEOUT, normalizeCanvasVideoModel } from './videoModel'
 
@@ -28,7 +28,7 @@ export function syncInfiniteCanvasConfigFromSettings(settings: AppSettings) {
       textApiProxy: normalizedSettings.textApiProxy,
       textTimeout: normalizedSettings.textTimeout,
       videoBaseUrl: CANVAS_VIDEO_BASE_URL,
-      videoApiKey: normalizedSettings.videoApiKey,
+      videoApiKey: getEffectiveVideoApiKey(normalizedSettings),
       videoApiProxy: normalizedSettings.videoApiProxy,
       videoTimeout: CANVAS_VIDEO_TIMEOUT,
       textModel: normalizedSettings.textModel || state.config.textModel,

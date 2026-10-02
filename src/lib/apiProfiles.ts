@@ -113,10 +113,10 @@ export function allowsCustomImageRatioForProfile(_profileId: string): boolean {
 }
 
 export function normalizeImageSizeForProfile(size: string, _profileId: string, model = ''): string {
-  // Seedream 5 Pro 最高只支持 2K，历史保存的 4K 尺寸按原比例收敛到 2K。
-  return getImageSizeTiersForModel(model).includes('4K')
-    ? size
-    : normalizeImageSizeForMaxTier(size, '2K')
+  // 历史高分辨率配置按模型实际最高档位保留比例，避免一 K 路由仍提交二 K 参数。
+  const tiers = getImageSizeTiersForModel(model)
+  if (tiers.includes('4K')) return size
+  return normalizeImageSizeForMaxTier(size, tiers.includes('2K') ? '2K' : '1K')
 }
 
 function normalizeApiPriceItem(value: unknown): ApiPriceSnapshot['items'][number] | null {

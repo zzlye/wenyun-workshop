@@ -10,6 +10,7 @@ import { CanvasNavigationProvider, type CanvasRoute } from '../infiniteCanvasCom
 import { useStore } from '../store'
 import { normalizeSettings } from '../lib/apiProfiles'
 import { syncInfiniteCanvasConfigFromSettings } from '../lib/syncInfiniteCanvasConfig'
+import { getEffectiveVideoApiKey } from '../lib/accountApiKey'
 
 type CanvasWorkshopProps = {
   onBack: () => void
@@ -73,6 +74,7 @@ export default function CanvasWorkshop({ onBack, onOpenHome, onOpenWenyun, onOpe
   const normalizedSettings = normalizeSettings(settings)
   const appearanceTheme: 'light' | 'dark' = normalizedSettings.appearanceNightMode ? 'dark' : 'light'
   const activeAccountBoundApiKey = normalizedSettings.newApiAccountSessions[normalizedSettings.activeProfileId]?.boundApiKey ?? ''
+  const effectiveVideoApiKey = getEffectiveVideoApiKey(normalizedSettings)
   const [route, setRoute] = useState<CanvasRoute>(initialRoute ?? { pathname: '/canvas', params: {} })
 
   useEffect(() => {
@@ -108,6 +110,8 @@ export default function CanvasWorkshop({ onBack, onOpenHome, onOpenWenyun, onOpe
     normalizedSettings.textModel,
     normalizedSettings.textTimeout,
     normalizedSettings.videoApiKey,
+    // 视频始终使用文运站，公益站出图期间登录或退出也需要更新视频凭据。
+    effectiveVideoApiKey,
     normalizedSettings.videoApiProxy,
     normalizedSettings.videoBaseUrl,
     normalizedSettings.videoModel,

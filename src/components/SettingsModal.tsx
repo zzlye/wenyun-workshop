@@ -5,7 +5,8 @@ import { Cloud, CloudDownload, CloudUpload, HardDrive, RefreshCw } from 'lucide-
 import { normalizeBaseUrl } from '../lib/api'
 import { buildApiUrl } from '../lib/devProxy'
 import { useStore, exportData, importData, clearData, type SettingsTab } from '../store'
-import { DEFAULT_SETTINGS, getApiBalanceSnapshot, getActiveApiProfile, isOpenAICompatibleProvider, LOCKED_OPENAI_API_PROFILES, normalizeSettings, setApiBalanceSnapshot } from '../lib/apiProfiles'
+import { DEFAULT_SETTINGS, getApiBalanceSnapshot, getActiveApiProfile, isOpenAICompatibleProvider, LOCKED_OPENAI_API_PROFILES, LOCKED_WENYUN_PROFILE_ID, normalizeSettings, setApiBalanceSnapshot } from '../lib/apiProfiles'
+import { getEffectiveVideoApiKey } from '../lib/accountApiKey'
 import { copyTextToClipboard, getClipboardFailureMessage } from '../lib/clipboard'
 import { queryNewApiBalance } from '../lib/newApi'
 import { parseModelListPayload } from '../lib/modelList'
@@ -186,6 +187,8 @@ type ExternalApiConfigSectionProps = {
   fixedBaseUrl?: string
   fixedTimeout?: number
   modelOptionsLocked?: boolean
+  onCopyBaseUrl?: () => void
+  apiKeyHint?: string
 }
 
 function ExternalApiConfigSection({
@@ -212,6 +215,8 @@ function ExternalApiConfigSection({
   fixedBaseUrl,
   fixedTimeout,
   modelOptionsLocked = false,
+  onCopyBaseUrl,
+  apiKeyHint,
 }: ExternalApiConfigSectionProps) {
   const modelInputId = `${idPrefix}-model-input`
   const modelMenuRef = useRef<HTMLDivElement>(null)
@@ -239,10 +244,24 @@ function ExternalApiConfigSection({
   return (
     <section className="space-y-4 rounded-2xl border border-gray-200/70 bg-white/55 p-4 dark:border-white/[0.08] dark:bg-white/[0.025]" aria-label={title}>
       <label className="block">
-        <span className="mb-1.5 block text-sm text-gray-600 dark:text-gray-300">API URL</span>
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <span className="block text-sm text-gray-600 dark:text-gray-300">API URL</span>
+          {onCopyBaseUrl && (
+            <button
+              type="button"
+              onClick={onCopyBaseUrl}
+              className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-gray-200/70 bg-white/70 text-gray-500 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:border-blue-400/30 dark:hover:bg-blue-500/15 dark:hover:text-blue-200"
+              aria-label="复制视频 API URL"
+              title="复制 API URL"
+            >
+              <CopyIcon className="h-3 w-3" />
+            </button>
+          )}
+        </div>
         <input
           value={displayedBaseUrl}
           readOnly={Boolean(fixedBaseUrl)}
+          onFocus={(event) => { if (fixedBaseUrl) event.currentTarget.select() }}
           onChange={(e) => {
             if (!fixedBaseUrl) onBaseUrlDraftChange(e.target.value)
           }}
@@ -287,6 +306,7 @@ function ExternalApiConfigSection({
             )}
           </button>
         </div>
+        {apiKeyHint && <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{apiKeyHint}</p>}
       </div>
 
       <div ref={modelMenuRef} className="relative block">
@@ -394,7 +414,15 @@ export default function SettingsModal() {
   const [isQueryingBalance, setIsQueryingBalance] = useState(false)
   const [isFetchingTextModels, setIsFetchingTextModels] = useState(false)
   const [textModelOptions, setTextModelOptions] = useState<string[]>([])
-  const videoModelsQuery = useVideoModels(draft.videoApiKey, draft.videoApiProxy, showSettings && activeTab === 'videoApi')
+  // 账号凭据读取实时状态，不写入手填 Key；获取模型与节点生成共用同一选择规则。
+  const effectiveVideoApiKey = getEffectiveVideoApiKey({
+    ...draft,
+    newApiAccountSessions: settings.newApiAccountSessions,
+    accountApiKeyMode: settings.accountApiKeyMode,
+  })
+  const videoAccountKey = settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]?.boundApiKey?.trim()
+  const videoUsesAccountKey = Boolean(videoAccountKey && effectiveVideoApiKey === videoAccountKey)
+  const videoModelsQuery = useVideoModels(effectiveVideoApiKey, draft.videoApiProxy, showSettings && activeTab === 'videoApi')
   const videoModelOptions = videoModelsQuery.data ?? []
   const isFetchingVideoModels = videoModelsQuery.isFetching
   const [exportTasks, setExportTasks] = useState(true)
@@ -468,7 +496,13 @@ export default function SettingsModal() {
 
   const commitSettings = (nextDraft: AppSettings) => {
     // 两个站点的地址和协议统一由配置归一函数约束，不再维护另一套可编辑服务商规则。
-    const normalizedDraft = normalizeSettings(nextDraft)
+    // 设置弹窗打开期间登录状态可能改变，保存表单时不能恢复已退出的账号。
+    const current = useStore.getState().settings
+    const normalizedDraft = normalizeSettings({
+      ...nextDraft,
+      newApiAccountSessions: current.newApiAccountSessions,
+      accountApiKeyMode: current.accountApiKeyMode,
+    })
     setDraft(normalizedDraft)
     setSettings(normalizedDraft)
   }
@@ -686,9 +720,9 @@ export default function SettingsModal() {
     reader.readAsDataURL(file)
   }
 
-  const copyActiveProfileUrl = async () => {
+  const copyApiUrl = async (url: string) => {
     try {
-      await copyTextToClipboard(activeProfile.baseUrl)
+      await copyTextToClipboard(url)
       showToast('API URL 已复制', 'success')
     } catch (err) {
       showToast(getClipboardFailureMessage('复制 API URL 失败', err), 'error')
@@ -1025,7 +1059,7 @@ export default function SettingsModal() {
                     <span className="block text-sm text-gray-600 dark:text-gray-300">API URL</span>
                     <button
                       type="button"
-                      onClick={copyActiveProfileUrl}
+                      onClick={() => void copyApiUrl(activeProfile.baseUrl)}
                       className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-gray-200/70 bg-white/70 text-gray-500 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:border-blue-400/30 dark:hover:bg-blue-500/15 dark:hover:text-blue-200"
                       aria-label="复制 API URL"
                       title="复制 API URL"
@@ -1177,6 +1211,8 @@ export default function SettingsModal() {
                 <ExternalApiConfigSection
                   idPrefix="video-api"
                   title="视频 API 配置"
+                  onCopyBaseUrl={() => void copyApiUrl(CANVAS_VIDEO_BASE_URL)}
+                  apiKeyHint={videoUsesAccountKey ? '已使用登录账号 Key，无需填写。' : undefined}
                   baseUrl={CANVAS_VIDEO_BASE_URL}
                   apiKey={draft.videoApiKey}
                   model={draft.videoModel}
