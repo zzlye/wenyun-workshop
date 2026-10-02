@@ -1,4 +1,5 @@
 "use client";
+import { CanvasImage } from "./canvas-image";
 
 import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
@@ -66,7 +67,7 @@ function CanvasAssetsTab({ nodes, onRename, onChangeCategory, onDelete, onInsert
         () =>
             nodes
                 .filter((node) => node.type === CanvasNodeType.Text || node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio)
-                .filter((node) => node.type === CanvasNodeType.Text || Boolean(node.metadata?.content)),
+                .filter((node) => node.type === CanvasNodeType.Text || Boolean(node.metadata?.content || node.metadata?.storageKey)),
         [nodes],
     );
 
@@ -241,16 +242,16 @@ function PickerList({ keyword, kindFilter, categoryFilter, total, page, empty, o
 }
 
 function CanvasPickerCard({ node, onInsert, onRename, onChangeCategory, onDelete }: { node: CanvasNodeData; onInsert: () => void; onRename: (title: string) => void; onChangeCategory: (category: AssetCategory) => void; onDelete: () => void }) {
-    return <PickerCard title={node.title} kind={node.type} category={getCanvasNodeAssetCategory(node)} cover={node.type === CanvasNodeType.Image ? node.metadata?.content || "" : node.type === CanvasNodeType.Video ? node.metadata?.content || "" : ""} text={node.type === CanvasNodeType.Text ? node.metadata?.content || node.title : ""} onInsert={onInsert} onRename={onRename} onChangeCategory={onChangeCategory} onDelete={onDelete} />;
+    return <PickerCard storageKey={node.metadata?.storageKey} title={node.title} kind={node.type} category={getCanvasNodeAssetCategory(node)} cover={node.type === CanvasNodeType.Image ? node.metadata?.content || "" : node.type === CanvasNodeType.Video ? node.metadata?.content || "" : ""} text={node.type === CanvasNodeType.Text ? node.metadata?.content || node.title : ""} onInsert={onInsert} onRename={onRename} onChangeCategory={onChangeCategory} onDelete={onDelete} />;
 }
 
 function StoredPickerCard({ asset, onInsert, onRename, onChangeCategory, onDelete }: { asset: Asset; onInsert: () => void; onRename: (title: string) => void; onChangeCategory: (category: AssetCategory) => void; onDelete: () => void }) {
     const cover = asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : asset.kind === "video" ? asset.data.url : "");
     const text = asset.kind === "text" ? asset.data.content : "";
-    return <PickerCard title={asset.title} kind={asset.kind} category={getStoredAssetCategory(asset)} cover={cover} text={text} onInsert={onInsert} onRename={onRename} onChangeCategory={onChangeCategory} onDelete={onDelete} />;
+    return <PickerCard storageKey={asset.kind === "image" ? asset.data.storageKey : undefined} title={asset.title} kind={asset.kind} category={getStoredAssetCategory(asset)} cover={cover} text={text} onInsert={onInsert} onRename={onRename} onChangeCategory={onChangeCategory} onDelete={onDelete} />;
 }
 
-function PickerCard({ title, kind, category, cover, text, onInsert, onRename, onChangeCategory, onDelete }: { title: string; kind: string; category: AssetCategory; cover: string; text?: string; onInsert: () => void; onRename: (title: string) => void; onChangeCategory: (category: AssetCategory) => void; onDelete: () => void }) {
+function PickerCard({ title, kind, category, cover, storageKey, text, onInsert, onRename, onChangeCategory, onDelete }: { title: string; kind: string; category: AssetCategory; cover: string; storageKey?: string; text?: string; onInsert: () => void; onRename: (title: string) => void; onChangeCategory: (category: AssetCategory) => void; onDelete: () => void }) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(title);
     const [deleteOpen, setDeleteOpen] = useState(false);
@@ -279,8 +280,8 @@ function PickerCard({ title, kind, category, cover, text, onInsert, onRename, on
                         <AudioPreview title={title} />
                     ) : kind === "video" && cover ? (
                         <video src={cover} className="aspect-[4/3] w-full bg-black object-cover" muted playsInline />
-                    ) : cover ? (
-                        <img src={cover} alt={title} className="aspect-[4/3] w-full object-cover" />
+                    ) : cover || storageKey ? (
+                        <CanvasImage storageKey={storageKey} src={cover} alt={title} className="aspect-[4/3] w-full object-cover" />
                     ) : (
                         <TextPreview text={text || title} />
                     )}

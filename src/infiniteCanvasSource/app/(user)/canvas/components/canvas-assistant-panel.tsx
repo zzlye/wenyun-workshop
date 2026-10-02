@@ -1,5 +1,6 @@
 // @ts-nocheck
 "use client";
+import { CanvasImage } from "./canvas-image";
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowUp, History, ImageIcon, LoaderCircle, MessageSquare, PanelRightClose, Plus, RotateCcw, Settings2, Sparkles, Trash2, X } from "lucide-react";
@@ -173,7 +174,7 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
         try {
             if (nextMode === "image") {
                 const referenceImages: ReferenceImage[] = await Promise.all(
-                    refs.filter((item) => item.dataUrl).map(async (item) => ({ id: item.id, name: `${item.title}.png`, type: "image/png", dataUrl: await imageToDataUrl(item), storageKey: item.storageKey })),
+                    refs.filter((item) => item.dataUrl || item.storageKey).map(async (item) => ({ id: item.id, name: `${item.title}.png`, type: "image/png", dataUrl: await imageToDataUrl(item), storageKey: item.storageKey })),
                 );
                 const images = referenceImages.length ? await requestEdit(requestConfig, text, referenceImages, assistantId) : await requestGeneration(requestConfig, text, assistantId);
                 const storedImages = await Promise.all(images.map((image) => uploadImage(image.dataUrl)));
@@ -542,7 +543,7 @@ function AssistantMessages({
                     ) : null}
                     {message.images?.map((image) => (
                         <div key={image.id} className="w-[250px] overflow-hidden rounded-2xl border" style={{ background: theme.node.panel, borderColor: theme.node.stroke }}>
-                            <img src={image.dataUrl} alt="" className="aspect-square w-full object-cover" />
+                            <CanvasImage storageKey={image.storageKey} src={image.dataUrl} alt="" className="aspect-square w-full object-cover" />
                             <Button
                                 type="text"
                                 className="!h-8 !w-full !rounded-none"
@@ -607,8 +608,8 @@ function AssistantReferenceChip({ item, onRemove }: { item: CanvasAssistantRefer
     const text = (item.text || item.title).replace(/\s+/g, " ").trim().slice(0, 1) || "文";
     return (
         <div className="group/chip relative inline-flex h-8 max-w-[150px] shrink-0 items-center gap-1.5 rounded-lg text-sm" style={{ color: theme.node.text }}>
-            {item.dataUrl ? (
-                <img src={item.dataUrl} alt="" className="size-8 rounded-lg object-cover" />
+            {item.dataUrl || item.storageKey ? (
+                <CanvasImage storageKey={item.storageKey} src={item.dataUrl} alt="" className="size-8 rounded-lg object-cover" />
             ) : (
                 <span className="grid size-8 place-items-center rounded-lg border text-sm font-medium" style={{ background: theme.node.panel, borderColor: theme.node.activeStroke }}>
                     {text}
@@ -630,8 +631,8 @@ function AssistantReferenceChip({ item, onRemove }: { item: CanvasAssistantRefer
 }
 
 function nodeToReference(node: CanvasNodeData): CanvasAssistantReference | null {
-    if (node.type === CanvasNodeType.Image && node.metadata?.content) {
-        return { id: node.id, type: node.type, title: node.title, dataUrl: node.metadata.content, storageKey: node.metadata.storageKey };
+    if (node.type === CanvasNodeType.Image && (node.metadata?.content || node.metadata?.storageKey)) {
+        return { id: node.id, type: node.type, title: node.title, dataUrl: node.metadata.content || "", storageKey: node.metadata.storageKey };
     }
     if (node.type === CanvasNodeType.Text && node.metadata?.content) {
         return { id: node.id, type: node.type, title: node.title, text: node.metadata.content };
@@ -659,7 +660,7 @@ async function buildChatMessages(messages: CanvasAssistantMessage[]): Promise<Ch
                 content: [
                     ...refs.flatMap((item) => (item.text ? [{ type: "text" as const, text: item.text }] : [])),
                     { type: "text", text: message.text },
-                    ...(await Promise.all(refs.filter((item) => item.dataUrl).map(async (item) => ({ type: "image_url" as const, image_url: { url: await imageToDataUrl(item) } })))),
+                    ...(await Promise.all(refs.filter((item) => item.dataUrl || item.storageKey).map(async (item) => ({ type: "image_url" as const, image_url: { url: await imageToDataUrl(item) } })))),
                 ],
             };
         }),

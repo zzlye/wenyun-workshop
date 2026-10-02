@@ -44,6 +44,8 @@ export async function getImageBlob(storageKey: string) {
 }
 
 export async function setImageBlob(storageKey: string, blob: Blob) {
+    // 导入覆盖原图时同步失效派生缓存，仍在显示的缩略图由自身租约负责释放。
+    await import("./image-preview").then(({ deleteImagePreviews }) => deleteImagePreviews([storageKey])).catch(() => undefined);
     await store.setItem(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
@@ -73,14 +75,16 @@ export async function imageToDataUrl(image: { url?: string; dataUrl?: string; st
 }
 
 export async function deleteStoredImages(keys: Iterable<string>) {
+    const removedKeys = Array.from(new Set(keys));
     await Promise.all(
-        Array.from(new Set(keys)).map(async (key) => {
+        removedKeys.map(async (key) => {
             const url = objectUrls.get(key);
             if (url) URL.revokeObjectURL(url);
             objectUrls.delete(key);
             await store.removeItem(key);
         }),
     );
+    if (removedKeys.length) await import("./image-preview").then(({ deleteImagePreviews }) => deleteImagePreviews(removedKeys)).catch(() => undefined);
 }
 
 export async function cleanupUnusedImages(usedData: unknown) {

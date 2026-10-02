@@ -20,6 +20,7 @@ import { CanvasNodeType } from "../types";
 import {
     canvasProjectIndexKey,
     canvasProjectStorageKey,
+    canvasProjectViewportKey,
     loadCanvasProjects,
     persistCanvasProject,
     persistCanvasProjectIndex,
@@ -165,6 +166,37 @@ describe("canvas project persistence", () => {
         const loaded = await loadCanvasProjects(STORE_NAME);
         expect(loaded?.source).toBe("split");
         expect(loaded?.projects.map((project) => project.id)).toEqual([first.id, second.id]);
+    });
+
+    it("只有视口变化时写轻量记录，刷新能恢复且内容改动使旧视口失效", async () => {
+        const project = createProject("viewport-project");
+        await persistCanvasProject(STORE_NAME, project);
+        await persistCanvasProjectIndex(STORE_NAME, [project]);
+        const original = storage.get(canvasProjectStorageKey(STORE_NAME, project.id));
+        storageMocks.setItem.mockClear();
+        const moved = { ...project, viewport: {x:120,y:80,k:0.2} };
+        await persistCanvasProject(STORE_NAME, moved);
+        expect(storage.get(canvasProjectStorageKey(STORE_NAME, project.id))).toBe(original);
+        expect(storageMocks.setItem).toHaveBeenCalledTimes(1);
+        expect(storageMocks.setItem.mock.calls[0][0]).toBe(canvasProjectViewportKey(STORE_NAME, project.id));
+        expect(storageMocks.setItem.mock.calls[0][1]).not.toContain('"nodes"');
+        expect((await loadCanvasProjects(STORE_NAME))?.projects[0].viewport).toEqual(moved.viewport);
+        const stale = storage.get(canvasProjectViewportKey(STORE_NAME, project.id))!;
+        const changed = { ...project, nodes: [...project.nodes] };
+        await persistCanvasProject(STORE_NAME, changed);
+        storage.set(canvasProjectViewportKey(STORE_NAME, project.id), stale);
+        expect((await loadCanvasProjects(STORE_NAME))?.projects[0].viewport).toEqual(project.viewport);
+    });
+
+    it("视口写入失败保留已保存内容，重试后能恢复", async () => {
+        const project = createProject("viewport-retry");
+        await persistCanvasProject(STORE_NAME, project);
+        await persistCanvasProjectIndex(STORE_NAME, [project]);
+        storageMocks.setItem.mockRejectedValueOnce(new Error("存储满"));
+        const moved = {...project, viewport:{x:10,y:20,k:0.5}};
+        await expect(persistCanvasProject(STORE_NAME, moved)).rejects.toThrow("存储满");
+        await persistCanvasProject(STORE_NAME, moved);
+        expect((await loadCanvasProjects(STORE_NAME))?.projects[0].viewport).toEqual(moved.viewport);
     });
 });
 

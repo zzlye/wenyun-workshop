@@ -155,6 +155,24 @@ describe("canvas node generation prompt handling", () => {
         expect(mergeNodeReferenceImages([manual], [connected, duplicateConnected]).map((image) => image.id)).toEqual(["manual-1", "connected-1"]);
     });
 
+    it("尚未加载的存储图片仍加入生成输入，不会丢失参考图", () => {
+        const source = baseNode({id:"stored",type:CanvasNodeType.Image,metadata:{content:"",storageKey:"image:original"}});
+        const target = baseNode({id:"target",type:CanvasNodeType.Video});
+        const inputs = buildNodeGenerationInputs(target.id,[source,target],[{id:"edge",fromNodeId:source.id,toNodeId:target.id}]);
+        expect(inputs).toHaveLength(1);
+        expect(inputs[0].image).toMatchObject({dataUrl:"",storageKey:"image:original"});
+    });
+
+    it("一万个串联节点按原顺序追溯且循环不溢出", () => {
+        const nodes = Array.from({length:10000},(_,i) => baseNode({id:String(i),type:CanvasNodeType.Image,metadata:{storageKey:`image:${i}`,content:""}}));
+        const connections = nodes.slice(1).map((node,i)=>({id:`e${i}`,fromNodeId:nodes[i].id,toNodeId:node.id}));
+        connections.push({id:"loop",fromNodeId:"9999",toNodeId:"0"});
+        const inputs = buildNodeGenerationInputs("9999",nodes,connections);
+        expect(inputs).toHaveLength(9999);
+        expect(inputs[0].nodeId).toBe("0");
+        expect(inputs.at(-1)?.nodeId).toBe("9998");
+    });
+
     it("批量图片失败时优先显示接口返回的具体错误", () => {
         expect(buildCanvasImageFailureMessage(false, "上游余额不足")).toBe("上游余额不足");
         expect(buildCanvasImageFailureMessage(true, "上游余额不足")).toBe("部分图片生成失败：上游余额不足");

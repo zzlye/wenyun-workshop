@@ -1,4 +1,5 @@
 "use client";
+import { CanvasImage } from "./canvas-image";
 
 import { Children, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent, KeyboardEvent, ReactNode } from "react";
@@ -87,7 +88,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
     const [hasEditorContent, setHasEditorContent] = useState(() => Boolean(stripConnectedPromptSuffix(node.metadata?.prompt || "", connectedPromptText).trim()));
     const canSubmitPrompt = hasUsableNodeGenerationPrompt(prompt, connectedPromptText) || mode === "video";
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
-    const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
+    const hasImageContent = node.type === CanvasNodeType.Image && Boolean((node.metadata?.content || node.metadata?.storageKey));
     const [cursorPos, setCursorPos] = useState(0);
     const [menuLeft, setMenuLeft] = useState(0);
     const [atImageMenuIndex, setAtImageMenuIndex] = useState(0);
@@ -783,7 +784,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                                     }}
                                     title="预览连接图片，右键插入 @图"
                                 >
-                                    <img src={image.dataUrl} alt={image.name} className="h-full w-full object-cover transition-opacity group-hover/ref:opacity-90" />
+                                    <CanvasImage storageKey={image.storageKey} src={image.dataUrl} alt={image.name} className="h-full w-full object-cover transition-opacity group-hover/ref:opacity-90" />
                                     <span className="pointer-events-none absolute bottom-1 left-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600/85 px-1 text-[9px] font-semibold leading-none text-white backdrop-blur-sm">{mentionIndex + 1}</span>
                                 </button>
                             ))}
@@ -839,7 +840,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                                 onClick={() => void openReferenceLightbox(index)}
                                 title="预览参考图，右键插入 @图"
                             >
-                                <img src={image.dataUrl || image.url} alt={image.name} className="h-full w-full object-cover transition-opacity group-hover/ref:opacity-90" />
+                                <CanvasImage storageKey={image.storageKey} src={image.dataUrl || image.url} alt={image.name} className="h-full w-full object-cover transition-opacity group-hover/ref:opacity-90" />
                                 {image.isMaskTarget ? <span className="pointer-events-none absolute left-1 top-1 rounded bg-blue-500/90 px-1.5 py-0.5 text-[8px] font-bold leading-none text-white">MASK</span> : null}
                                 <span className="pointer-events-none absolute bottom-1 left-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-black/55 px-1 text-[9px] font-semibold leading-none text-white backdrop-blur-sm">{index + 1}</span>
                                 <span className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover/ref:opacity-100">
@@ -917,7 +918,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                                             optionIndex === atImageMenuIndex ? "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300" : "text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/[0.06]"
                                         }`}
                                     >
-                                        {option.kind === "image" ? <img src={option.image.dataUrl} alt={option.label} className="size-8 shrink-0 rounded-lg object-cover" /> : option.kind === "audio" ? <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-500 dark:bg-blue-500/10 dark:text-blue-300"><AudioLines className="size-4" /></span> : <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-lg bg-blue-50 text-blue-500 dark:bg-blue-500/10 dark:text-blue-300">{option.video.url ? <video src={option.video.url} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : <Video className="size-4" />}</span>}
+                                        {option.kind === "image" ? <CanvasImage storageKey={mentionableReferences[option.imageIndex]?.storageKey} src={option.image.dataUrl} alt={option.label} className="size-8 shrink-0 rounded-lg object-cover" /> : option.kind === "audio" ? <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-500 dark:bg-blue-500/10 dark:text-blue-300"><AudioLines className="size-4" /></span> : <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-lg bg-blue-50 text-blue-500 dark:bg-blue-500/10 dark:text-blue-300">{option.video.url ? <video src={option.video.url} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : <Video className="size-4" />}</span>}
                                         <span className="min-w-0 flex-1 truncate font-medium">{option.label}</span>
                                         <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-white/[0.08] dark:text-gray-400">{option.source}</span>
                                     </button>
@@ -1114,7 +1115,7 @@ function CanvasReferencePickerModal({ open, nodeId, canvasNodes, selectedReferen
     const canvasImages = useMemo(() => {
         const query = keyword.trim().toLowerCase();
         return canvasNodes
-            .filter((item) => item.id !== nodeId && item.type === CanvasNodeType.Image && item.metadata?.content)
+            .filter((item) => item.id !== nodeId && item.type === CanvasNodeType.Image && (item.metadata?.content || item.metadata?.storageKey))
             .filter((item) => categoryFilter === "all" || getCanvasImageCategory(item) === categoryFilter)
             .filter((item) => !query || [item.title, item.metadata?.prompt].filter(Boolean).join(" ").toLowerCase().includes(query));
     }, [canvasNodes, categoryFilter, keyword, nodeId]);
@@ -1128,11 +1129,11 @@ function CanvasReferencePickerModal({ open, nodeId, canvasNodes, selectedReferen
     }, [assets, categoryFilter, keyword]);
 
     const selectCanvasNode = (canvasNode: CanvasNodeData) => {
-        if (!canvasNode.metadata?.content) return;
+        if (!(canvasNode.metadata?.content || canvasNode.metadata?.storageKey)) return;
         void createReferenceFromSource({
             name: `${canvasNode.title || canvasNode.id}.png`,
             type: canvasNode.metadata.mimeType || "image/png",
-            dataUrl: canvasNode.metadata.content,
+            dataUrl: canvasNode.metadata.content || "",
             storageKey: canvasNode.metadata.storageKey,
             width: canvasNode.metadata.naturalWidth,
             height: canvasNode.metadata.naturalHeight,
@@ -1187,7 +1188,7 @@ function CanvasReferencePickerModal({ open, nodeId, canvasNodes, selectedReferen
                                 dataUrl: item.metadata?.content || "",
                                 storageKey: item.metadata?.storageKey,
                             };
-                            return <ReferenceImageCard key={item.id} title={item.title} imageUrl={item.metadata?.content || ""} source={getCanvasImageCategory(item)} selected={selectedKeys.has(referenceIdentity(reference))} onClick={() => selectCanvasNode(item)} />;
+                            return <ReferenceImageCard key={item.id} title={item.title} storageKey={item.metadata?.storageKey} imageUrl={item.metadata?.content || ""} source={getCanvasImageCategory(item)} selected={selectedKeys.has(referenceIdentity(reference))} onClick={() => selectCanvasNode(item)} />;
                         })}
                     </ReferenceGrid>
                 ) : (
@@ -1201,7 +1202,7 @@ function CanvasReferencePickerModal({ open, nodeId, canvasNodes, selectedReferen
                                 dataUrl: asset.data.dataUrl,
                                 storageKey: asset.data.storageKey,
                             };
-                            return <ReferenceImageCard key={asset.id} title={asset.title} imageUrl={asset.coverUrl || asset.data.dataUrl} source={getAssetCategory(asset)} selected={selectedKeys.has(referenceIdentity(reference))} onClick={() => selectAsset(asset)} />;
+                            return <ReferenceImageCard key={asset.id} title={asset.title} storageKey={asset.data.storageKey} imageUrl={asset.coverUrl || asset.data.dataUrl} source={getAssetCategory(asset)} selected={selectedKeys.has(referenceIdentity(reference))} onClick={() => selectAsset(asset)} />;
                         })}
                     </ReferenceGrid>
                 )}
@@ -1235,11 +1236,11 @@ function ReferenceUploadCard({ onUpload }: { onUpload: () => void }) {
     );
 }
 
-function ReferenceImageCard({ title, imageUrl, source, selected, onClick }: { title: string; imageUrl: string; source: string; selected: boolean; onClick: () => void }) {
+function ReferenceImageCard({ title, imageUrl, storageKey, source, selected, onClick }: { title: string; imageUrl: string; storageKey?: string; source: string; selected: boolean; onClick: () => void }) {
     return (
         <button type="button" className="group relative overflow-hidden rounded-xl border border-stone-200 bg-white text-left transition hover:border-stone-400 hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.03] dark:hover:border-stone-500" onClick={onClick}>
             <div className="relative aspect-[4/3] bg-stone-100 dark:bg-stone-900">
-                <img src={imageUrl} alt={title} className="h-full w-full object-cover" />
+                <CanvasImage storageKey={storageKey} src={imageUrl} alt={title} className="h-full w-full object-cover" />
                 {selected ? <span className="absolute right-2 top-2 rounded-full bg-emerald-500 px-2 py-0.5 text-xs font-medium text-white">已引用</span> : null}
                 <div className="pointer-events-none absolute inset-0 bg-stone-950/0 transition group-hover:bg-stone-950/25" />
             </div>

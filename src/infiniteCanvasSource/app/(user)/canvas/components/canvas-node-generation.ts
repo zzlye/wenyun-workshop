@@ -80,7 +80,31 @@ export function stripConnectedPromptSuffix(prompt: string, connectedText: string
 
 export function buildNodeGenerationInputs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): NodeGenerationInput[] {
     const visited = new Set<string>([nodeId]);
-    return getOrderedUpstreamNodes(nodeId, nodes, connections).flatMap((node) => buildNodeGenerationInputsFromNode(node, nodes, connections, visited));
+    const graph = getInputGraph(nodes, connections);
+    const stack = getOrderedUpstreamNodes(nodeId, graph).reverse().map((node) => ({ node, expanded: false }));
+    const inputs: NodeGenerationInput[] = [];
+    // 显式栈保持原先的上游优先顺序，避免长链递归溢出和重复复制整个参考数组。
+    while (stack.length) {
+        const { node, expanded } = stack.pop()!;
+        if (!expanded) {
+            if (visited.has(node.id)) continue;
+            visited.add(node.id);
+            stack.push({ node, expanded: true });
+            for (const upstream of getOrderedUpstreamNodes(node.id, graph).reverse()) stack.push({ node: upstream, expanded: false });
+            continue;
+        }
+        const image = readReferenceImage(node);
+        const audio = readReferenceAudio(node);
+        const video = readReferenceVideo(node);
+        if (image) inputs.push({nodeId:node.id,type:"image",title:node.title,image});
+        else if (audio) inputs.push({nodeId:node.id,type:"audio",title:node.title,audio});
+        else if (video) inputs.push({nodeId:node.id,type:"video",title:node.title,video});
+        else {
+            const text = readNodeTextInput(node);
+            if (text) inputs.push({nodeId:node.id,type:"text",title:node.title,text});
+        }
+    }
+    return inputs;
 }
 
 export function getNodeGenerationInputReferenceImages(inputs: NodeGenerationInput[]) {
@@ -178,54 +202,35 @@ function readNodeTextInput(node: CanvasNodeData) {
     return node.metadata?.prompt || "";
 }
 
-function buildNodeGenerationInputsFromNode(node: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[], visited: Set<string>): NodeGenerationInput[] {
-    if (visited.has(node.id)) return [];
-    visited.add(node.id);
-
-    const upstreamInputs = getOrderedUpstreamNodes(node.id, nodes, connections).flatMap((upstreamNode) => buildNodeGenerationInputsFromNode(upstreamNode, nodes, connections, visited));
-    const image = readReferenceImage(node);
-    if (image) return [...upstreamInputs, { nodeId: node.id, type: "image" as const, title: node.title, image }];
-
-    const audio = readReferenceAudio(node);
-    if (audio) return [...upstreamInputs, { nodeId: node.id, type: "audio" as const, title: node.title, audio }];
-
-    const video = readReferenceVideo(node);
-    if (video) return [...upstreamInputs, { nodeId: node.id, type: "video" as const, title: node.title, video }];
-
-    const text = readNodeTextInput(node);
-    if (text) return [...upstreamInputs, { nodeId: node.id, type: "text" as const, title: node.title, text }];
-    return upstreamInputs;
-}
-
 function readReferenceImage(node: CanvasNodeData): ReferenceImage | null {
-    if (node.type !== CanvasNodeType.Image || !node.metadata?.content) return null;
+    if (node.type !== CanvasNodeType.Image || !(node.metadata?.content || node.metadata?.storageKey)) return null;
     return {
         id: node.id,
         name: `${node.title || node.id}.png`,
         type: node.metadata.mimeType || "image/png",
-        dataUrl: node.metadata.content,
+        dataUrl: node.metadata.content || "",
         storageKey: node.metadata.storageKey,
     };
 }
 
 function readReferenceAudio(node: CanvasNodeData): ReferenceAudio | null {
-    if (node.type !== CanvasNodeType.Audio || !node.metadata?.content) return null;
+    if (node.type !== CanvasNodeType.Audio || !(node.metadata?.content || node.metadata?.storageKey)) return null;
     return {
         id: node.id,
         name: node.title || `${node.id}.mp3`,
         type: node.metadata.mimeType || "audio/mpeg",
-        url: node.metadata.content,
+        url: node.metadata.content || "",
         storageKey: node.metadata.storageKey,
     };
 }
 
 function readReferenceVideo(node: CanvasNodeData): ReferenceVideo | null {
-    if (node.type !== CanvasNodeType.Video || !node.metadata?.content) return null;
+    if (node.type !== CanvasNodeType.Video || !(node.metadata?.content || node.metadata?.storageKey)) return null;
     return {
         id: node.id,
         name: node.title || `${node.id}.mp4`,
         type: node.metadata.mimeType || "video/mp4",
-        url: node.metadata.content,
+        url: node.metadata.content || "",
         storageKey: node.metadata.storageKey,
         mimeType: node.metadata.mimeType,
         width: node.metadata.naturalWidth,
@@ -235,12 +240,29 @@ function readReferenceVideo(node: CanvasNodeData): ReferenceVideo | null {
     };
 }
 
-function getOrderedUpstreamNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    const target = nodes.find((node) => node.id === nodeId);
-    const upstreamNodes = connections
-        .filter((connection) => connection.toNodeId === nodeId)
-        .map((connection) => nodes.find((node) => node.id === connection.fromNodeId))
-        .filter((node): node is CanvasNodeData => Boolean(node));
+type InputGraph = { nodes: Map<string, CanvasNodeData>; upstream: Map<string, CanvasNodeData[]> };
+const inputGraphs = new WeakMap<CanvasNodeData[], WeakMap<CanvasConnection[], InputGraph>>();
+
+function getInputGraph(nodes: CanvasNodeData[], connections: CanvasConnection[]): InputGraph {
+    let byConnections = inputGraphs.get(nodes);
+    if (!byConnections) { byConnections = new WeakMap(); inputGraphs.set(nodes, byConnections); }
+    const cached = byConnections.get(connections);
+    if (cached) return cached;
+    const graph: InputGraph = { nodes: new Map(nodes.map((node) => [node.id, node])), upstream: new Map() };
+    for (const connection of connections) {
+        const from = graph.nodes.get(connection.fromNodeId);
+        if (!from) continue;
+        const upstream = graph.upstream.get(connection.toNodeId) || [];
+        upstream.push(from);
+        graph.upstream.set(connection.toNodeId, upstream);
+    }
+    byConnections.set(connections, graph);
+    return graph;
+}
+
+function getOrderedUpstreamNodes(nodeId: string, graph: InputGraph) {
+    const target = graph.nodes.get(nodeId);
+    const upstreamNodes = graph.upstream.get(nodeId) || [];
     const order = target?.metadata?.inputOrder || [];
     return [...order.map((id) => upstreamNodes.find((node) => node.id === id)).filter((node): node is CanvasNodeData => Boolean(node)), ...upstreamNodes.filter((node) => !order.includes(node.id))];
 }

@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { AudioLines, ChevronRight, Clock, Image as ImageIcon, Plus, RefreshCw, Star, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import { resolveImageUrl } from "@/services/image-storage";
+import { CanvasImage } from "./canvas-image";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData, type Position } from "../types";
 
@@ -109,7 +109,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const [isEditingContent, setIsEditingContent] = useState(false);
     const [isEditingTitle, setIsEditingTitle] = useState(false);
     const [titleDraft, setTitleDraft] = useState(data.title);
-    const hasImageContent = data.type === CanvasNodeType.Image && Boolean(data.metadata?.content);
+    const hasImageContent = data.type === CanvasNodeType.Image && Boolean(data.metadata?.content || data.metadata?.storageKey);
     const hasVideoContent = data.type === CanvasNodeType.Video && Boolean(data.metadata?.content);
     const hasAudioContent = data.type === CanvasNodeType.Audio && Boolean(data.metadata?.content);
     const isBatchRoot = data.type === CanvasNodeType.Image && Boolean(data.metadata?.isBatchRoot) && batchCount > 1;
@@ -165,6 +165,22 @@ export const CanvasNode = React.memo(function CanvasNode({
         setIsEditingTitle(false);
         setTitleDraft(nextTitle || data.title);
     };
+
+    // 全览时只保留图片轮廓与小缩略图；悬停、选中或编辑立即恢复完整交互。
+    if (hasImageContent && scale < 0.35 && !hovered && !isSelected && !showPanel && !isConnectionTarget && !isEditingTitle && !isEditingContent && !isBatchRoot) {
+        return (
+            <div ref={elementRef} data-node-id={data.id} data-canvas-detail="compact"
+                className="node-element absolute overflow-hidden rounded-3xl"
+                style={{ transform: `translate(${data.position.x}px, ${data.position.y}px)`, width: data.width, height: data.height, background: theme.node.fill, contain: "layout style" }}
+                onMouseDown={(event) => onMouseDown(event, data.id)}
+                onMouseEnter={() => { setHovered(true); onHoverStart(data.id); }}
+                onMouseLeave={() => { setHovered(false); onHoverEnd(data.id); }}
+                onContextMenu={(event) => onContextMenu(event, data.id)}>
+                <CanvasImage storageKey={data.metadata?.storageKey} src={data.metadata?.content} alt={data.title} compact className="pointer-events-none h-full w-full object-contain" />
+                {data.metadata?.status === "loading" ? <span className="pointer-events-none absolute inset-0 animate-pulse bg-blue-500/20" aria-label="生成中" /> : null}
+            </div>
+        );
+    }
 
     return (
         <div
@@ -465,7 +481,7 @@ function TextContent({ node, theme, isEditingContent, textareaRef, onContentChan
 }
 
 function ImageNodeContent(props: NodeContentRendererProps) {
-    if (!props.node.metadata?.content && props.isBatchRoot) {
+    if (!props.node.metadata?.content && !props.node.metadata?.storageKey && props.isBatchRoot) {
         const content =
             props.node.metadata?.status === "loading" ? (
                 <LoadingContent theme={props.theme} />
@@ -480,7 +496,7 @@ function ImageNodeContent(props: NodeContentRendererProps) {
             </BatchFrame>
         );
     }
-    if (!props.node.metadata?.content) return <EmptyImageContent {...props} />;
+    if (!props.node.metadata?.content && !props.node.metadata?.storageKey) return <EmptyImageContent {...props} />;
 
     return (
         <ImageContent
@@ -626,26 +642,13 @@ function ImageContent({
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const isBatchChild = Boolean(node.metadata?.batchRootId);
-    const [imageSrc, setImageSrc] = useState(node.metadata?.content || "");
-
-    useEffect(() => {
-        let cancelled = false;
-        const fallback = node.metadata?.content || "";
-        setImageSrc(fallback);
-        if (!node.metadata?.storageKey) return;
-        resolveImageUrl(node.metadata.storageKey, fallback).then((url) => {
-            if (!cancelled && url) setImageSrc(url);
-        });
-        return () => {
-            cancelled = true;
-        };
-    }, [node.id, node.metadata?.content, node.metadata?.storageKey]);
 
     return (
         <BatchFrame batchCount={isBatchRoot ? batchCount : 0} batchExpanded={batchExpanded} batchOpening={batchOpening} batchRecovering={batchRecovering} onToggleBatch={onToggleBatch}>
             <div className="h-full w-full overflow-hidden rounded-3xl">
-                <img
-                    src={imageSrc}
+                <CanvasImage
+                    storageKey={node.metadata?.storageKey}
+                    src={node.metadata?.content}
                     alt={node.title}
                     draggable={false}
                     onDragStart={(event) => event.preventDefault()}
@@ -703,7 +706,7 @@ function NodeInfoBar({ node }: { node: CanvasNodeData }) {
     const width = Math.round(node.metadata?.naturalWidth || 0);
     const height = Math.round(node.metadata?.naturalHeight || 0);
     const hasResolution = Boolean(node.metadata?.naturalWidth && node.metadata?.naturalHeight);
-    const hasFinalSize = Boolean(node.metadata?.content);
+    const hasFinalSize = Boolean(node.metadata?.content || node.metadata?.storageKey);
     const elapsed = isLoading ? Math.max(0, now - (node.metadata?.generationStartedAt || now)) : node.metadata?.generationElapsedMs;
 
     if (!isLoading && !hasFinalSize) return null;

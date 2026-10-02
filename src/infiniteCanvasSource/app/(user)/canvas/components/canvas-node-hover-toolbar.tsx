@@ -153,8 +153,8 @@ export function CanvasNodeHoverToolbar({
     const top = viewport.y + node.position.y * viewport.k - 42;
     const isImage = node.type === CanvasNodeType.Image;
     const isVideo = node.type === CanvasNodeType.Video;
-    const hasImage = isImage && Boolean(node.metadata?.content);
-    const hasVideo = isVideo && Boolean(node.metadata?.content);
+    const hasImage = isImage && Boolean(node.metadata?.content || node.metadata?.storageKey);
+    const hasVideo = isVideo && Boolean(node.metadata?.content || node.metadata?.storageKey);
     const isText = node.type === CanvasNodeType.Text;
     const isConfig = node.type === CanvasNodeType.Config;
     const canOpenDialog = isText || hasImage || isVideo;

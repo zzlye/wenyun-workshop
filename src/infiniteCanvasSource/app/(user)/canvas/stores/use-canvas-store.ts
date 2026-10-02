@@ -226,9 +226,12 @@ export const useCanvasStore = create<CanvasStore>()(
                     return { projects };
                 }),
             updateProject: (id, patch) =>
-                set((state) => ({
-                    projects: state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project)),
-                })),
+                set((state) => {
+                    const current = state.projects.find((project) => project.id === id);
+                    // 同一份生成快照无需重复通知订阅者，也不重复安排自动保存。
+                    if (!current || (Object.keys(patch) as Array<keyof typeof patch>).every((key) => current[key] === patch[key])) return state;
+                    return { projects: state.projects.map((project) => project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project) };
+                }),
         }),
         {
             name: CANVAS_STORE_KEY,

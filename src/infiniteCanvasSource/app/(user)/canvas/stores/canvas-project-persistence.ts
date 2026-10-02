@@ -1,4 +1,5 @@
 import { localForageStorage } from "@/lib/localforage-storage";
+import { nanoid } from "nanoid";
 import { getImageBlob, uploadImage } from "@/services/image-storage";
 import { CanvasNodeType, type CanvasAssistantReference, type CanvasReferenceImage } from "../types";
 import type { CanvasProject } from "./use-canvas-store";
@@ -26,6 +27,15 @@ type StoredEmbeddedImage = {
 };
 
 const verifiedImageStorageKeys = new Set<string>();
+const persistedContent = new Map<string, { project: CanvasProject; revision: string }>();
+
+export function canvasProjectViewportKey(storeName: string, projectId: string) {
+    return `${canvasProjectStorageKey(storeName, projectId)}:viewport`;
+}
+
+function hasSameProjectContent(previous: CanvasProject, next: CanvasProject) {
+    return (Object.keys({ ...previous, ...next }) as Array<keyof CanvasProject>).every((key) => key === "viewport" || key === "updatedAt" || previous[key] === next[key]);
+}
 
 export type LoadedCanvasProjects = {
     projects: CanvasProject[];
@@ -50,7 +60,20 @@ export async function loadCanvasProjects(storeName: string): Promise<LoadedCanva
         for (const entry of index.projects) {
             const value = await localForageStorage.getItem(canvasProjectStorageKey(storeName, entry.id));
             if (!value) continue;
-            projects.push(JSON.parse(value) as CanvasProject);
+            const { storageRevision, ...project } = JSON.parse(value) as CanvasProject & { storageRevision?: string };
+            const viewValue = await localForageStorage.getItem(canvasProjectViewportKey(storeName, entry.id));
+            if (viewValue) {
+                try {
+                    const view = JSON.parse(viewValue);
+                    // 内容写入和视口写入使用版本配对，异常退出后旧视口不会盖住新的导入或内容。
+                    if (storageRevision && view.revision === storageRevision && Number.isFinite(view.viewport?.x) && Number.isFinite(view.viewport?.y) && view.viewport.k > 0 && Number.isFinite(view.viewport.k)) {
+                        project.viewport = view.viewport;
+                        project.updatedAt = view.updatedAt || project.updatedAt;
+                    }
+                } catch { /* 派生视口损坏时仍恢复完整画布中保存的位置。 */ }
+            }
+            if (storageRevision) persistedContent.set(canvasProjectStorageKey(storeName, entry.id), { project, revision: storageRevision });
+            projects.push(project);
         }
         return { projects, source: "split" };
     }
@@ -62,8 +85,19 @@ export async function loadCanvasProjects(storeName: string): Promise<LoadedCanva
 }
 
 export async function persistCanvasProject(storeName: string, project: CanvasProject) {
+    const key = canvasProjectStorageKey(storeName, project.id);
+    const previous = persistedContent.get(key);
+    if (previous && hasSameProjectContent(previous.project, project)) {
+        // 平移和缩放只保存几十字节的位置，不重新扫描媒体和序列化全部节点。
+        await localForageStorage.setItem(canvasProjectViewportKey(storeName, project.id), JSON.stringify({ revision: previous.revision, viewport: project.viewport, updatedAt: project.updatedAt }));
+        persistedContent.set(key, { project, revision: previous.revision });
+        return project;
+    }
     const prepared = await prepareCanvasProjectForPersistence(project);
-    await localForageStorage.setItem(canvasProjectStorageKey(storeName, project.id), JSON.stringify(prepared));
+    const revision = nanoid();
+    await localForageStorage.setItem(key, JSON.stringify({ ...prepared, storageRevision: revision }));
+    persistedContent.set(key, { project, revision });
+    await localForageStorage.removeItem(canvasProjectViewportKey(storeName, project.id));
     return prepared;
 }
 
@@ -85,6 +119,8 @@ export async function persistCanvasProjectIndex(storeName: string, projects: Can
 export async function removePersistedCanvasProjects(storeName: string, projectIds: Iterable<string>) {
     for (const projectId of projectIds) {
         await localForageStorage.removeItem(canvasProjectStorageKey(storeName, projectId));
+        await localForageStorage.removeItem(canvasProjectViewportKey(storeName, projectId));
+        persistedContent.delete(canvasProjectStorageKey(storeName, projectId));
     }
 }
 
