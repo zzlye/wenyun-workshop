@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { getImageBlob, uploadImage } from "@/services/image-storage";
 import { CanvasNodeType, type CanvasAssistantReference, type CanvasReferenceImage } from "../types";
 import type { CanvasProject } from "./use-canvas-store";
+import { NODE_DEFAULT_SIZE } from "../constants";
 
 const CANVAS_STORAGE_VERSION = 2;
 const INDEX_SUFFIX = ":projects:v2";
@@ -50,6 +51,43 @@ export function canvasProjectIndexKey(storeName: string) {
     return `${storeName}${INDEX_SUFFIX}`;
 }
 
+// 已退出使用的节点只在读取旧画布时识别，迁移后仍保留原有 ID、参数和引用关系。
+// 正常节点数组只检查一次，平移和缩放不重复扫描整张大画布。
+const checkedNodeLists = new WeakSet<CanvasProject["nodes"]>();
+export function migrateLegacyCanvasProject(project: CanvasProject): CanvasProject {
+    if (checkedNodeLists.has(project.nodes)) return project;
+    const legacyIds = new Set(project.nodes.filter((node) => node.type === CanvasNodeType.Config).map((node) => node.id));
+    if (!legacyIds.size) {
+        checkedNodeLists.add(project.nodes);
+        return project;
+    }
+    const nodes = project.nodes.map((node) => {
+        if (!legacyIds.has(node.id)) return node;
+        const metadata = node.metadata || {};
+        const type = metadata.generationMode === "video" ? CanvasNodeType.Video : metadata.generationMode === "text" ? CanvasNodeType.Text : CanvasNodeType.Image;
+        const prompt = metadata.prompt || metadata.content || "";
+        const hasOwnTask = Boolean(metadata.imageTaskId || metadata.videoTaskId);
+        return {
+            ...node,
+            type,
+            title: !node.title || node.title === "生成配置" ? NODE_DEFAULT_SIZE[type].title : node.title,
+            metadata: {
+                ...metadata,
+                legacyGenerationSource: true,
+                prompt,
+                content: type === CanvasNodeType.Text ? metadata.content || prompt : "",
+                // 旧配置卡只跟随子节点显示加载；实际任务留在原输出节点，不发起新的生成。
+                status: metadata.status === "loading" && !hasOwnTask ? "idle" as const : metadata.status,
+            },
+        };
+    });
+    checkedNodeLists.add(nodes);
+    const connections = project.connections.map((connection) => legacyIds.has(connection.toNodeId) && !connection.toSide
+        ? { ...connection, toSide: "left" as const }
+        : connection);
+    return { ...project, nodes, connections };
+}
+
 export async function loadCanvasProjects(storeName: string): Promise<LoadedCanvasProjects | null> {
     const indexValue = await localForageStorage.getItem(canvasProjectIndexKey(storeName));
     if (indexValue) {
@@ -73,7 +111,7 @@ export async function loadCanvasProjects(storeName: string): Promise<LoadedCanva
                 } catch { /* 派生视口损坏时仍恢复完整画布中保存的位置。 */ }
             }
             if (storageRevision) persistedContent.set(canvasProjectStorageKey(storeName, entry.id), { project, revision: storageRevision });
-            projects.push(project);
+            projects.push(migrateLegacyCanvasProject(project));
         }
         return { projects, source: "split" };
     }
@@ -81,10 +119,11 @@ export async function loadCanvasProjects(storeName: string): Promise<LoadedCanva
     const legacyValue = await localForageStorage.getItem(storeName);
     if (!legacyValue) return null;
     const legacy = JSON.parse(legacyValue) as { state?: { projects?: CanvasProject[] } };
-    return { projects: Array.isArray(legacy.state?.projects) ? legacy.state.projects : [], source: "legacy" };
+    return { projects: Array.isArray(legacy.state?.projects) ? legacy.state.projects.map(migrateLegacyCanvasProject) : [], source: "legacy" };
 }
 
 export async function persistCanvasProject(storeName: string, project: CanvasProject) {
+    project = migrateLegacyCanvasProject(project);
     const key = canvasProjectStorageKey(storeName, project.id);
     const previous = persistedContent.get(key);
     if (previous && hasSameProjectContent(previous.project, project)) {
@@ -135,6 +174,7 @@ export async function removeAllCanvasProjectStorage(storeName: string, projectId
 }
 
 export async function prepareCanvasProjectForPersistence(project: CanvasProject): Promise<CanvasProject> {
+    project = migrateLegacyCanvasProject(project);
     const nodes = [];
     for (const node of project.nodes) {
         const metadata = node.metadata;

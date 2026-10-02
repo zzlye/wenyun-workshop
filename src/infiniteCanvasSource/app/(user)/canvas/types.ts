@@ -12,6 +12,7 @@ export type ViewportTransform = {
 export enum CanvasNodeType {
     Image = "image",
     Text = "text",
+    // 仅供旧存档迁移识别，不再创建或渲染独立的生成配置卡片。
     Config = "config",
     Video = "video",
     Audio = "audio",
@@ -44,6 +45,8 @@ export type CanvasNodeMetadata = {
     errorDetails?: string;
     fontSize?: number;
     generationMode?: CanvasGenerationMode;
+    // 保留旧生成来源的重试查找能力，节点本身已经迁移成普通媒体或文本节点。
+    legacyGenerationSource?: boolean;
     generationType?: CanvasImageGenerationType;
     model?: string;
     size?: string;

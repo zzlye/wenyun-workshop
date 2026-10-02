@@ -3,6 +3,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CanvasNode } from "./canvas-node";
+import { migrateLegacyCanvasProject } from "../stores/canvas-project-persistence";
+import type { CanvasProject } from "../stores/use-canvas-store";
 import { CanvasNodeType, type CanvasNodeData } from "../types";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -113,5 +115,25 @@ describe("节点缩放与媒体切换", () => {
         expect(host.querySelector(type === CanvasNodeType.Video ? "video" : "audio")).not.toBeNull();
         await act(async () => root.render(<CanvasNode {...props} />));
         expect(host.querySelector(type === CanvasNodeType.Video ? "video" : "audio")).toBeNull();
+    });
+});
+
+// 使用实际节点组件验证旧画布迁移后的展示，而不是只检查类型字段。
+describe("退役配置节点的展示", () => {
+    it.each([CanvasNodeType.Image, CanvasNodeType.Text, CanvasNodeType.Video] as const)("旧配置迁移为 %s 后使用普通参数面板", async (mode) => {
+        const { props } = await renderNode();
+        const source: CanvasProject = {
+            id: "legacy", title: "旧画布", createdAt: "", updatedAt: "", connections: [], groups: [], chatSessions: [], activeChatId: null,
+            backgroundMode: "lines", showImageInfo: false, viewport: { x: 0, y: 0, k: 1 },
+            nodes: [{ ...props.data, type: CanvasNodeType.Config, title: "生成配置", metadata: { generationMode: mode, prompt: "保留内容" } }],
+        };
+        const node = migrateLegacyCanvasProject(source).nodes[0];
+        const renderPanel = vi.fn(() => <div data-testid="normal-parameters">普通节点参数</div>);
+        await act(async () => root.render(<CanvasNode {...props} data={node} showPanel renderPanel={renderPanel} />));
+        expect(host.textContent).not.toContain("生成配置");
+        expect(host.querySelector('[data-testid="normal-parameters"]')).not.toBeNull();
+        expect(renderPanel).toHaveBeenCalledWith(node);
+        expect(host.querySelector(".canvas-config-mode")).toBeNull();
+        expect(node.metadata?.prompt).toBe("保留内容");
     });
 });

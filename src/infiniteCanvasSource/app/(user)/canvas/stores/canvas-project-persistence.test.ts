@@ -200,6 +200,88 @@ describe("canvas project persistence", () => {
     });
 });
 
+describe("旧生成配置节点迁移", () => {
+    beforeEach(() => { storage.clear(); vi.clearAllMocks(); });
+
+    const cases = (["legacy", "split"] as const).flatMap((source) =>
+        (["image", "text", "video", undefined] as const).map((mode) => ({ source, mode })),
+    );
+    it.each(cases)("$source 存储中的 $mode 配置节点恢复成普通节点并保留素材和任务", async ({ source, mode }) => {
+        const project = legacyProject("retire-" + source + "-" + mode, mode);
+        if (source === "legacy") storage.set(STORE_NAME, JSON.stringify({ state: { projects: [project] } }));
+        else {
+            storage.set(canvasProjectIndexKey(STORE_NAME), JSON.stringify({ version: 2, projects: [{ id: project.id }] }));
+            storage.set(canvasProjectStorageKey(STORE_NAME, project.id), JSON.stringify(project));
+        }
+        const loaded = (await loadCanvasProjects(STORE_NAME))!.projects[0];
+        const targetType = mode === "text" ? CanvasNodeType.Text : mode === "video" ? CanvasNodeType.Video : CanvasNodeType.Image;
+        expect(loaded.nodes[0].type).toBe(targetType);
+        expect(loaded.nodes[0].title).not.toBe("生成配置");
+        expect(loaded.nodes[0]).toMatchObject({ id: "config", position: { x: 80, y: 40 }, width: 340, height: 240,
+            metadata: { prompt: "保留提示词", model: "saved-model", count: 3, inputOrder: ["ref"], status: "idle", videoGenerateAudio: false } });
+        expect(loaded.nodes[0].metadata?.content).toBe(mode === "text" ? "保留提示词" : "");
+        expect(loaded.nodes.slice(1)).toEqual(project.nodes.slice(1));
+        expect(loaded.connections).toEqual([{ ...project.connections[0], toSide: "left" }, project.connections[1]]);
+        expect(loaded.groups).toEqual(project.groups);
+        // 读取迁移不直接覆盖旧记录，保存完成前原数据仍可恢复。
+        const key = source === "legacy" ? STORE_NAME : canvasProjectStorageKey(STORE_NAME, project.id);
+        expect(storage.get(key)).toContain('"type":"config"');
+    });
+
+    it("保存、再次加载和视口更新不会复活旧节点或改变自定义标题", async () => {
+        const project = legacyProject("retire-save", "image");
+        project.nodes[0].title = "我的构图";
+        const saved = await persistCanvasProject(STORE_NAME, project);
+        expect(saved.nodes[0]).toMatchObject({ type: CanvasNodeType.Image, title: "我的构图" });
+        await persistCanvasProjectIndex(STORE_NAME, [project]);
+        const moved = { ...saved, viewport: { x: 10, y: 20, k: 0.5 } };
+        await persistCanvasProject(STORE_NAME, moved);
+        const loaded = (await loadCanvasProjects(STORE_NAME))!.projects[0];
+        expect(loaded.nodes[0].type).toBe(CanvasNodeType.Image);
+        expect(loaded.nodes[1].metadata?.videoTaskId).toBe("existing-video-task");
+        expect(loaded.viewport).toEqual(moved.viewport);
+    });
+
+    it.each(["image", "video"] as const)("旧节点自己的 %s 任务保留原 ID 和加载状态", async (mode) => {
+        const project = legacyProject("own-task-" + mode, mode);
+        Object.assign(project.nodes[0].metadata!, mode === "image"
+            ? { imageTaskId: "old-image-task", imageTaskAccessToken: "local-fixture", imageTaskIdempotencyKey: "old-request" }
+            : { videoTaskId: "old-video-task" });
+        storage.set(STORE_NAME, JSON.stringify({ state: { projects: [project] } }));
+        const metadata = (await loadCanvasProjects(STORE_NAME))!.projects[0].nodes[0].metadata!;
+        expect(metadata.status).toBe("loading");
+        expect(metadata.imageTaskId || metadata.videoTaskId).toBe("old-" + mode + "-task");
+        if (mode === "image") expect(metadata.imageTaskIdempotencyKey).toBe("old-request");
+    });
+
+    it("导入和更新旧画布均进入统一迁移，旧对象本身不被改写", async () => {
+        const { useCanvasStore, flushCanvasStorePersistence } = await import("./use-canvas-store");
+        await useCanvasStore.persist.rehydrate();
+        const source = legacyProject("retire-import", "video");
+        const original = structuredClone(source);
+        const id = useCanvasStore.getState().importProject(source);
+        expect(useCanvasStore.getState().openProject(id)?.nodes[0].type).toBe(CanvasNodeType.Video);
+        useCanvasStore.getState().updateProject(id, { nodes: original.nodes, connections: original.connections });
+        expect(useCanvasStore.getState().openProject(id)?.nodes[0].type).toBe(CanvasNodeType.Video);
+        expect(source).toEqual(original);
+        await flushCanvasStorePersistence();
+        expect((await loadCanvasProjects(STORE_NAME))!.projects.find((project) => project.id === id)?.nodes[0].type).toBe(CanvasNodeType.Video);
+    });
+});
+
+function legacyProject(id: string, mode?: "image" | "text" | "video"): CanvasProject {
+    return { ...createProject(id), nodes: [
+        { id: "config", type: CanvasNodeType.Config, title: "生成配置", position: { x: 80, y: 40 }, width: 340, height: 240,
+          metadata: { generationMode: mode, prompt: "保留提示词", content: "", model: "saved-model", count: 3, inputOrder: ["ref"], status: "loading", videoGenerateAudio: false } },
+        { id: "result", type: CanvasNodeType.Video, title: "视频生成", position: { x: 500, y: 40 }, width: 420, height: 236,
+          metadata: { videoTaskId: "existing-video-task", status: "loading", prompt: "实际任务提示词" } },
+        { id: "ref", type: CanvasNodeType.Image, title: "原参考图", position: { x: -300, y: 40 }, width: 340, height: 240, metadata: { content: "https://example.test/ref.png" } },
+    ], connections: [
+        { id: "input", fromNodeId: "ref", toNodeId: "config" },
+        { id: "output", fromNodeId: "config", toNodeId: "result", fromSide: "right", toSide: "left" },
+    ], groups: [{ id: "group", title: "作品", nodeIds: ["config", "result"], color: "blue", layout: "free", padding: 20 }] };
+}
+
 function createProject(id: string): CanvasProject {
     const now = "2026-08-06T00:00:00.000Z";
     return {

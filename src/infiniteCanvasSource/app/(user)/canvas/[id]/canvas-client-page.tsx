@@ -44,11 +44,10 @@ import { getCanvasNodeLayoutPositions } from "../utils/canvas-layout";
 import { App, Button, Dropdown, Input, Modal } from "antd";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "../constants";
 import { ActiveConnectionPath, ConnectionPath } from "../components/canvas-connections";
-import { CanvasConfigNodePanel } from "../components/canvas-config-node-panel";
 import { CanvasNodeContextMenu } from "../components/canvas-context-menu";
 import { CanvasNodeAngleDialog, type CanvasImageAngleParams } from "../components/canvas-node-angle-dialog";
 import { CanvasNodeCropDialog, type CanvasImageCropRect } from "../components/canvas-node-crop-dialog";
-import { buildCanvasImageFailureMessage, buildConnectedPromptText, buildNodeChatMessages, buildNodeGenerationContext, buildNodeGenerationInputs, hydrateNodeGenerationContext, mergeNodeReferenceAudios, mergeNodeReferenceImages, stripConnectedPromptSuffix, type NodeGenerationInput } from "../components/canvas-node-generation";
+import { buildCanvasImageFailureMessage, buildConnectedPromptText, buildNodeChatMessages, buildNodeGenerationContext, buildNodeGenerationInputs, hydrateNodeGenerationContext, mergeNodeReferenceAudios, mergeNodeReferenceImages, stripConnectedPromptSuffix } from "../components/canvas-node-generation";
 import { hasImageTaskCredentials } from "../../../../../lib/imageTasks";
 import { CanvasNodeHoverToolbar, CanvasNodeInfoModal } from "../components/canvas-node-hover-toolbar";
 import { InfiniteCanvas } from "../components/infinite-canvas";
@@ -146,7 +145,7 @@ const CLEARED_VIDEO_TASK_METADATA = {
 const ASSET_CATEGORIES: AssetCategory[] = ["人物", "场景", "物品", "风格", "其他"];
 const CANVAS_FILE_UPLOAD_CONCURRENCY = 3;
 
-function createCanvasNode(type: CanvasNodeType, position: Position, metadata?: CanvasNodeMetadata): CanvasNodeData {
+function createCanvasNode(type: CreatableCanvasNodeType, position: Position, metadata?: CanvasNodeMetadata): CanvasNodeData {
     const spec = getNodeSpec(type);
     const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -1196,15 +1195,6 @@ function InfiniteCanvasPage() {
 
         return { nodeIds, connectionIds };
     }, [activeNodeId, connections]);
-
-    const configInputsById = useMemo(() => {
-        const map = new Map<string, NodeGenerationInput[]>();
-        nodes.forEach((node) => {
-            if (node.type !== CanvasNodeType.Config) return;
-            map.set(node.id, buildNodeGenerationInputs(node.id, nodes, connections));
-        });
-        return map;
-    }, [connections, nodes]);
 
     const createNode = useCallback(
         (type: CreatableCanvasNodeType, position?: Position) => {
@@ -3495,29 +3485,6 @@ function InfiniteCanvasPage() {
         [connections, handleConfigNodeChange, handleGenerateNode, handleNodeImageSettingsOpenChange, handleNodePromptChange, nodes, runningNodeIds],
     );
 
-    const handleConfigNodeGenerate = useCallback(
-        (nodeId: string) => {
-            const target = nodesRef.current.find((item) => item.id === nodeId);
-            void handleGenerateNode(nodeId, target?.metadata?.generationMode || "image", target?.metadata?.prompt || "");
-        },
-        [handleGenerateNode],
-    );
-
-    const renderCanvasConfigNodeContent = useCallback(
-        (contentNode: CanvasNodeData) => (
-            <CanvasConfigNodePanel
-                node={contentNode}
-                isRunning={isCanvasNodeGenerationLocked(contentNode, runningNodeIds)}
-                inputSummary={getInputSummary(configInputsById.get(contentNode.id) || [])}
-                inputs={configInputsById.get(contentNode.id) || []}
-                onConfigChange={handleConfigNodeChange}
-                onTextInputChange={handleNodeContentChange}
-                onGenerate={handleConfigNodeGenerate}
-            />
-        ),
-        [configInputsById, handleConfigNodeChange, handleConfigNodeGenerate, handleNodeContentChange, runningNodeIds],
-    );
-
     if (!projectLoaded) return <CanvasRefreshShell />;
 
     return (
@@ -3658,7 +3625,6 @@ function InfiniteCanvasPage() {
                             batchMotion={batchMotionById.get(node.id)}
                             showImageInfo={showImageInfo}
                             renderPanel={renderCanvasNodePromptPanel}
-                            renderNodeContent={renderCanvasConfigNodeContent}
                             onMouseDown={handleNodeMouseDown}
                             onHoverStart={handleNodeHoverStart}
                             onHoverEnd={handleNodeHoverEnd}
@@ -4401,13 +4367,6 @@ function applyNodeConfigPatch(node: CanvasNodeData, patch: Partial<CanvasNodeDat
     return size && (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video) ? { ...next, ...size, position: { x: node.position.x + node.width / 2 - size.width / 2, y: node.position.y + node.height / 2 - size.height / 2 } } : next;
 }
 
-function getInputSummary(inputs: NodeGenerationInput[]) {
-    return {
-        textCount: inputs.filter((input) => input.type === "text").length,
-        imageCount: inputs.filter((input) => input.type === "image").length,
-    };
-}
-
 function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefined, mode: CanvasNodeGenerationMode, activeProfileId: string): AiConfig {
     const defaultModel = mode === "image" ? config.imageModel : mode === "video" ? config.videoModel : config.textModel;
     const model = node?.metadata?.model || defaultModel || config.model || defaultConfig.model;
@@ -4447,7 +4406,7 @@ function findRetrySourceNode(nodeId: string, nodes: CanvasNodeData[], connection
         if (visited.has(id)) continue;
         visited.add(id);
         const node = nodes.find((item) => item.id === id);
-        if (node?.type === CanvasNodeType.Config) return node;
+        if (node?.metadata?.legacyGenerationSource) return node;
         connections.filter((connection) => connection.toNodeId === id).forEach((connection) => queue.push(connection.fromNodeId));
     }
     return null;
