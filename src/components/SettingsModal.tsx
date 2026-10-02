@@ -1165,6 +1165,7 @@ export default function SettingsModal() {
               </div>
             )}
 
+            {/* 视频页仅保留 API 连接与模型选择，生成参数由画布节点单独设置。 */}
             {activeTab === 'videoApi' && (
               <div className="space-y-5">
                 <ExternalApiConfigSection
