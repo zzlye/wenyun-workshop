@@ -1,6 +1,6 @@
 export type PreviewRequest = { promise: Promise<string>; release: () => void };
 
-/** 缩略图独立使用引用计数与并发队列，不持有原图，也不回收仍在显示的地址。 */
+/** 图片显示使用引用计数与并发队列，限制空闲缓存，不回收仍在显示的地址。 */
 export function createImagePreviewCache(load: (key: string) => Promise<Blob>, options: { concurrency?: number; idleLimit?: number } = {}) {
     type Entry = { key: string; users: number; url: string; invalid: boolean; done: boolean; promise: Promise<string>; resolve: (url: string) => void; reject: (error: unknown) => void };
     const entries = new Map<string, Entry>();
@@ -58,7 +58,7 @@ export function createImagePreviewCache(load: (key: string) => Promise<Blob>, op
                 if (priority) queue.unshift(entry);
                 else queue.push(entry);
             }
-            // 重新访问的空闲缩略图排在末尾，优先回收更早离开视口的缩略图。
+            // 重新访问的空闲图片排在末尾，优先回收更早离开视口的图片。
             entries.delete(key);
             entries.set(key, entry);
             entry.users++;

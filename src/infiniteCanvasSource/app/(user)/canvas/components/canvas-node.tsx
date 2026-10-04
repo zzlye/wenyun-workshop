@@ -166,7 +166,7 @@ export const CanvasNode = React.memo(function CanvasNode({
         setTitleDraft(nextTitle || data.title);
     };
 
-    // 全览时只保留图片轮廓与小缩略图；悬停、选中或编辑立即恢复完整交互。
+    // 全览时精简外围控件，但仍显示原图；悬停、选中或编辑立即恢复完整交互。
     if (hasImageContent && scale < 0.35 && !hovered && !isSelected && !showPanel && !isConnectionTarget && !isEditingTitle && !isEditingContent && !isBatchRoot) {
         return (
             <div ref={elementRef} data-node-id={data.id} data-canvas-detail="compact"
