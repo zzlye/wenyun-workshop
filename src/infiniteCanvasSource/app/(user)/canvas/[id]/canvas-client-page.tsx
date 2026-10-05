@@ -3047,26 +3047,27 @@ function InfiniteCanvasPage() {
 
                 if (mode === "video") {
                     const spec = nodeSizeFromRatio(generationConfig.size, NODE_DEFAULT_SIZE[CanvasNodeType.Video].width, NODE_DEFAULT_SIZE[CanvasNodeType.Video].height) || NODE_DEFAULT_SIZE[CanvasNodeType.Video];
-                    const isEmptyVideoNode = sourceNode?.type === CanvasNodeType.Video && !sourceNode.metadata?.content;
-                    const videoId = isEmptyVideoNode ? nodeId : nanoid();
+                    // 视频节点内发送始终更新自身；已有结果也不派生新节点，保留上游连线及旧视频直到新结果成功。
+                    const isVideoNode = sourceNode?.type === CanvasNodeType.Video;
+                    const videoId = isVideoNode ? nodeId : nanoid();
                     const parent = sourceNode?.position || { x: 0, y: 0 };
                     const videoNode: CanvasNodeData = {
                         id: videoId,
                         type: CanvasNodeType.Video,
                         title: effectivePrompt.slice(0, 32) || "Generated Video",
-                        position: isEmptyVideoNode ? sourceNode.position : { x: parent.x + (sourceNode?.width || spec.width) + 96, y: parent.y },
-                        width: isEmptyVideoNode ? sourceNode.width : spec.width,
-                        height: isEmptyVideoNode ? sourceNode.height : spec.height,
+                        position: isVideoNode ? sourceNode.position : { x: parent.x + (sourceNode?.width || spec.width) + 96, y: parent.y },
+                        width: isVideoNode ? sourceNode.width : spec.width,
+                        height: isVideoNode ? sourceNode.height : spec.height,
                         metadata: { prompt: sourcePrompt, generationPrompt: effectivePrompt, status: NODE_STATUS_LOADING, generationStartedAt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, videoGenerateAudio: generationConfig.videoGenerateAudio, videoMode: generationConfig.videoMode, videoExtraParameters: generationConfig.videoExtraParameters, vquality: generationConfig.vquality, videoTaskId: undefined, references: generationContext.referenceImages.map(referenceUrl).filter((url): url is string => Boolean(url)) },
                     };
                     pendingChildIds = [videoId];
                     if (videoId !== nodeId) markCanvasNodeRunning(videoId);
                     commitGenerationNodes((prev) =>
-                        isEmptyVideoNode
+                        isVideoNode
                             ? prev.map((node) => (node.id === nodeId ? { ...node, ...videoNode, title: getGeneratedNodeTitle(node, videoNode.title), metadata: { ...node.metadata, ...videoNode.metadata } } : node))
                             : [...prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_SUCCESS } } : node)), videoNode],
                     );
-                    if (!isEmptyVideoNode) commitGenerationConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: videoId }]);
+                    if (!isVideoNode) commitGenerationConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: videoId }]);
                     const video = await uploadMediaFile(
                         await requestVideoGeneration(
                             generationConfig,
