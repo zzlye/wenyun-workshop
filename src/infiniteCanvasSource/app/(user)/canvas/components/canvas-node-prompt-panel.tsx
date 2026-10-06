@@ -758,7 +758,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
             data-canvas-editor
             className={`rounded-2xl border shadow-2xl backdrop-blur ${isPromptExpanded
                 ? "fixed left-1/2 top-1/2 z-[1000] max-h-[calc(100vh-32px)] w-[min(760px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto p-4"
-                : "w-[640px] max-w-[calc(100vw-24px)] p-3"}`}
+                : "w-full min-w-0 p-3"}`}
             style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
