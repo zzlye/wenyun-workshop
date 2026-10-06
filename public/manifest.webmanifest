@@ -1,7 +1,7 @@
 {
-  "name": "文运工坊",
-  "short_name": "文运工坊",
-  "description": "文运工坊图像生成工作台",
+  "name": "西米露",
+  "short_name": "西米露",
+  "description": "西米露图像生成工作台",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

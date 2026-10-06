@@ -48,9 +48,9 @@ export function AppTopNav() {
                                 </button>
                                 <span className="text-[17px] font-bold tracking-tight sm:text-lg">画布工坊</span>
                                 {/* 两个工坊沿用同一套切换按钮，保持顶栏结构和操作语义一致。 */}
-                                <button type="button" className="canvas-launch-button shrink-0" onClick={() => router.backToHome()} aria-label="打开文运工坊" title="打开文运工坊">
+                                <button type="button" className="canvas-launch-button shrink-0" onClick={() => router.backToHome()} aria-label="打开生图工坊" title="打开生图工坊">
                                     <WandSparkles className="size-4" />
-                                    <span>文运工坊</span>
+                                    <span>生图工坊</span>
                                 </button>
                             </div>
 

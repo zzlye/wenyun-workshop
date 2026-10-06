@@ -4,6 +4,7 @@ import { parseNewApiUserBalance, type NewApiStatusInfo } from './newApi'
 
 export const ACCOUNT_KEY_REFRESH_COOLDOWN_MS = 30 * 60 * 1000
 const ACCOUNT_BOUND_TOKEN_PREFIX = 'wy-bound'
+// 保留旧品牌的绑定名称，已有账号仍能找回原来的生成密钥。
 const LEGACY_ACCOUNT_BOUND_TOKEN_PREFIX = '文运工坊绑定 Key'
 
 export interface NewApiLoginPayload {

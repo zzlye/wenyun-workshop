@@ -1029,7 +1029,7 @@ export default function SettingsModal() {
                 <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-500/15 dark:bg-blue-500/[0.08]">
                   <h4 className="text-sm font-bold text-blue-700 dark:text-blue-300">出图 API 配置</h4>
                   <p data-selectable-text className="mt-1 text-xs leading-relaxed text-blue-600/80 dark:text-blue-200/70">
-                    用于文运工坊和画布工坊的图片生成、图片编辑请求。
+                    用于生图工坊和画布工坊的图片生成、图片编辑请求。
                   </p>
                 </div>
                 <div className="block">
@@ -1498,7 +1498,7 @@ export default function SettingsModal() {
                       <div className="rounded-xl border border-gray-100 bg-white/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.04]">
                         <div className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">上传范围</div>
                         <div className="space-y-2">
-                          <Checkbox checked={cloudSync.uploadTasks} onChange={(checked) => updateCloudSync({ uploadTasks: checked })} label="文运生成记录和图片" />
+                          <Checkbox checked={cloudSync.uploadTasks} onChange={(checked) => updateCloudSync({ uploadTasks: checked })} label="生图工坊记录和图片" />
                           <Checkbox checked={cloudSync.uploadCanvasProjects} onChange={(checked) => updateCloudSync({ uploadCanvasProjects: checked })} label={`画布工坊（${canvasProjects.length} 个）`} />
                           <Checkbox checked={cloudSync.uploadAssets} onChange={(checked) => updateCloudSync({ uploadAssets: checked })} label={`我的素材（${assets.length} 个）`} />
                         </div>
@@ -1508,7 +1508,7 @@ export default function SettingsModal() {
                       <div className="rounded-xl border border-gray-100 bg-white/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.04]">
                         <div className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">拉取范围</div>
                         <div className="space-y-2">
-                          <Checkbox checked={cloudSync.pullTasks} onChange={(checked) => updateCloudSync({ pullTasks: checked })} label="文运生成记录和图片" />
+                          <Checkbox checked={cloudSync.pullTasks} onChange={(checked) => updateCloudSync({ pullTasks: checked })} label="生图工坊记录和图片" />
                           <Checkbox checked={cloudSync.pullCanvasProjects} onChange={(checked) => updateCloudSync({ pullCanvasProjects: checked })} label="画布工坊" />
                           <Checkbox checked={cloudSync.pullAssets} onChange={(checked) => updateCloudSync({ pullAssets: checked })} label="我的素材" />
                         </div>
@@ -1565,7 +1565,7 @@ export default function SettingsModal() {
                   </div>
                   <div className="grid gap-3">
                     <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                      <div className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">文运工坊</div>
+                      <div className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">生图工坊</div>
                       <div className="flex flex-wrap gap-x-6 gap-y-3">
                         <Checkbox checked={exportTasks} onChange={setExportTasks} label="生成记录、对话和图片" />
                       </div>
@@ -1653,11 +1653,11 @@ export default function SettingsModal() {
                     <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">从备份中导入</div>
                     <div className="flex flex-wrap gap-x-6 gap-y-3">
                       <Checkbox checked={importConfig} onChange={setImportConfig} label="配置和 API" />
-                      <Checkbox checked={importTasks} onChange={setImportTasks} label="文运生成记录和图片" />
+                      <Checkbox checked={importTasks} onChange={setImportTasks} label="生图工坊记录和图片" />
                       <Checkbox checked={importCanvasProjects} onChange={setImportCanvasProjects} label="画布工坊" />
                       <Checkbox checked={importAssets} onChange={setImportAssets} label="我的素材" />
                     </div>
-                    <div className="text-xs leading-relaxed text-gray-400 dark:text-gray-500">导入会合并到当前数据，不会覆盖已有画布和素材；旧版文运备份、单独画布包、单独素材包也可以在这里导入。</div>
+                    <div className="text-xs leading-relaxed text-gray-400 dark:text-gray-500">导入会合并到当前数据，不会覆盖已有画布和素材；旧版备份、单独画布包、单独素材包也可以在这里导入。</div>
                   </div>
                   <button
                     onClick={() => importInputRef.current?.click()}
@@ -1692,7 +1692,7 @@ export default function SettingsModal() {
                   </div>
                   <div className="flex flex-wrap gap-x-6 gap-y-3">
                     <Checkbox checked={clearConfig} onChange={setClearConfig} label="配置和 API" tone="danger" />
-                    <Checkbox checked={clearTasks} onChange={setClearTasks} label="文运生成记录和图片" tone="danger" />
+                    <Checkbox checked={clearTasks} onChange={setClearTasks} label="生图工坊记录和图片" tone="danger" />
                     <Checkbox checked={clearCanvasProjects} onChange={setClearCanvasProjects} label="画布工坊" tone="danger" />
                     <Checkbox checked={clearAssets} onChange={setClearAssets} label="我的素材" tone="danger" />
                   </div>

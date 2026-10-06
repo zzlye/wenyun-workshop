@@ -3,7 +3,7 @@ import type { TaskRecord } from '../types'
 import { useStore, ensureImageCached, ensureImageThumbnailCached, subscribeImageThumbnail, updateTaskInStore, retryTask } from '../store'
 import { formatImageRatioWithRequestedSize } from '../lib/size'
 import { getParamDisplay, ActualValueBadge } from '../lib/paramDisplay'
-import { DEFAULT_IMAGES_MODEL, DEFAULT_FAL_MODEL } from '../lib/apiProfiles'
+import { DEFAULT_IMAGES_MODEL, DEFAULT_FAL_MODEL, getTaskApiProfileDisplayName } from '../lib/apiProfiles'
 import { getSafeImageDisplayUrl } from '../lib/imageApiShared'
 import { isAgentTaskPromptPending } from '../lib/taskPromptDisplay'
 import { CodeIcon } from './icons'
@@ -580,14 +580,14 @@ export default function TaskCard({
               onTouchCancel={(e) => e.stopPropagation()}
             >
               {/* API Name */}
-              {(task.apiProfileName || task.apiProvider) && (
+              {(getTaskApiProfileDisplayName(task) || task.apiProvider) && (
                 <span 
                   className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-gray-600 dark:text-gray-300 text-xs flex-shrink-0"
-                  title={task.apiProfileName || task.apiProvider}
+                  title={getTaskApiProfileDisplayName(task) || task.apiProvider}
                 >
                   <CodeIcon className="w-3 h-3 flex-shrink-0 text-gray-400" />
                   <span className="truncate max-w-[8rem]">
-                    {task.apiProfileName || task.apiProvider}
+                    {getTaskApiProfileDisplayName(task) || task.apiProvider}
                   </span>
                 </span>
               )}

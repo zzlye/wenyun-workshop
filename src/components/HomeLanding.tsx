@@ -93,7 +93,7 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
       <div aria-hidden className="home-landing-shade" />
       <header className="relative z-10 flex items-center justify-between px-6 py-6 sm:px-10 sm:py-8">
         <div className="text-sm font-semibold tracking-[0.18em] text-white/90">
-          文运生图
+          西米露
         </div>
         <div className="flex items-center gap-2">
           <button type="button" className="home-landing-icon-button" onClick={() => setShowLogin(true)} title={accountSession ? '账号' : '登录'}><LogIn className="size-4" /><span className="hidden sm:inline">{accountSession?.username || '登录'}</span></button>
@@ -110,10 +110,10 @@ export default function HomeLanding({ onOpenGallery, onOpenCanvas, onOpenSetting
       <main className="relative z-10 flex min-h-[calc(100vh-112px)] items-center px-4 pb-16 sm:px-8 sm:pb-20">
         <div className="w-full max-w-2xl px-2 py-8 sm:px-4 sm:py-10">
           <p className="mb-5 text-xs font-semibold tracking-[0.36em] text-white/70">CREATIVE IMAGE STUDIO</p>
-          <h1 className="max-w-2xl text-5xl font-semibold tracking-[0.02em] text-white drop-shadow-2xl sm:text-7xl">文运生图</h1>
+          <h1 className="max-w-2xl text-5xl font-semibold tracking-[0.02em] text-white drop-shadow-2xl sm:text-7xl">西米露</h1>
           <p className="mt-5 max-w-md text-sm leading-7 text-white/70 sm:text-base">把灵感变成画面，从一个想法开始。</p>
           <nav className="mt-10 flex max-w-[300px] flex-col gap-3" aria-label="工作区">
-            <button type="button" className="home-landing-entry home-landing-entry-primary" onClick={onOpenGallery}><span className="flex-1 text-left"><strong>文运工坊</strong><small>生成与管理图片</small></span><span className="text-xl text-gray-500">›</span></button>
+            <button type="button" className="home-landing-entry home-landing-entry-primary" onClick={onOpenGallery}><span className="flex-1 text-left"><strong>生图工坊</strong><small>生成与管理图片</small></span><span className="text-xl text-gray-500">›</span></button>
             <button type="button" className="home-landing-entry" onClick={onOpenCanvas}><span className="flex-1 text-left"><strong>画布工坊</strong><small>组织画布创作</small></span><span className="text-xl text-gray-500">›</span></button>
           </nav>
         </div>

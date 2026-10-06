@@ -49,7 +49,7 @@ const lockedFetchProxyRoutes: LockedFetchProxyRoute[] = [
     auth: {
       accessTokenEnv: 'NEWAPI_WENYUN_ACCESS_TOKEN',
       userIdEnv: 'NEWAPI_WENYUN_USER_ID',
-      label: '文运站成功率代理',
+      label: '西米露成功率代理',
     },
   },
   {
@@ -71,7 +71,7 @@ const lockedFetchProxyRoutes: LockedFetchProxyRoute[] = [
     auth: {
       accessTokenEnv: 'NEWAPI_WENYUN_ACCESS_TOKEN',
       userIdEnv: 'NEWAPI_WENYUN_USER_ID',
-      label: '文运站价格代理',
+      label: '西米露价格代理',
     },
   },
   {

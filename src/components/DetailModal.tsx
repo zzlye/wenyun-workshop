@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useStore, getCachedImage, ensureImageCached, reuseConfig, editOutputs, removeTask, updateTaskInStore, showCodexCliPrompt, getCodexCliPromptKey, retryTask } from '../store'
+import { getTaskApiProfileDisplayName } from '../lib/apiProfiles'
 import { useCloseOnEscape } from '../hooks/useCloseOnEscape'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
 import { useTooltip } from '../hooks/useTooltip'
@@ -215,7 +216,7 @@ export default function DetailModal() {
   const isOpenAiTask = (taskProvider ?? 'openai') === 'openai'
   const showPromptWarning = Boolean(isOpenAiTask && task.apiMode === 'responses' && currentOutputImageId && (!currentRevisedPrompt || showRevisedPrompt) && !hasHandledPromptWarning)
   const taskProviderName = taskProvider === 'fal' ? 'fal.ai' : taskProvider ? 'OpenAI' : '未知'
-  const taskProfileName = task.apiProfileName || '未知'
+  const taskProfileName = getTaskApiProfileDisplayName(task) || '未知'
   const taskModel = task.apiModel || '未知'
   const showSourceInfo = Boolean(task.apiProvider || task.apiProfileName || task.apiModel)
   const isFalReconnecting = task.status === 'error' && task.falRecoverable

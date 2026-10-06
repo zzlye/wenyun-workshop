@@ -67,7 +67,7 @@ export default function Header({ onOpenCanvas, onOpenHome }: HeaderProps) {
             {/* 标题不保留额外外边距，与相邻按钮共用同一条垂直中心线。 */}
             <h1 className="!m-0 inline-flex shrink-0 items-center whitespace-nowrap">
               <span className="text-[17px] sm:text-lg font-bold tracking-tight text-gray-800 dark:text-gray-100 transition-colors">
-                文运工坊
+                西米露
               </span>
             </h1>
             <button

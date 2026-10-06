@@ -81,7 +81,7 @@ export async function chooseLocalSyncFile(fileName: string) {
     suggestedName: ensureZipFileName(fileName),
     types: [
       {
-        description: '文运工坊备份文件',
+        description: '西米露备份文件',
         accept: { 'application/zip': ['.zip'] },
       },
     ],

@@ -19,6 +19,7 @@ import type {
   CustomProviderTemplate,
   NewApiAccountSession,
   ReferenceImageEditAction,
+  TaskRecord,
 } from '../types'
 import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_STREAM_PARTIAL_IMAGES } from '../types'
 import { normalizeBaseUrl, shouldUseApiProxyForBaseUrl } from './devProxy'
@@ -165,11 +166,19 @@ export function setApiPriceSnapshot(settings: AppSettings, profileId: string, sn
 }
 
 const LOCKED_OPENAI_PROFILE_DEFINITIONS = [
-  { id: LOCKED_WENYUN_PROFILE_ID, name: '文运站', baseUrl: LOCKED_WENYUN_BASE_URL },
+  { id: LOCKED_WENYUN_PROFILE_ID, name: '西米露', baseUrl: LOCKED_WENYUN_BASE_URL },
   { id: LOCKED_PUBLIC_PROFILE_ID, name: '公益站', baseUrl: LOCKED_PUBLIC_BASE_URL },
 ] as const
 
 export const LOCKED_OPENAI_API_PROFILES = LOCKED_OPENAI_PROFILE_DEFINITIONS
+
+/** 旧任务只更新站点显示名，保留原始记录和配置标识，避免影响账号及任务复用。 */
+export function getTaskApiProfileDisplayName(task: Pick<TaskRecord, 'apiProfileId' | 'apiProfileName'>): string | undefined {
+  if (task.apiProfileId === LOCKED_WENYUN_PROFILE_ID
+    || (!task.apiProfileId && task.apiProfileName === '文运站')) return '西米露'
+  return task.apiProfileName
+}
+
 
 const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai', 'fal'])
 const CLOUD_SYNC_PROVIDERS = new Set<CloudSyncProvider>([

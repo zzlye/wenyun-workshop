@@ -102,7 +102,7 @@ export default function AccountBalanceBar({
     const nextMode = settings.accountApiKeyMode === 'account' ? 'manual' : 'account'
     if (nextMode === 'account' && !accountSession?.boundApiKey) {
       setShowAccountLogin(true)
-      showToast('请先登录文运站账号', 'error')
+      showToast('请先登录西米露账号', 'error')
       return
     }
     setSettings({ accountApiKeyMode: nextMode })

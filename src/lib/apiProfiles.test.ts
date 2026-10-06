@@ -1,8 +1,28 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_IMAGES_MODEL, DEFAULT_SETTINGS, FIXED_IMAGE_MODEL_OPTIONS, GPT_IMAGE_2_VIP_MODEL, GPT_IMAGE_2_SUPER_MODEL, allowsCustomImageRatioForProfile, createDefaultOpenAIProfile, getActiveApiProfile, getApiBalanceSnapshot, getApiModelUnitCostText, getBananaPricedImageModel, getFixedImageRequestModel, getFixedImageModelUnitCostText, getImageSizeTiersForProfile, LOCKED_PUBLIC_PROFILE_ID, LOCKED_WENYUN_PROFILE_ID, mergeImportedSettings, normalizeImageSizeForProfile, normalizeImageModelForProfile, normalizeApiFormat, normalizeSettings, resolveImageApiFormat, setApiBalanceSnapshot, setApiPriceSnapshot } from './apiProfiles'
+import { DEFAULT_IMAGES_MODEL, DEFAULT_SETTINGS, FIXED_IMAGE_MODEL_OPTIONS, GPT_IMAGE_2_VIP_MODEL, GPT_IMAGE_2_SUPER_MODEL, allowsCustomImageRatioForProfile, createDefaultOpenAIProfile, getActiveApiProfile, getTaskApiProfileDisplayName, getApiBalanceSnapshot, getApiModelUnitCostText, getBananaPricedImageModel, getFixedImageRequestModel, getFixedImageModelUnitCostText, getImageSizeTiersForProfile, LOCKED_PUBLIC_PROFILE_ID, LOCKED_WENYUN_PROFILE_ID, mergeImportedSettings, normalizeImageSizeForProfile, normalizeImageModelForProfile, normalizeApiFormat, normalizeSettings, resolveImageApiFormat, setApiBalanceSnapshot, setApiPriceSnapshot } from './apiProfiles'
 
 afterEach(() => {
   vi.unstubAllEnvs()
+})
+
+describe('站点改名兼容历史数据', () => {
+  it('旧配置改用新显示名，保留站点标识、密钥及公益站名称', () => {
+    const oldProfile = { ...createDefaultOpenAIProfile(), name: '文运站', apiKey: 'saved-test-key' }
+    const saved = normalizeSettings({ profiles: [oldProfile], activeProfileId: LOCKED_WENYUN_PROFILE_ID })
+    const active = getActiveApiProfile(saved)
+    expect(active).toMatchObject({ id: oldProfile.id, name: '西米露', baseUrl: oldProfile.baseUrl, apiKey: oldProfile.apiKey })
+    expect(saved.profiles.find((profile) => profile.id === LOCKED_PUBLIC_PROFILE_ID)?.name).toBe('公益站')
+  })
+
+  it('历史任务显示新品牌，保留原始记录和其他服务商名称', () => {
+    const oldTask = { apiProfileId: LOCKED_WENYUN_PROFILE_ID, apiProfileName: '文运站' }
+    expect(getTaskApiProfileDisplayName(oldTask)).toBe('西米露')
+    expect(oldTask.apiProfileName).toBe('文运站')
+    expect(getTaskApiProfileDisplayName({ apiProfileName: '文运站' })).toBe('西米露')
+    expect(getTaskApiProfileDisplayName({ apiProfileId: LOCKED_PUBLIC_PROFILE_ID, apiProfileName: '公益站' })).toBe('公益站')
+    expect(getTaskApiProfileDisplayName({ apiProfileId: 'custom', apiProfileName: '文运站' })).toBe('文运站')
+    expect(getTaskApiProfileDisplayName({})).toBeUndefined()
+  })
 })
 
 describe('主页主播模式', () => {

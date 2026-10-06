@@ -4028,7 +4028,7 @@ function CanvasTopBar({
                         menu={{
                             items: [
                                 { key: "home", icon: <Home className="size-4" />, label: "主页", onClick: onHome },
-                                { key: "wenyun", icon: <WandSparkles className="size-4" />, label: "文运工坊", onClick: () => router.openWenyun() },
+                                { key: "wenyun", icon: <WandSparkles className="size-4" />, label: "生图工坊", onClick: () => router.openWenyun() },
                                 { key: "projects", icon: <Images className="size-4" />, label: "我的画布", onClick: onProjects },
                                 { type: "divider" },
                                 { key: "new", icon: <Plus className="size-4" />, label: "新建画布", onClick: onCreateProject },

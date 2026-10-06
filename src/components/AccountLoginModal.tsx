@@ -389,7 +389,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
       <div className="max-h-[calc(100vh-4rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-white/60 bg-white/95 p-5 shadow-2xl backdrop-blur-xl dark:border-white/[0.08] dark:bg-gray-950/95">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">文运站账号</h3>
+            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">西米露账号</h3>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">登录后可使用账号绑定 Key、在线充值和兑换码。</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-100" aria-label="关闭">

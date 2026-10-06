@@ -18,7 +18,7 @@ import type {
   StoredImage,
 } from './types'
 import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_PARAMS } from './types'
-import { DEFAULT_SETTINGS, getActiveApiProfile, getCustomProviderDefinition, mergeImportedSettings, normalizeSettings, validateApiProfile } from './lib/apiProfiles'
+import { DEFAULT_SETTINGS, getActiveApiProfile, getTaskApiProfileDisplayName, getCustomProviderDefinition, mergeImportedSettings, normalizeSettings, validateApiProfile } from './lib/apiProfiles'
 import { getFixedImagePricing } from './lib/modelPricing'
 import { getEffectiveImageApiProfile, validateEffectiveImageApiProfile } from './lib/accountApiKey'
 import { dismissAllTooltips } from './lib/tooltipDismiss'
@@ -1746,7 +1746,7 @@ function getReusedTaskApiProfile(settings: AppSettings, profileId: string | null
 }
 
 function getTaskApiProfileName(task: TaskRecord) {
-  return task.apiProfileName || task.apiModel || '未知配置'
+  return getTaskApiProfileDisplayName(task) || task.apiModel || '未知配置'
 }
 
 function isFalConnectionRecoverableError(err: unknown) {
@@ -1901,7 +1901,7 @@ async function completeRecoveredImageTask(task: TaskRecord, result: Awaited<Retu
   const latest = useStore.getState().tasks.find((item) => item.id === task.id)
   if (!latest || latest.status !== 'running') return
 
-  const outputIds = result.images.map((dataUrl) => createCachedImageId(dataUrl, 'generated', '恢复文运异步任务时保存输出图'))
+  const outputIds = result.images.map((dataUrl) => createCachedImageId(dataUrl, 'generated', '恢复西米露异步任务时保存输出图'))
   const actualParamsByImage = mapActualParamsByImage(outputIds, result.actualParamsList)
   const revisedPromptByImage = result.revisedPrompts?.reduce<Record<string, string>>((acc, revisedPrompt, index) => {
     const imageId = outputIds[index]
