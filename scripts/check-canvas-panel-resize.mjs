@@ -68,11 +68,17 @@ try {
     const panel = node.querySelector('[data-canvas-editor]');
     const a = node.getBoundingClientRect();
     const b = panel.getBoundingClientRect();
-    return { nodeWidth: a.width, panelWidth: b.width, centerDelta: b.x + b.width / 2 - a.x - a.width / 2, gap: b.top - a.bottom, commits: window.resizeCommits };
+    const editor = panel.querySelector('[contenteditable]');
+    const button = panel.querySelector('button[aria-label="生成"]');
+    return { nodeWidth: a.width, nodeLeft: a.left, panelLeft: b.left, panelWidth: b.width, panelHeight: b.height, editorFont: parseFloat(getComputedStyle(editor).fontSize) * b.width / panel.offsetWidth, buttonHeight: button.getBoundingClientRect().height, viewportWidth: window.innerWidth, centerDelta: b.x + b.width / 2 - a.x - a.width / 2, gap: b.top - a.bottom, commits: window.resizeCommits };
   });
-  const aligned = (value, label) => {
-    assert.ok(Math.abs(value.nodeWidth - value.panelWidth) < 1, `${label} 节点宽 ${value.nodeWidth}，面板宽 ${value.panelWidth}`);
-    assert.ok(Math.abs(value.centerDelta) < 1, `${label} 面板没有居中`);
+  const aligned = (value, label, type = 'image') => {
+    const desired = Math.min(960, value.viewportWidth - 24, Math.max(520, value.nodeWidth * 640 / (type === 'video' ? 420 : 340)));
+    assert.ok(Math.abs(desired - value.panelWidth) < 2, `${label} 面板应宽 ${desired.toFixed(1)}，实际 ${value.panelWidth.toFixed(1)}`);
+    assert.ok(value.editorFont >= 11, `${label} 提示词字号太小：${value.editorFont}`);
+    assert.ok(Math.abs(value.buttonHeight / value.panelWidth - 40 / 640) < 0.002, `${label} 按钮没有随面板等比例放大`);
+    const center = Math.min(value.viewportWidth - 12 - desired / 2, Math.max(12 + desired / 2, value.nodeLeft + value.nodeWidth / 2));
+    assert.ok(Math.abs(value.panelLeft + value.panelWidth / 2 - center) < 1, `${label} 面板没有居中或避开屏幕边缘`);
     assert.ok(value.gap >= 0 && value.gap < 20, `${label} 面板没有贴在节点下方`);
   };
   for (const type of ['image', 'video', 'text']) {
@@ -95,11 +101,11 @@ try {
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         const during = await metrics();
         results.push({ type, scale, corner, during });
-        aligned(during, `${type}/${scale}/${corner} 拖动中`);
+        aligned(during, `${type}/${scale}/${corner} 拖动中`, type);
         assert.equal(during.commits, 0, '拖动中不应反复保存节点');
         await page.mouse.up();
         await page.waitForFunction(() => window.resizeCommits === 1);
-        aligned(await metrics(), '松手后');
+        aligned(await metrics(), '松手后', type);
         // 在同一次真实拖拽中缩回原尺寸，避免只覆盖单向放大。
         const endBox = await handle.boundingBox();
         const ex = endBox.x + endBox.width / 2;
@@ -109,7 +115,7 @@ try {
         await page.mouse.move(ex - dx, ey - dy, { steps: 6 });
         await page.mouse.up();
         await page.waitForFunction(() => window.resizeCommits === 2);
-        aligned(await metrics(), '缩小后');
+        aligned(await metrics(), '缩小后', type);
       }
     }
   }
@@ -126,6 +132,15 @@ try {
     return image?.complete && image.naturalWidth > 0;
   });
   await page.screenshot({ path: path.join(output, 'desktop.png') });
+  await page.setViewportSize({ width: 1000, height: 1000 });
+  for (const [label, width, scale] of [['reference', 340, 0.83], ['enlarged', 1400, 0.43], ['zoomed-out', 340, 0.2]]) {
+    await page.evaluate(options => window.resetNode(options), { width, scale, theme: 'dark' });
+    await page.waitForFunction(width => document.querySelector('[data-node-id="resize-test"]').style.width === `${width}px`, width);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    aligned(await metrics(), label);
+    results.push({ label, ...(await metrics()) });
+    await page.screenshot({ path: path.join(output, `${label}.png`) });
+  }
   await page.setViewportSize({ width: 390, height: 900 });
   await page.evaluate(() => window.resetNode({ width: 240, scale: 1 }));
   await panel.waitFor();
@@ -136,7 +151,7 @@ try {
   assert.ok((await expanded.boundingBox()).width <= 358, '展开输入框超出窄屏');
   await page.screenshot({ path: path.join(output, 'mobile-expanded.png') });
   assert.deepEqual(errors, []);
-  console.log(`PASS: ${results.length} resize cases; live alignment; one commit per drag; narrow screen; no page errors`);
+  console.log(`PASS: ${results.length} resize cases; proportional controls; readable text; one commit per drag; narrow screen; no page errors`);
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;
