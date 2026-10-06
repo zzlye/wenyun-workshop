@@ -325,7 +325,7 @@ export const CanvasNode = React.memo(function CanvasNode({
             <ConnectionHandleDot side="left" visible={hovered || isSelected || isConnecting} pointerY={handlePointerY} onMouseDown={(event) => onConnectStart(event, data.id, "target")} />
             <ConnectionHandleDot side="right" visible={data.type !== CanvasNodeType.Config && (hovered || isSelected || isConnecting)} pointerY={handlePointerY} onMouseDown={(event) => onConnectStart(event, data.id, "source")} />
 
-            {showPanel && renderPanel && data.type !== CanvasNodeType.Config && data.type !== CanvasNodeType.Audio ? <CanvasNodePanelFrame type={data.type} scale={scale}>{renderPanel(data)}</CanvasNodePanelFrame> : null}
+            {showPanel && renderPanel && data.type !== CanvasNodeType.Config && data.type !== CanvasNodeType.Audio ? <CanvasNodePanelFrame type={data.type}>{renderPanel(data)}</CanvasNodePanelFrame> : null}
         </div>
     );
 }, areCanvasNodePropsEqual);

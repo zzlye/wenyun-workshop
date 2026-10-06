@@ -73,13 +73,12 @@ try {
     return { nodeWidth: a.width, nodeLeft: a.left, panelLeft: b.left, panelWidth: b.width, panelHeight: b.height, editorFont: parseFloat(getComputedStyle(editor).fontSize) * b.width / panel.offsetWidth, buttonHeight: button.getBoundingClientRect().height, viewportWidth: window.innerWidth, centerDelta: b.x + b.width / 2 - a.x - a.width / 2, gap: b.top - a.bottom, commits: window.resizeCommits };
   });
   const aligned = (value, label, type = 'image') => {
-    const desired = Math.min(960, value.viewportWidth - 24, Math.max(520, value.nodeWidth * 640 / (type === 'video' ? 420 : 340)));
+    const desired = value.nodeWidth * 640 / (type === 'video' ? 420 : 340);
     assert.ok(Math.abs(desired - value.panelWidth) < 2, `${label} 面板应宽 ${desired.toFixed(1)}，实际 ${value.panelWidth.toFixed(1)}`);
-    assert.ok(value.editorFont >= 11, `${label} 提示词字号太小：${value.editorFont}`);
+    assert.ok(Math.abs(value.editorFont / value.panelWidth - 14 / 640) < 0.001, `${label} 文字没有随节点等比例缩放`);
     assert.ok(Math.abs(value.buttonHeight / value.panelWidth - 40 / 640) < 0.002, `${label} 按钮没有随面板等比例放大`);
-    const center = Math.min(value.viewportWidth - 12 - desired / 2, Math.max(12 + desired / 2, value.nodeLeft + value.nodeWidth / 2));
-    assert.ok(Math.abs(value.panelLeft + value.panelWidth / 2 - center) < 1, `${label} 面板没有居中或避开屏幕边缘`);
-    assert.ok(value.gap >= 0 && value.gap < 20, `${label} 面板没有贴在节点下方`);
+    assert.ok(Math.abs(value.centerDelta) < 1, `${label} 面板应始终与节点居中`);
+    assert.ok(Math.abs(value.gap / value.panelWidth - 12 / 640) < 0.001, `${label} 间距没有随节点等比例缩放`);
   };
   for (const type of ['image', 'video', 'text']) {
     for (const scale of [0.5, 1]) {
@@ -119,7 +118,7 @@ try {
       }
     }
   }
-  // 节点世界坐标宽度超过窗口时，缩小画布仍应保持面板与节点同宽，不能误用窗口宽度截断。
+  // 大节点与全览视图都保持原始比例，不用窗口宽度或最小字号钳制面板尺寸。
   await page.evaluate(() => window.resetNode({ width: 2400, scale: 0.5 }));
   await page.waitForFunction(() => document.querySelector('[data-node-id="resize-test"]').style.width === '2400px');
   aligned(await metrics(), '大节点缩放画布后');
@@ -133,7 +132,7 @@ try {
   });
   await page.screenshot({ path: path.join(output, 'desktop.png') });
   await page.setViewportSize({ width: 1000, height: 1000 });
-  for (const [label, width, scale] of [['reference', 340, 0.83], ['enlarged', 1400, 0.43], ['zoomed-out', 340, 0.2]]) {
+  for (const [label, width, scale] of [['reference', 340, 0.83], ['enlarged', 1400, 0.43], ['zoomed-out', 340, 0.2], ['minimum-zoom', 340, 0.05]]) {
     await page.evaluate(options => window.resetNode(options), { width, scale, theme: 'dark' });
     await page.waitForFunction(width => document.querySelector('[data-node-id="resize-test"]').style.width === `${width}px`, width);
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -141,17 +140,22 @@ try {
     results.push({ label, ...(await metrics()) });
     await page.screenshot({ path: path.join(output, `${label}.png`) });
   }
+  const beforeWindowResize = await metrics();
   await page.setViewportSize({ width: 390, height: 900 });
-  await page.evaluate(() => window.resetNode({ width: 240, scale: 1 }));
+  const afterWindowResize = await metrics();
+  assert.ok(Math.abs(beforeWindowResize.panelWidth - afterWindowResize.panelWidth) < 1, '窗口宽度不应改变节点面板比例');
+  assert.ok(Math.abs(beforeWindowResize.panelHeight - afterWindowResize.panelHeight) < 1, '窗口宽度不应改变节点面板高度');
+  await page.evaluate(() => window.resetNode({ width: 240, scale: 0.75 }));
   await panel.waitFor();
-  assert.ok((await panel.boundingBox()).width <= 366, '小节点的控制面板超出窄屏可用宽度');
+  aligned(await metrics(), '窄屏仍保留比例');
+  // 独立展开编辑仍限制在窗口内，与跟随节点的内联面板分开处理。
   await panel.getByRole('button', { name: '放大编辑框' }).click();
   const expanded = page.locator('[data-canvas-editor].fixed');
   await expanded.waitFor();
   assert.ok((await expanded.boundingBox()).width <= 358, '展开输入框超出窄屏');
   await page.screenshot({ path: path.join(output, 'mobile-expanded.png') });
   assert.deepEqual(errors, []);
-  console.log(`PASS: ${results.length} resize cases; proportional controls; readable text; one commit per drag; narrow screen; no page errors`);
+  console.log(`PASS: ${results.length} resize cases; constant node/panel ratio; proportional text, buttons and gap; no size clamps; no page errors`);
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;
