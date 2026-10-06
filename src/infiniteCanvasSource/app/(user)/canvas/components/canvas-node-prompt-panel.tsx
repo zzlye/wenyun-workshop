@@ -797,7 +797,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                                         event.preventDefault();
                                         insertAudioMentionAtCursor(mentionIndex);
                                     }}
-                                    title="右键插入 @音频"
+                                    title={(audio.name.trim() || "未命名音频") + " · 右键插入 @音频"}
                                 >
                                     <AudioLines className="size-5" />
                                     <span className="mt-1 max-w-10 truncate text-[9px]">{audio.name}</span>
@@ -904,11 +904,12 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                     {showAtImageMenu ? (
                         <div style={{ left: `${menuLeft}px` }} className="absolute bottom-full z-50 mb-2 w-64 overflow-hidden rounded-2xl border border-gray-200/70 bg-white/95 p-1.5 shadow-xl ring-1 ring-black/5 backdrop-blur-xl dark:border-white/[0.08] dark:bg-gray-900/95 dark:ring-white/10">
                             <div className="px-2 pb-1 pt-0.5 text-[11px] text-gray-400 dark:text-gray-500">选择引用素材</div>
-                            <div className="max-h-56 overflow-y-auto">
+                            <div className="max-h-56 overflow-y-auto overscroll-contain">
                                 {atMediaOptions.map((option, optionIndex) => (
                                     <button
                                         key={option.key}
                                         type="button"
+                                        title={option.kind === "audio" ? option.audio.name.trim() || "未命名音频" : undefined}
                                         onMouseDown={(event) => {
                                             event.preventDefault();
                                             selectAtMediaOption(option);
@@ -919,7 +920,11 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                                         }`}
                                     >
                                         {option.kind === "image" ? <CanvasImage storageKey={mentionableReferences[option.imageIndex]?.storageKey} src={option.image.dataUrl} alt={option.label} className="size-8 shrink-0 rounded-lg object-cover" /> : option.kind === "audio" ? <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-500 dark:bg-blue-500/10 dark:text-blue-300"><AudioLines className="size-4" /></span> : <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-lg bg-blue-50 text-blue-500 dark:bg-blue-500/10 dark:text-blue-300">{option.video.url ? <video src={option.video.url} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : <Video className="size-4" />}</span>}
-                                        <span className="min-w-0 flex-1 truncate font-medium">{option.label}</span>
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block truncate font-medium">{option.label}</span>
+                                            {/* 名称只用于展示，插入提示词仍使用原引用编号，保持素材顺序和请求兼容。 */}
+                                            {option.kind === "audio" ? <span className="mt-0.5 block truncate text-[11px] font-normal text-gray-500 dark:text-gray-400">{option.audio.name.trim() || "未命名音频"}</span> : null}
+                                        </span>
                                         <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-white/[0.08] dark:text-gray-400">{option.source}</span>
                                     </button>
                                 ))}

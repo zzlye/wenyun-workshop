@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ViewportTransform } from "../types";
-import { isCanvasEditableTarget } from "../utils/canvas-dom-events";
+import { isCanvasEditableTarget, isCanvasWheelControlTarget } from "../utils/canvas-dom-events";
 
 type InfiniteCanvasProps = {
     containerRef: React.RefObject<HTMLDivElement | null>;
@@ -121,8 +121,7 @@ export function InfiniteCanvas({
     }, []);
 
     const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-        const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest("[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) return;
+        if (isCanvasWheelControlTarget(event.target)) return;
 
         const currentViewport = viewportRef.current;
         const delta = -event.deltaY;
@@ -237,7 +236,10 @@ export function InfiniteCanvas({
         const container = containerRef.current;
         if (!container) return;
 
-        const preventWheelScroll = (event: WheelEvent) => event.preventDefault();
+        const preventWheelScroll = (event: WheelEvent) => {
+            // 素材菜单和输入区域保留浏览器滚动；只有画布背景接管滚轮缩放。
+            if (!isCanvasWheelControlTarget(event.target)) event.preventDefault();
+        };
         container.addEventListener("wheel", preventWheelScroll, { passive: false });
         return () => container.removeEventListener("wheel", preventWheelScroll);
     }, [containerRef]);
