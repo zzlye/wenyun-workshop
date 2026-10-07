@@ -6,6 +6,7 @@ import { VIDEO_ACCOUNT_GROUP } from './videoAccount'
 type RecordValue = Record<string, unknown>
 export interface VideoCatalogData {
   pricing: unknown
+  pricingSource: 'account' | 'public' | null
   performance: unknown
   status: unknown
   errors: string[]
@@ -118,9 +119,20 @@ export async function fetchVideoModelCatalog(profile: ApiProfile, session?: NewA
   if (signal?.aborted) abort()
   const timer = setTimeout(abort, 10_000)
   try {
-    const read = (resource: 'pricing' | 'performance') => session
-      ? fetchNewApiAccountModelCatalog(profile, session, resource, controller.signal)
-      : readPublicCatalogResource(profile, resource === 'pricing' ? '/api/pricing' : '/api/perf-metrics/summary?hours=24', controller.signal)
+    const read = async (resource: 'pricing' | 'performance') => {
+      if (session) {
+        try {
+          const payload = await fetchNewApiAccountModelCatalog(profile, session, resource, controller.signal)
+          return { payload, source: 'account' as const }
+        } catch (error) {
+          if (controller.signal.aborted) throw error
+          // 会话失效不影响公开目录；匿名重读不携带凭据，也不借用其他账号的报价。
+        }
+      }
+      const path = resource === 'pricing' ? '/api/pricing' : '/api/perf-metrics/summary?hours=24'
+      const payload = await readPublicCatalogResource(profile, path, controller.signal)
+      return { payload, source: 'public' as const }
+    }
     const [pricing, performance, status] = await Promise.allSettled([
       abortable(read('pricing'), controller.signal), abortable(read('performance'), controller.signal),
       abortable(readPublicCatalogResource(profile, '/api/status', controller.signal), controller.signal),
@@ -130,8 +142,9 @@ export async function fetchVideoModelCatalog(profile: ApiProfile, session?: NewA
     if (pricing.status === 'rejected') errors.push('简介与价格暂未获取，请稍后刷新')
     if (performance.status === 'rejected') errors.push('成功率暂未获取，请稍后刷新')
     return {
-      pricing: pricing.status === 'fulfilled' ? pricing.value : null,
-      performance: performance.status === 'fulfilled' ? performance.value : null,
+      pricing: pricing.status === 'fulfilled' ? pricing.value.payload : null,
+      pricingSource: pricing.status === 'fulfilled' ? pricing.value.source : null,
+      performance: performance.status === 'fulfilled' ? performance.value.payload : null,
       status: status.status === 'fulfilled' ? status.value : null,
       errors, updatedAt: Date.now(),
     }

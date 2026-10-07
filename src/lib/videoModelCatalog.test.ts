@@ -7,6 +7,7 @@ const session = { siteProfileId: profile.id, username: 'test', userId: 2, access
 const price = (extra: Record<string, unknown> = {}) => ({ model_name: 'video-new', description: '来自服务端的简介', enable_groups: ['视频'], quota_type: 1, model_price: 3, ...extra })
 const catalog = (items: unknown[] = [price()], ratio: unknown = 1): VideoCatalogData => ({
   pricing: { success: true, data: items, group_ratio: { default: 99, 视频: ratio } },
+  pricingSource: 'public',
   performance: { data: { models: [{ model_name: 'video-new', success_rate: 83.33, request_count: 6 }] } },
   status: { data: { quota_display_type: 'CUSTOM', custom_currency_symbol: 'HUHN', custom_currency_exchange_rate: 1 } },
   errors: [], updatedAt: 1,
@@ -88,6 +89,7 @@ describe('视频目录获取与鉴权', () => {
     vi.stubGlobal('fetch', fetch)
     const result = await fetchVideoModelCatalog(profile)
     expect(result.errors).toEqual([])
+    expect(result.pricingSource).toBe('public')
     expect(fetch).toHaveBeenCalledTimes(3)
     expect(fetch.mock.calls.map(call => call[0])).toEqual([
       '/newapi-proxy/wenyun/api/pricing', '/newapi-proxy/wenyun/api/perf-metrics/summary?hours=24', '/newapi-proxy/wenyun/api/status',
@@ -102,9 +104,95 @@ describe('视频目录获取与鉴权', () => {
     vi.stubGlobal('fetch', fetch)
     const result = await fetchVideoModelCatalog(profile, session)
     expect(result.pricing).toEqual(payload)
+    expect(result.pricingSource).toBe('account')
     expect(fetch.mock.calls[0][1]).toMatchObject({ headers: { Authorization: 'Bearer account-session', 'New-Api-User': '2' }, method: 'GET' })
     expect(JSON.stringify(fetch.mock.calls)).not.toContain('generation-key')
     expect(fetch.mock.calls[2][1].headers).toBeUndefined()
+  })
+
+  it('管理会话过期且刷新失败时仍能读取公开目录，不携带账号或生成凭据', async () => {
+    const input = catalog([price()], 0.5)
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/auth/refresh') || (init?.headers as Record<string, string> | undefined)?.Authorization) {
+        return response({ success: false, message: '登录状态已过期' }, 401)
+      }
+      return response(url.endsWith('/pricing') ? input.pricing : url.includes('/perf-metrics/') ? input.performance : input.status)
+    })
+    vi.stubGlobal('fetch', fetch)
+    const result = await fetchVideoModelCatalog(profile, session)
+    expect(result.errors).toEqual([])
+    expect(result.pricingSource).toBe('public')
+    expect(buildVideoCatalogRows(result, ['video-new'])[0]).toMatchObject({ priceText: 'HUHN 1.5 / 次', successRate: 83.33, description: '来自服务端的简介' })
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('/auth/refresh'))).toHaveLength(1)
+    for (const path of ['/api/pricing', '/api/perf-metrics/summary?hours=24']) {
+      const calls = fetch.mock.calls.filter(([url]) => url.endsWith(path))
+      expect(calls).toHaveLength(2)
+      expect(calls[1][1]).toMatchObject({ credentials: 'omit', cache: 'no-store' })
+      expect(calls[1][1]?.headers).toBeUndefined()
+    }
+    expect(JSON.stringify(fetch.mock.calls)).not.toContain('generation-key')
+    expect(fetch.mock.calls.filter(([, init]) => init?.method === 'POST').map(([url]) => url.endsWith('/api/user/auth/refresh'))).toEqual([true])
+  })
+
+  it('会话刷新成功仍使用账号专属倍率，不改用公开参考价格', async () => {
+    const input = catalog([price()], 0.25)
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/auth/refresh')) return response({ success: true, data: { access_token: 'renewed-session', id: session.userId } })
+      if (url.endsWith('/status')) return response(input.status)
+      const authorization = (init?.headers as Record<string, string> | undefined)?.Authorization
+      if (authorization === 'Bearer account-session') return response({ success: false, message: '登录状态已过期' }, 401)
+      expect(authorization).toBe('Bearer renewed-session')
+      return response(url.endsWith('/pricing') ? input.pricing : input.performance)
+    })
+    vi.stubGlobal('fetch', fetch)
+    const result = await fetchVideoModelCatalog(profile, session)
+    expect(result.pricingSource).toBe('account')
+    expect(result.errors).toEqual([])
+    expect(buildVideoCatalogRows(result)[0].priceText).toBe('HUHN 0.75 / 次')
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('/auth/refresh'))).toHaveLength(1)
+    expect(fetch.mock.calls.filter(([url, init]) => !url.endsWith('/status') && init?.credentials === 'omit')).toHaveLength(0)
+  })
+
+  it('成功率单独失败只恢复成功率，不替换已获得的专属价格', async () => {
+    const input = catalog([price()], 0.1)
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/perf-metrics/') && (init?.headers as Record<string, string> | undefined)?.Authorization) return response({ success: false }, 503)
+      return response(url.endsWith('/pricing') ? input.pricing : url.includes('/perf-metrics/') ? input.performance : input.status)
+    })
+    vi.stubGlobal('fetch', fetch)
+    const result = await fetchVideoModelCatalog(profile, session)
+    expect(result.pricingSource).toBe('account')
+    expect(result.errors).toEqual([])
+    expect(buildVideoCatalogRows(result)[0]).toMatchObject({ priceText: 'HUHN 0.3 / 次', successRate: 83.33 })
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('/pricing'))).toHaveLength(1)
+  })
+
+  it.each([401, 403])('公开价格接口仍拒绝访问时保留错误，不套用旧账号报价：%s', async status => {
+    const fetch = vi.fn(async (url: string) => url.endsWith('/pricing')
+      ? response({ success: false }, status)
+      : response({ success: true, data: { models: [] } }))
+    vi.stubGlobal('fetch', fetch)
+    const result = await fetchVideoModelCatalog(profile, session)
+    expect(result.pricing).toBeNull()
+    expect(result.pricingSource).toBeNull()
+    expect(result.errors).toEqual(['简介与价格暂未获取，请稍后刷新'])
+    expect(buildVideoCatalogRows(result, ['video-new'])[0].priceText).toBe('暂无价格')
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('/pricing'))).toHaveLength(2)
+  })
+
+  it('取消目录后不再追加公开请求，即使原账号请求稍后才失败', async () => {
+    let fail: (error: Error) => void = () => {}
+    const fetch = vi.fn((url: string) => url.endsWith('/status') ? Promise.resolve(response({ success: true })) : new Promise<Response>((_, reject) => { fail = reject }))
+    vi.stubGlobal('fetch', fetch)
+    const controller = new AbortController()
+    const request = fetchVideoModelCatalog(profile, session, controller.signal)
+    const rejected = expect(request).rejects.toMatchObject({ name: 'AbortError' })
+    controller.abort()
+    await rejected
+    fail(new Error('账号目录请求失败'))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(fetch).toHaveBeenCalledTimes(3)
   })
 
   it('单个接口失败不丢弃其余数据，不发送生成请求', async () => {

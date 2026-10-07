@@ -29,7 +29,8 @@ export default function VideoModelCatalog() {
 
   return <div className="space-y-4" aria-busy={loading}>
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <p className="text-xs text-gray-500 dark:text-gray-400">{session ? '视频分组价格' : '视频分组参考价格'} · 近 24 小时站点成功率</p>
+      {/* 按实际价格来源标识，过期会话读取到的公开价不能冒充账号专属价。 */}
+      <p className="text-xs text-gray-500 dark:text-gray-400">{catalog.data?.pricingSource === 'account' ? '视频分组价格' : '视频分组参考价格'} · 近 24 小时站点成功率</p>
       <button type="button" disabled={loading} onClick={() => { void catalog.refetch(); if (videoKey) void models.refetch() }} className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-gray-200 px-3 text-xs font-medium text-gray-600 transition hover:bg-blue-50 hover:text-blue-600 disabled:opacity-50 dark:border-white/[0.08] dark:text-gray-300 dark:hover:bg-blue-500/15">
         <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />{loading ? '获取中' : '刷新'}
       </button>

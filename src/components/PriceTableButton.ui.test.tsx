@@ -23,6 +23,7 @@ let client: QueryClient
 let modelName: string
 let description: string
 let failPricing: boolean
+let expiredAccount: boolean
 let requests: { url: string; init?: RequestInit }[]
 const button = (name: string) => Array.from(document.querySelectorAll('button')).find(item => item.textContent === name)!
 const panel = () => document.querySelector('[role="tabpanel"]')!
@@ -40,12 +41,16 @@ beforeEach(() => {
   modelName = 'fresh-video-model'
   description = '接口提供的简介'
   failPricing = false
+  expiredAccount = false
   requests = []
   // 使用真实查询缓存及获取函数，只替换网络，确保切页与换账号确实隔离。
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     requests.push({ url, init })
     if (url.endsWith('/models')) return new Response(JSON.stringify({ data: [{ id: modelName }] }))
+    if (expiredAccount && ((init?.headers as Record<string, string> | undefined)?.Authorization || url.endsWith('/auth/refresh'))) {
+      return new Response(JSON.stringify({ success: false, message: '登录状态已过期' }), { status: 401 })
+    }
     if (url.endsWith('/api/pricing')) {
       if (failPricing) return new Response('{}', { status: 503 })
       return new Response(JSON.stringify({ success: true, data: [
@@ -106,6 +111,8 @@ describe('模型列表图片与视频分页', () => {
     await openVideo()
     expect(requests.find(item => item.url.endsWith('/models'))?.init?.headers).toMatchObject({ Authorization: 'Bearer video-a' })
     expect(requests.find(item => item.url.endsWith('/api/pricing'))?.init?.headers).toMatchObject({ Authorization: 'Bearer session-a' })
+    expect(panel().textContent).toContain('视频分组价格')
+    expect(panel().textContent).not.toContain('参考价格')
     modelName = 'account-b-video'
     fixture.settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] = { ...account, username: 'user-b', userId: 3, accessToken: 'session-b', boundVideoApiKey: 'video-b' }
     await render()
@@ -114,6 +121,25 @@ describe('模型列表图片与视频分页', () => {
     expect(requests.filter(item => item.url.endsWith('/models')).at(-1)?.init?.headers).toMatchObject({ Authorization: 'Bearer video-b' })
     expect(requests.filter(item => item.url.endsWith('/api/pricing')).at(-1)?.init?.headers).toMatchObject({ Authorization: 'Bearer session-b' })
     expect(JSON.stringify(requests)).not.toContain('image-key')
+  })
+
+  it('视频Key有效但管理会话过期时恢复资料，并准确标记公开参考价格', async () => {
+    fixture.settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] = {
+      siteProfileId: LOCKED_WENYUN_PROFILE_ID, username: 'expired-user', userId: 2, accessToken: 'expired-session',
+      boundVideoApiKey: 'valid-video-key', boundVideoApiKeyGroup: '视频',
+    }
+    expiredAccount = true
+    await openVideo()
+    expect(panel().textContent).toContain('fresh-video-model')
+    expect(panel().textContent).toContain('接口提供的简介')
+    expect(panel().textContent).toContain('HUHN 4.5 / 次')
+    expect(panel().textContent).toContain('0.00%')
+    expect(panel().textContent).toContain('视频分组参考价格')
+    expect(panel().querySelector('[role="alert"]')).toBeNull()
+    expect(panel().textContent).not.toContain('image-only')
+    expect(requests.find(item => item.url.endsWith('/models'))?.init?.headers).toMatchObject({ Authorization: 'Bearer valid-video-key' })
+    expect(requests.filter(item => item.url.endsWith('/api/pricing')).at(-1)?.init).toMatchObject({ credentials: 'omit' })
+    expect(fixture.setSettings).not.toHaveBeenCalled()
   })
 
   it('价格接口失败仍展示视频Key的模型，失败与暂无数据不伪装成免费', async () => {
