@@ -1,6 +1,6 @@
 import { DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type CustomProviderDefinition, type CustomProviderPollMapping, type CustomProviderResultMapping, type CustomProviderSubmitMapping, type ImageApiResponse, type ImageResponseItem, type ResponsesApiResponse, type ResponsesOutputItem, type TaskParams } from '../types'
 import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './canvasImage'
-import { getFixedImageRequestModel, isBananaImageModel, resolveImageApiFormat } from './apiProfiles'
+import { getFixedImageRequestModel, isBananaImageModel } from './apiProfiles'
 import { buildApiUrl, getLockedNewApiProxyPrefix, isLockedApiProxyTarget, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from './devProxy'
 import { fetchImageTask, hasImageTaskCredentials, shouldUseImageTasks } from './imageTasks'
 import { formatImageRatio, normalizeImageSize, parseRatio } from './size'
@@ -141,75 +141,6 @@ function createGeminiRequestHeaders(profile: ApiProfile): Record<string, string>
     'x-goog-api-key': profile.apiKey,
     'Content-Type': 'application/json',
   }
-}
-
-type BananaApiFormat = 'openai' | 'gemini'
-
-const BANANA_FORMAT_CACHE_KEY = 'wenyun-banana-api-format-v1'
-const bananaFormatCache = new Map<string, BananaApiFormat>()
-
-function getApiKeyFingerprint(apiKey: string): string {
-  let hash = 2166136261
-  for (const char of apiKey) {
-    hash ^= char.charCodeAt(0)
-    hash = Math.imul(hash, 16777619)
-  }
-  return (hash >>> 0).toString(16)
-}
-
-function getBananaFormatCacheId(profile: ApiProfile): string {
-  return [profile.provider, profile.baseUrl.trim().replace(/\/+$/, '').toLowerCase(), getFixedImageRequestModel(profile.model).trim().toLowerCase(), getApiKeyFingerprint(profile.apiKey.trim())].join('|')
-}
-
-function readRememberedBananaFormat(profile: ApiProfile): BananaApiFormat | null {
-  const cacheId = getBananaFormatCacheId(profile)
-  const memoryValue = bananaFormatCache.get(cacheId)
-  if (memoryValue) return memoryValue
-
-  if (typeof localStorage === 'undefined') return null
-  try {
-    const stored = JSON.parse(localStorage.getItem(BANANA_FORMAT_CACHE_KEY) || '{}') as Record<string, unknown>
-    const value = stored[cacheId]
-    if (value === 'openai' || value === 'gemini') {
-      bananaFormatCache.set(cacheId, value)
-      return value
-    }
-  } catch {
-    // 本地缓存损坏时直接重新协商，不影响正常生成。
-  }
-  return null
-}
-
-function rememberBananaFormat(profile: ApiProfile, format: BananaApiFormat): void {
-  const cacheId = getBananaFormatCacheId(profile)
-  bananaFormatCache.set(cacheId, format)
-  if (typeof localStorage === 'undefined') return
-
-  try {
-    const stored = JSON.parse(localStorage.getItem(BANANA_FORMAT_CACHE_KEY) || '{}') as Record<string, unknown>
-    const next = { ...stored, [cacheId]: format }
-    const entries = Object.entries(next).slice(-20)
-    localStorage.setItem(BANANA_FORMAT_CACHE_KEY, JSON.stringify(Object.fromEntries(entries)))
-  } catch {
-    // 隐私模式或浏览器禁用存储时只保留当前页面内的记忆。
-  }
-}
-
-function isBananaFormatMismatchError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false
-  const rawPayload = typeof (error as Error & { rawResponsePayload?: unknown }).rawResponsePayload === 'string'
-    ? (error as Error & { rawResponsePayload: string }).rawResponsePayload
-    : ''
-  const status = Number((error as Error & { status?: unknown }).status)
-  const text = `${error.message}\n${rawPayload}`.toLowerCase()
-
-  // 请求成功返回但整段响应里找不到任何图片，说明渠道没有按当前协议返回图片，视为协议不匹配。
-  if ((error as Error & { bananaFormatMismatch?: unknown }).bananaFormatMismatch === true) return true
-
-  // 只在明确表示协议、路径或模型格式不匹配时切换，普通额度、限流和提示词错误不自动重发。
-  if (/only imagen models|not supported model for image generation|unsupported(?:\s+model|\s+image)|unknown model|model[^\n]*(?:not found|unsupported)/i.test(text)) return true
-  if (/generatecontent|v1beta|endpoint[^\n]*(?:not found|unsupported)|method not allowed|cannot post/i.test(text)) return true
-  return status === 404 || status === 405
 }
 
 function getEmbeddedApiErrorMessage(payload: unknown): string | null {
@@ -375,8 +306,6 @@ async function parseGeminiImageResponse(payload: unknown, fallbackMime: string, 
   const embeddedError = getEmbeddedApiErrorMessage(payload)
   const err = new Error(embeddedError || 'Gemini 接口没有返回可识别的图片数据，请检查渠道是否支持原生 Gemini 格式')
   ;(err as any).rawResponsePayload = JSON.stringify(payload, null, 2)
-  // 没有任何业务报错却拿不到图片，通常是渠道不支持原生 Gemini 协议，允许自动模式切换到 OpenAI 协议重试。
-  if (!embeddedError) (err as any).bananaFormatMismatch = true
   throw err
 }
 
@@ -693,8 +622,6 @@ async function parseImagesApiResponse(payload: ImageApiResponse, mime: string, s
     const embeddedError = getEmbeddedApiErrorMessage(payload)
     const err = new Error(embeddedError || '接口没有返回图片数据，请查看原始响应内容确认服务商实际返回的数据结构。如果使用的是中转或兼容接口，建议创建并使用「自定义服务商」配置。')
     ;(err as any).rawResponsePayload = JSON.stringify(payload, null, 2)
-    // 没有业务报错却没有图片列表，香蕉自动模式下允许切换到 Gemini 协议重试。
-    if (!embeddedError) (err as any).bananaFormatMismatch = true
     throw err
   }
 
@@ -736,8 +663,6 @@ async function parseImagesApiResponse(payload: ImageApiResponse, mime: string, s
   if (!images.length) {
     const err = new Error('接口没有返回可识别的图片数据，请查看原始响应内容确认服务商实际返回的数据结构。如果使用的是中转或兼容接口，建议创建并使用「自定义服务商」配置。')
     ;(err as any).rawResponsePayload = JSON.stringify(payload, null, 2)
-    // 香蕉自动模式下，OpenAI 协议成功返回却没有图片，同样允许切换到 Gemini 协议重试。
-    ;(err as any).bananaFormatMismatch = true
     throw err
   }
 
@@ -889,53 +814,15 @@ async function parseResponsesApiStreamResponse(
 }
 
 export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile: ApiProfile, customProvider?: CustomProviderDefinition | null): Promise<CallApiResult> {
-  // 已保存的任务独立于当前协议设置，禁止恢复时走香蕉协议回退并再次生成。
+  // 已保存的任务只查询原任务，不再次发起生成。
   if (hasImageTaskCredentials(opts.imageTask)) return callImagesApi(opts, profile)
+  // 香蕉模型固定使用 Gemini，旧配置中的协议选择不影响主页和画布请求。
+  if (isBananaImageModel(profile.model)) return callGeminiImageApi(opts, profile)
   if (customProvider) {
     return callCustomHttpImageApi(opts, profile, customProvider)
   }
 
-  if (isBananaImageModel(profile.model)) {
-    if (profile.apiFormat === 'auto') return callBananaImageApiAutomatically(opts, profile)
-    return callBananaImageApiByFormat(opts, profile, resolveImageApiFormat(profile))
-  }
-
   return callOpenAIImageApi(opts, profile)
-}
-
-async function callBananaImageApiByFormat(opts: CallApiOptions, profile: ApiProfile, format: BananaApiFormat): Promise<CallApiResult> {
-  if (format === 'gemini') return callGeminiImageApi(opts, profile)
-  return callOpenAIImageApi(opts, profile)
-}
-
-async function callBananaImageApiAutomatically(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
-  const rememberedFormat = readRememberedBananaFormat(profile)
-  const firstFormat = rememberedFormat ?? resolveImageApiFormat(profile)
-
-  try {
-    const result = await callBananaImageApiByFormat(opts, profile, firstFormat)
-    rememberBananaFormat(profile, firstFormat)
-    return result
-  } catch (error) {
-    if (!isBananaFormatMismatchError(error)) throw error
-
-    // 记忆的协议已经不匹配（例如站点后端换成只支持 OpenAI 的渠道），立即换另一种协议重试并更新记忆。
-    const fallbackFormat: BananaApiFormat = firstFormat === 'gemini' ? 'openai' : 'gemini'
-    try {
-      const result = await callBananaImageApiByFormat(opts, profile, fallbackFormat)
-      rememberBananaFormat(profile, fallbackFormat)
-      return result
-    } catch (fallbackError) {
-      // 两种协议都失败时把两次错误一起展示，方便判断是渠道问题还是协议问题。
-      const firstMessage = error instanceof Error ? error.message : String(error)
-      const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
-      const label = (format: BananaApiFormat) => (format === 'gemini' ? 'Gemini' : 'OpenAI')
-      const combined = new Error(`${label(firstFormat)} 协议：${firstMessage}\n${label(fallbackFormat)} 协议：${fallbackMessage}`)
-      ;(combined as any).rawResponsePayload = (fallbackError as any)?.rawResponsePayload ?? (error as any)?.rawResponsePayload
-      ;(combined as any).status = (fallbackError as any)?.status ?? (error as any)?.status
-      throw combined
-    }
-  }
 }
 
 async function callOpenAIImageApi(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {

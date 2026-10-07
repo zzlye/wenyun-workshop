@@ -16,13 +16,12 @@ import { useAssetStore, type Asset } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { assetTagOptions, assetTagValues, getAssetTag, normalizeAssetTag, type AssetTag } from "@/lib/asset-tags";
 import type { InputImage } from "../../../../../types";
-import { getActiveApiProfile, getApiModelUnitCostText, isBananaImageModel, normalizeApiFormat, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
+import { getActiveApiProfile, getApiModelUnitCostText, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
 import { audioMentionMatches, getAtImageQuery, getAudioMentionLabel, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, getVideoMentionLabel, imageMentionMatches, insertAudioMentionAtVisibleRange, insertImageMentionAtVisibleRange, insertVideoMentionAtVisibleRange, isCursorInSelectedImageMention, remapImageMentionsForOrder, stripImageMentionMarkers, videoMentionMatches } from "../../../../../lib/promptImageMentions";
 import { storeImage } from "../../../../../lib/db";
 import { normalizeCanvasVideoModel } from "../../../../../lib/videoModel";
 import { useCanvasModelOptions } from "./canvas-model-options";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { getCanvasPromptDomSyncAction, isCanvasPromptImeEvent } from "./canvas-prompt-editor-state";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData, type CanvasReferenceImage } from "../types";
@@ -80,7 +79,6 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
     const activeProfile = useMemo(() => getActiveApiProfile(normalizeSettings(settings)), [settings]);
     const mode = defaultMode(node.type);
     const config = buildNodeConfig(globalConfig, node, mode, activeProfile.id);
-    const isBananaModel = mode === "image" && isBananaImageModel(config.model);
     const modelOptions = useCanvasModelOptions(config, mode, activeProfile.id);
     const connectedPromptText = useMemo(() => buildConnectedPromptText(inputs), [inputs]);
     const [prompt, setPrompt] = useState(() => stripConnectedPromptSuffix(node.metadata?.prompt || "", connectedPromptText));
@@ -1029,23 +1027,6 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                     {mode === "image" ? (
                         <>
                             <ModelPicker config={config} value={config.model} options={modelOptions} className="canvas-node-control !min-w-[9rem] !max-w-[280px] shrink-0" onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
-                            {isBananaModel ? (
-                                <Select value={normalizeApiFormat(activeProfile.apiFormat)} onValueChange={(value) => setSettings({ apiFormat: normalizeApiFormat(value) })}>
-                                    <SelectTrigger
-                                        aria-label="香蕉协议"
-                                        title="香蕉协议"
-                                        className="canvas-node-control w-auto shrink-0 gap-1.5 px-2.5 text-xs"
-                                        onPointerDown={(event) => event.stopPropagation()}
-                                    >
-                                        {({ auto: "自动识别", openai: "OpenAI", gemini: "Gemini" } as const)[normalizeApiFormat(activeProfile.apiFormat)]}
-                                    </SelectTrigger>
-                                    <SelectContent data-canvas-no-zoom position="popper" align="start" side="top" sideOffset={6} className="z-[1200] rounded-lg border border-border/70 p-1 shadow-xl !bg-white dark:!bg-gray-900" onPointerDown={(event) => event.stopPropagation()}>
-                                        <SelectItem value="auto">自动识别</SelectItem>
-                                        <SelectItem value="openai">OpenAI</SelectItem>
-                                        <SelectItem value="gemini">Gemini</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            ) : null}
                             <CanvasImageSettingsPopover
                                 config={config}
                                 placement="topLeft"

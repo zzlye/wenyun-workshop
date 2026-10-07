@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_PARAMS, type ApiFormat } from '../types'
+import { DEFAULT_PARAMS } from '../types'
 import { callImageApi } from './api'
 import { DEFAULT_SETTINGS, normalizeSettings } from './apiProfiles'
 import { normalizeParamsForSettings } from './paramCompatibility'
@@ -25,42 +25,29 @@ describe('文运香蕉官方尺寸请求', () => {
     vi.unstubAllEnvs()
   })
 
-  describe.each(['openai', 'gemini', 'edit'] as const)('%s 协议', (protocol) => {
+  describe.each(['auto', 'openai', 'gemini'] as const)('旧配置 %s', (protocol) => {
     it.each(CASES)('%s %s 保留尺寸并传递 %s / %s', async (model, size, aspectRatio, imageSize) => {
       vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'disabled')
-      const apiFormat: ApiFormat = protocol === 'gemini' ? 'gemini' : 'openai'
       const settings = normalizeSettings({
         ...DEFAULT_SETTINGS,
-        profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({ ...profile, model, apiFormat, apiKey: 'test-key' })),
+        profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({ ...profile, model, apiFormat: protocol, apiKey: 'test-key' })),
       })
       const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
         if (String(input).startsWith('data:')) return new Response(new Blob(['ref'], { type: 'image/png' }))
-        return new Response(JSON.stringify(protocol === 'gemini'
-          ? { candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: 'ZmluYWw=' } }] } }] }
-          : { data: [{ b64_json: 'ZmluYWw=' }] }), { headers: { 'Content-Type': 'application/json' } })
+        return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: 'ZmluYWw=' } }] } }] }), { headers: { 'Content-Type': 'application/json' } })
       })
       const params = normalizeParamsForSettings({ ...DEFAULT_PARAMS, size }, settings)
       expect(params.size).toBe(size)
       await callImageApi({
         settings, params, prompt: '测试官方尺寸',
-        inputImageDataUrls: protocol === 'openai' ? [] : ['data:image/png;base64,cmVm'],
+        inputImageDataUrls: ['data:image/png;base64,cmVm'],
       })
       const [, request] = fetchMock.mock.calls.find(([input]) => !String(input).startsWith('data:'))!
       const body = request!.body
-      if (protocol === 'edit') {
-        expect(body).toBeInstanceOf(FormData)
-        const form = body as FormData
-        expect(form.get('size')).toBe(size)
-        expect(form.get('aspectRatio')).toBe(aspectRatio)
-        expect(form.get('imageSize')).toBe(imageSize)
-        expect(form.getAll('image')).toHaveLength(1)
-      } else {
-        const json = JSON.parse(String(body))
-        const config = protocol === 'gemini' ? json.generationConfig.imageConfig : json
-        if (model === 'nano-banana-2.1' && protocol === 'openai') expect(json.model).toBe('nano-banana-2.1')
-        expect(config).toMatchObject({ aspectRatio, imageSize })
-        if (protocol === 'openai') expect(json.size).toBe(size)
-      }
+      const json = JSON.parse(String(body))
+      expect(json.generationConfig.imageConfig).toMatchObject({ aspectRatio, imageSize })
+      expect(json.contents[0].parts[1]).toMatchObject({ inlineData: { mimeType: 'image/png', data: 'cmVm' } })
+      expect(fetchMock.mock.calls.filter(([input]) => !String(input).startsWith('data:'))).toHaveLength(1)
     })
   })
 })

@@ -341,7 +341,9 @@ describe("canvas image api", () => {
         const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
             const url = String(input);
             if (url.startsWith("data:")) return new Response(new Blob(["ref"], { type: "image/png" }));
-            return new Response(JSON.stringify({ data: [{ b64_json: "ZWRpdGVk" }] }), {
+            return new Response(JSON.stringify(url.includes(":generateContent")
+                ? { candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: "ZWRpdGVk" } }] } }] }
+                : { data: [{ b64_json: "ZWRpdGVk" }] }), {
                 status: 200,
                 headers: { "Content-Type": "application/json" },
             });
@@ -374,18 +376,23 @@ describe("canvas image api", () => {
             [{ id: "ref-1", name: "ref.png", type: "image/png", dataUrl: "data:image/png;base64,cmVm" }],
         );
 
-        const apiCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/images/edits"));
+        const banana = model.startsWith("Nano-Banana");
+        const apiCall = fetchMock.mock.calls.find(([input]) => String(input).includes(banana ? ":generateContent" : "/images/edits"));
         expect(apiCall).toBeTruthy();
         const [url, init] = apiCall!;
-        const formData = (init as RequestInit).body as FormData;
-        expect(String(url)).toBe("https://api.zzlye.xyz/v1/images/edits");
-        expect(formData.get("model")).toBe(requestModel);
-        expect(formData.get("prompt")).toBe("帮我美化封面");
-        expect(formData.get("aspectRatio")).toBeNull();
-        expect(formData.get("imageSize")).toBeNull();
-        expect(formData.get("replyType")).toBeNull();
-        expect(formData.get("response_format")).toBe("b64_json");
-        expect(formData.getAll("image")).toHaveLength(1);
+        if (banana) {
+            expect(String(url)).toBe(`/newapi-proxy/wenyun/v1beta/models/${requestModel}:generateContent`);
+            const body = JSON.parse(String((init as RequestInit).body));
+            expect(body.contents[0].parts).toEqual([{ text: "帮我美化封面" }, { inlineData: { mimeType: "image/png", data: "cmVm" } }]);
+            expect(body.generationConfig.imageConfig).toEqual({ aspectRatio: "16:9", imageSize: "2K" });
+        } else {
+            const formData = (init as RequestInit).body as FormData;
+            expect(String(url)).toBe("https://api.zzlye.xyz/v1/images/edits");
+            expect(formData.get("model")).toBe(requestModel);
+            expect(formData.get("prompt")).toBe("帮我美化封面");
+            expect(formData.get("response_format")).toBe("b64_json");
+            expect(formData.getAll("image")).toHaveLength(1);
+        }
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZWRpdGVk" }]);
     });
 
@@ -401,7 +408,9 @@ describe("canvas image api", () => {
         const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
             const url = String(input);
             if (url.startsWith("data:")) return new Response(new Blob(["ref"], { type: "image/png" }));
-            return new Response(JSON.stringify({ data: [{ b64_json: "ZWRpdGVk" }] }), {
+            return new Response(JSON.stringify(url.includes(":generateContent")
+                ? { candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: "ZWRpdGVk" } }] } }] }
+                : { data: [{ b64_json: "ZWRpdGVk" }] }), {
                 status: 200,
                 headers: { "Content-Type": "application/json" },
             });
@@ -434,17 +443,22 @@ describe("canvas image api", () => {
             [{ id: "ref-1", name: "ref.png", type: "image/png", dataUrl: "data:image/png;base64,cmVm" }],
         );
 
-        const apiCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/images/edits"));
+        const banana = model.startsWith("Nano-Banana");
+        const apiCall = fetchMock.mock.calls.find(([input]) => String(input).includes(banana ? ":generateContent" : "/images/edits"));
         expect(apiCall).toBeTruthy();
         const [url, init] = apiCall!;
-        const formData = (init as RequestInit).body as FormData;
-        expect(String(url)).toBe("https://1520635.xyz:3901/v1/images/edits");
-        expect(formData.get("model")).toBe(requestModel);
-        expect(formData.get("prompt")).toBe("帮我美化封面");
-        expect(formData.get("aspectRatio")).toBeNull();
-        expect(formData.get("imageSize")).toBeNull();
-        expect(formData.get("replyType")).toBeNull();
-        expect(formData.getAll("image")).toHaveLength(1);
+        if (banana) {
+            expect(String(url)).toBe(`/newapi-proxy/public/v1beta/models/${requestModel}:generateContent`);
+            const body = JSON.parse(String((init as RequestInit).body));
+            expect(body.contents[0].parts).toEqual([{ text: "帮我美化封面" }, { inlineData: { mimeType: "image/png", data: "cmVm" } }]);
+            expect(body.generationConfig.imageConfig).toEqual({ aspectRatio: "16:9", imageSize: "1K" });
+        } else {
+            const formData = (init as RequestInit).body as FormData;
+            expect(String(url)).toBe("https://1520635.xyz:3901/v1/images/edits");
+            expect(formData.get("model")).toBe(requestModel);
+            expect(formData.get("prompt")).toBe("帮我美化封面");
+            expect(formData.getAll("image")).toHaveLength(1);
+        }
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZWRpdGVk" }]);
     });
 });

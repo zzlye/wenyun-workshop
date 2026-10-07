@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback, useState, useMemo, useLayoutEffect, typ
 import { createPortal } from 'react-dom'
 import { useStore, submitTask, submitAgentMessage, stopAgentResponse, addImageFromFile, createInputImageFromFile, deleteImageIfUnreferenced, updateTaskInStore, removeMultipleTasks, getCachedImage, ensureImageCached, getActiveAgentRounds } from '../store'
 import { DEFAULT_PARAMS } from '../types'
-import { FIXED_IMAGE_MODEL_OPTIONS, allowsCustomImageRatioForProfile, getActiveApiProfile, getApiModelUnitCostText, getImageSizeTiersForProfile, isBananaImageModel, normalizeApiFormat, normalizeImageSizeForProfile, normalizeSettings, supportsExtendedImageQuality } from '../lib/apiProfiles'
+import { FIXED_IMAGE_MODEL_OPTIONS, allowsCustomImageRatioForProfile, getActiveApiProfile, getApiModelUnitCostText, getImageSizeTiersForProfile, normalizeImageSizeForProfile, normalizeSettings, supportsExtendedImageQuality } from '../lib/apiProfiles'
 import { supportsTransparentImageBackground } from '../lib/modelPricing'
 import { getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
@@ -656,7 +656,6 @@ export default function InputBar() {
   const allowCustomImageRatio = allowsCustomImageRatioForProfile(activeProfile.id)
   const modelOptions = [...FIXED_IMAGE_MODEL_OPTIONS]
   const selectedModelOption = modelOptions.find((option) => option.value === activeProfile.model)
-  const isBananaModel = isBananaImageModel(activeProfile.model)
 
   useEffect(() => {
     const nextSize = resolveBananaSizePreset(activeProfile.model, params.size)?.size
@@ -1764,23 +1763,6 @@ export default function InputBar() {
           className="px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/[0.06] focus:outline-none text-xs transition-all duration-200 shadow-sm"
         />
       </label>
-      {isBananaModel && (
-        <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1_1_7rem]'}`}>
-          <span className="text-gray-400 dark:text-gray-500 ml-1">香蕉协议</span>
-          <Select
-            native={mobile}
-            ariaLabel="香蕉协议"
-            value={normalizeApiFormat(activeProfile.apiFormat)}
-            onChange={(apiFormat) => setSettings({ apiFormat: normalizeApiFormat(apiFormat) })}
-            options={[
-              { label: '自动识别', value: 'auto' },
-              { label: 'OpenAI', value: 'openai' },
-              { label: 'Gemini', value: 'gemini' },
-            ]}
-            className="px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/[0.06] focus:outline-none text-xs transition-all duration-200 shadow-sm"
-          />
-        </label>
-      )}
       <label
         className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1.2_1_9rem]'}`}
       >

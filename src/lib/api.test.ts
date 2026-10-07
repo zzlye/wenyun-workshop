@@ -1,6 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PARAMS } from '../types'
-import { DEFAULT_SETTINGS, GPT_IMAGE_2_SUPER_MODEL, LOCKED_PUBLIC_PROFILE_ID, getActiveApiProfile } from './apiProfiles'
+import { DEFAULT_SETTINGS, GPT_IMAGE_2_SUPER_MODEL, LOCKED_PUBLIC_PROFILE_ID } from './apiProfiles'
 import { callImageApi } from './api'
 import { getGenericAssetProxyUrl } from './devProxy'
 
@@ -525,9 +525,9 @@ describe('callImageApi', () => {
     expect(formData.get('moderation')).toBeNull()
   })
 
-  it('routes Banana image models through standard NewAPI image generations', async () => {
+  it('routes Banana image models through Gemini even with old auto settings', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
-      data: [{ b64_json: 'ZmluYWw=' }],
+      candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: 'ZmluYWw=' } }] } }],
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -553,64 +553,43 @@ describe('callImageApi', () => {
 
     const [url, init] = fetchMock.mock.calls[0]
     const body = JSON.parse(String((init as RequestInit).body))
-    expect(String(url)).toBe('https://api.zzlye.xyz/v1/images/generations')
+    expect(String(url)).toBe('/newapi-proxy/wenyun/v1beta/models/nano-banana-pro:generateContent')
     expect(body).toMatchObject({
-      model: 'nano-banana-pro',
-      size: DEFAULT_PARAMS.size,
-      aspectRatio: '1:1',
-      imageSize: '1K',
-      replyType: 'json',
-      prompt: 'prompt',
+      contents: [{ role: 'user', parts: [{ text: 'prompt' }] }],
+      generationConfig: { imageConfig: { aspectRatio: '1:1', imageSize: '1K' } },
     })
     expect(result.images).toEqual(['data:image/png;base64,ZmluYWw='])
   })
 
-  it('automatically switches Banana protocol when the first format is rejected', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        error: { message: 'not supported model for image generation, only imagen models are supported' },
-      }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        candidates: [{
-          content: { parts: [{ inlineData: { mimeType: 'image/png', data: 'YXV0bw==' } }] },
-        }],
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }))
+  it('does not switch protocols or resend when Gemini rejects a Banana request', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      error: { message: 'upstream rejected request' },
+    }), { status: 400, headers: { 'Content-Type': 'application/json' } }))
 
     const settings = {
       ...DEFAULT_SETTINGS,
       apiKey: 'auto-format-test-key',
-      apiFormat: 'auto' as const,
+      apiFormat: 'openai' as const,
       model: 'Nano-Banana-Pro',
       profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
         ...profile,
         baseUrl: 'https://auto-format.example.com/v1',
         apiKey: 'auto-format-test-key',
-        apiFormat: 'auto' as const,
+        apiFormat: 'openai' as const,
         model: 'Nano-Banana-Pro',
         apiProxy: false,
       })),
     }
 
-    expect(getActiveApiProfile(settings).apiFormat).toBe('auto')
-    expect(getActiveApiProfile(settings).model).toMatch(/^Nano-Banana/)
-
-    const result = await callImageApi({
+    await expect(callImageApi({
       settings,
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS },
       inputImageDataUrls: [],
-    } as any)
+    } as any)).rejects.toThrow()
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(String(fetchMock.mock.calls[0][0])).toBe('https://api.zzlye.xyz/v1/images/generations')
-    expect(String(fetchMock.mock.calls[1][0])).toBe('/newapi-proxy/wenyun/v1beta/models/nano-banana-pro:generateContent')
-    expect(result.images).toEqual(['data:image/png;base64,YXV0bw=='])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(String(fetchMock.mock.calls[0][0])).toBe('/newapi-proxy/wenyun/v1beta/models/nano-banana-pro:generateContent')
   })
 
   it('parses Banana images returned as Markdown links inside Gemini text parts without re-sending', async () => {
@@ -657,95 +636,6 @@ describe('callImageApi', () => {
     expect(result.images).toHaveLength(1)
     expect(result.images[0]).toMatch(/^data:image\/png;base64,/)
     expect(result.rawImageUrls).toEqual(['https://cdn.example.com/out/1.png'])
-  })
-
-  it('switches a remembered Gemini protocol back to OpenAI when the channel returns no image data', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch')
-      // 第一次：OpenAI 协议被拒绝，自动切到 Gemini 并记住。
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        error: { message: 'not supported model for image generation, only imagen models are supported' },
-      }), { status: 400, headers: { 'Content-Type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: 'Zmlyc3Q=' } }] } }],
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
-      // 第二次：站点后端换成只兼容 OpenAI 的渠道，Gemini 协议返回 200 但没有任何图片。
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        candidates: [{ content: { role: 'model', parts: [{ text: '好的，这是您要的图片。' }] }, finishReason: 'STOP' }],
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        data: [{ b64_json: 'c2Vjb25k' }],
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
-      // 第三次：应直接使用记住的 OpenAI 协议。
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        data: [{ b64_json: 'dGhpcmQ=' }],
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
-
-    const settings = {
-      ...DEFAULT_SETTINGS,
-      apiKey: 'channel-switch-key',
-      apiFormat: 'auto' as const,
-      model: 'Nano-Banana-2',
-      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
-        ...profile,
-        baseUrl: 'https://channel-switch.example.com/v1',
-        apiKey: 'channel-switch-key',
-        apiFormat: 'auto' as const,
-        model: 'Nano-Banana-2',
-        apiProxy: false,
-      })),
-    }
-    const call = () => callImageApi({
-      settings,
-      prompt: 'prompt',
-      params: { ...DEFAULT_PARAMS },
-      inputImageDataUrls: [],
-    } as any)
-
-    const first = await call()
-    expect(first.images).toEqual(['data:image/png;base64,Zmlyc3Q='])
-    expect(String(fetchMock.mock.calls[1][0])).toContain(':generateContent')
-
-    const second = await call()
-    expect(second.images).toEqual(['data:image/png;base64,c2Vjb25k'])
-    expect(String(fetchMock.mock.calls[2][0])).toContain(':generateContent')
-    expect(String(fetchMock.mock.calls[3][0])).toContain('/images/generations')
-
-    const third = await call()
-    expect(third.images).toEqual(['data:image/png;base64,dGhpcmQ='])
-    expect(fetchMock).toHaveBeenCalledTimes(5)
-    expect(String(fetchMock.mock.calls[4][0])).toContain('/images/generations')
-  })
-
-  it('reports both protocol errors when Banana auto mode fails on both formats', async () => {
-    vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        data: [],
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ text: 'no image' }] } }],
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
-
-    const settings = {
-      ...DEFAULT_SETTINGS,
-      apiKey: 'both-fail-key',
-      apiFormat: 'auto' as const,
-      model: 'Nano-Banana-2',
-      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
-        ...profile,
-        baseUrl: 'https://both-fail.example.com/v1',
-        apiKey: 'both-fail-key',
-        apiFormat: 'auto' as const,
-        model: 'Nano-Banana-2',
-        apiProxy: false,
-      })),
-    }
-
-    await expect(callImageApi({
-      settings,
-      prompt: 'prompt',
-      params: { ...DEFAULT_PARAMS },
-      inputImageDataUrls: [],
-    } as any)).rejects.toThrow(/OpenAI 协议：[\s\S]*Gemini 协议：/)
   })
 
   it('routes Banana image models through native Gemini generateContent when selected', async () => {
@@ -837,11 +727,7 @@ describe('callImageApi', () => {
 
     const [, init] = fetchMock.mock.calls[0]
     const body = JSON.parse(String((init as RequestInit).body))
-    expect(body.model).toBe('nano-banana-2')
-    expect(body.size).toBe('3840x2160')
-    expect(body.aspectRatio).toBe('16:9')
-    expect(body.imageSize).toBe('4K')
-    expect(body.replyType).toBe('json')
+    expect(body.generationConfig.imageConfig).toEqual({ aspectRatio: '16:9', imageSize: '4K' })
   })
 
   it.each([
@@ -894,14 +780,14 @@ describe('callImageApi', () => {
 
     const [, init] = fetchMock.mock.calls[0]
     const body = JSON.parse(String((init as RequestInit).body))
-    expect(body.aspectRatio).toBe(expectedAspectRatio)
-    expect(body.imageSize).toBe(expectedImageSize)
+    expect(body.generationConfig.imageConfig.aspectRatio).toBe(expectedAspectRatio)
+    expect(body.generationConfig.imageConfig.imageSize).toBe(expectedImageSize)
   })
 
   it.each([
     ['文运站 Banana 2', 'Nano-Banana-2', 'nano-banana-2'],
     ['文运站 Banana Pro', 'Nano-Banana-Pro', 'nano-banana-pro'],
-  ])('routes %s image edits through standard NewAPI edits like public site', async (
+  ])('routes %s image edits through Gemini', async (
     _label,
     model,
     requestModel,
@@ -910,7 +796,7 @@ describe('callImageApi', () => {
       const url = String(input)
       if (url.startsWith('data:')) return new Response(new Blob(['ref'], { type: 'image/png' }))
       return new Response(JSON.stringify({
-        data: [{ b64_json: 'ZWRpdGVk' }],
+        candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: 'ZWRpdGVk' } }] } }],
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -935,25 +821,21 @@ describe('callImageApi', () => {
       inputImageDataUrls: ['data:image/png;base64,cmVm'],
     } as any)
 
-    const apiCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/images/edits'))
+    const apiCall = fetchMock.mock.calls.find(([input]) => String(input).includes(':generateContent'))
     expect(apiCall).toBeTruthy()
     const [url, init] = apiCall!
-    const formData = (init as RequestInit).body as FormData
-    expect(String(url)).toBe('https://api.zzlye.xyz/v1/images/edits')
+    const body = JSON.parse(String((init as RequestInit).body))
+    expect(String(url)).toBe(`/newapi-proxy/wenyun/v1beta/models/${requestModel}:generateContent`)
     expect(init).toMatchObject({ method: 'POST' })
-    expect(formData.get('model')).toBe(requestModel)
-    expect(formData.get('prompt')).toBe('帮我美化封面')
-    expect(formData.get('aspectRatio')).toBeNull()
-    expect(formData.get('imageSize')).toBeNull()
-    expect(formData.get('replyType')).toBeNull()
-    expect(formData.getAll('image')).toHaveLength(1)
+    expect(body.contents[0].parts).toEqual([{ text: '帮我美化封面' }, { inlineData: { mimeType: 'image/png', data: 'cmVm' } }])
+    expect(body.generationConfig.imageConfig).toEqual({ aspectRatio: '16:9', imageSize: '2K' })
     expect(result.images).toEqual(['data:image/png;base64,ZWRpdGVk'])
   })
 
   it.each([
     ['公益站 Banana 2', 'Nano-Banana-2', 'nano-banana-2'],
     ['公益站 Banana Pro', 'Nano-Banana-Pro', 'nano-banana-pro'],
-  ])('routes %s image edits through standard NewAPI edits without changing site URL', async (
+  ])('routes %s image edits through Gemini without changing site URL', async (
     _label,
     model,
     requestModel,
@@ -962,7 +844,7 @@ describe('callImageApi', () => {
       const url = String(input)
       if (url.startsWith('data:')) return new Response(new Blob(['ref'], { type: 'image/png' }))
       return new Response(JSON.stringify({
-        data: [{ b64_json: 'ZWRpdGVk' }],
+        candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: 'ZWRpdGVk' } }] } }],
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -988,18 +870,14 @@ describe('callImageApi', () => {
       inputImageDataUrls: ['data:image/png;base64,cmVm'],
     } as any)
 
-    const apiCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/images/edits'))
+    const apiCall = fetchMock.mock.calls.find(([input]) => String(input).includes(':generateContent'))
     expect(apiCall).toBeTruthy()
     const [url, init] = apiCall!
-    const formData = (init as RequestInit).body as FormData
-    expect(String(url)).toBe('https://1520635.xyz:3901/v1/images/edits')
+    const body = JSON.parse(String((init as RequestInit).body))
+    expect(String(url)).toBe(`/newapi-proxy/public/v1beta/models/${requestModel}:generateContent`)
     expect(init).toMatchObject({ method: 'POST' })
-    expect(formData.get('model')).toBe(requestModel)
-    expect(formData.get('prompt')).toBe('帮我美化封面')
-    expect(formData.get('aspectRatio')).toBeNull()
-    expect(formData.get('imageSize')).toBeNull()
-    expect(formData.get('replyType')).toBeNull()
-    expect(formData.getAll('image')).toHaveLength(1)
+    expect(body.contents[0].parts).toEqual([{ text: '帮我美化封面' }, { inlineData: { mimeType: 'image/png', data: 'cmVm' } }])
+    expect(body.generationConfig.imageConfig).toEqual({ aspectRatio: '16:9', imageSize: '2K' })
     expect(result.images).toEqual(['data:image/png;base64,ZWRpdGVk'])
   })
 
