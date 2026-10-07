@@ -13,6 +13,7 @@ import { allowsCustomImageRatioForProfile, getActiveApiProfile, getImageSizeTier
 import { calculateImageSize, normalizeImageSize, parseRatio, type SizeTier } from "../../../../../lib/size";
 import { useStore } from "../../../../../store";
 import { normalizeImageBackground, supportsTransparentImageBackground } from "../../../../../lib/modelPricing";
+import { getBananaSizeConfig, resolveBananaSizePreset, type BananaSizeTier } from "../../../../../lib/bananaImageSize";
 
 const ALL_TIERS: SizeTier[] = ["1K", "2K", "4K"];
 const QUALITY_OPTIONS = [
@@ -59,7 +60,10 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = config.quality || "auto";
-    const activeSize = normalizeImageSizeForProfile(normalizeImageSize(config.size || "1024x1024"), activeProfile.id, imageModel);
+    const profileSize = getBananaSizeConfig(imageModel)
+        ? config.size || "1024x1024"
+        : normalizeImageSizeForProfile(normalizeImageSize(config.size || "1024x1024"), activeProfile.id, imageModel);
+    const activeSize = resolveBananaSizePreset(imageModel, profileSize)?.size || profileSize;
     const normalizedConfig = useMemo(() => activeSize === config.size ? config : { ...config, size: activeSize }, [activeSize, config]);
 
     useEffect(() => {
@@ -132,7 +136,7 @@ function ImageSizePortal({
     allowCustomRatio: boolean;
     onConfigChange: (key: keyof AiConfig, value: string) => void;
 }) {
-    const width = 356;
+    const width = Math.min(420, window.innerWidth - 24);
     const gap = 8;
     const margin = 12;
     const alignRight = placement?.endsWith("Right");
@@ -145,14 +149,13 @@ function ImageSizePortal({
         width,
         left: Math.max(margin, Math.min(window.innerWidth - width - margin, left)),
         ...(topPlacement ? { bottom: window.innerHeight - buttonRect.top + gap, maxHeight: Math.max(260, buttonRect.top - margin * 2) } : { top: buttonRect.bottom + gap, maxHeight: Math.max(260, window.innerHeight - buttonRect.bottom - margin * 2) }),
-        background: theme.toolbar.panel,
-        border: `1px solid ${theme.toolbar.border}`,
+        background: theme === canvasThemes.dark ? "#17191f" : "#fff",
+        border: `1px solid ${theme === canvasThemes.dark ? "#343841" : "#e5e7eb"}`,
         borderRadius: 18,
         boxShadow: "0 18px 54px rgba(28, 25, 23, 0.16)",
         padding: 18,
         overflowY: "auto",
         color: theme.node.text,
-        backdropFilter: "blur(18px)",
     } as const;
 
     return createPortal(
@@ -170,42 +173,58 @@ function ImageSizePortal({
     );
 }
 
-function CanvasImageSizePanel({ config, allowedTiers, qualityOptions, allowCustomRatio, onConfigChange, theme }: { config: AiConfig; allowedTiers: SizeTier[]; qualityOptions: Array<{ value: string; label: string }>; allowCustomRatio: boolean; onConfigChange: (key: keyof AiConfig, value: string) => void; theme: CanvasTheme }) {
-    const tiers = allowedTiers.length ? allowedTiers : ALL_TIERS;
+export function CanvasImageSizePanel({ config, allowedTiers, qualityOptions, allowCustomRatio, onConfigChange, theme }: { config: AiConfig; allowedTiers: SizeTier[]; qualityOptions: Array<{ value: string; label: string }>; allowCustomRatio: boolean; onConfigChange: (key: keyof AiConfig, value: string) => void; theme: CanvasTheme }) {
+    const imageModel = config.imageModel || config.model;
+    const bananaConfig = getBananaSizeConfig(imageModel);
+    const tiers = bananaConfig?.tiers ?? (allowedTiers.length ? allowedTiers : ALL_TIERS);
+    const ratios = bananaConfig?.ratios.map((value) => ({ value, label: value })) ?? RATIOS;
+    const customRatioAllowed = allowCustomRatio && !bananaConfig;
     const tierKey = tiers.join("|");
-    const currentPreset = useMemo(() => findPresetForSize(config.size || "1024x1024", tiers), [config.size, tierKey]);
+    const currentPreset = useMemo(() => bananaConfig
+        ? resolveBananaSizePreset(imageModel, config.size || "1024x1024")
+        : findPresetForSize(config.size || "1024x1024", allowedTiers), [bananaConfig, imageModel, config.size, tierKey]);
     const currentCustomRatio = useMemo(() => readRatioFromSize(config.size || ""), [config.size]);
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
-    const [tier, setTier] = useState<SizeTier>(currentPreset?.tier || tiers[0] || "1K");
-    const [ratio, setRatio] = useState(currentPreset?.ratio || (allowCustomRatio && currentCustomRatio ? "custom" : "1:1"));
+    const [tier, setTier] = useState<BananaSizeTier>(currentPreset?.tier || tiers[0] || "1K");
+    const [ratio, setRatio] = useState(currentPreset?.ratio || (customRatioAllowed && currentCustomRatio ? "custom" : "1:1"));
     const [customRatio, setCustomRatio] = useState(currentPreset?.ratio || currentCustomRatio || "16:9");
     const activeRatio = ratio === "custom" ? customRatio : ratio;
     const previewSize = useMemo(() => {
+        if (bananaConfig) return bananaConfig.presets.find((preset) => preset.tier === tier && preset.ratio === activeRatio)?.size || "";
+        if (tier === "512px") return "";
         const size = calculateImageSize(tier, activeRatio);
         return size ? normalizeImageSize(size) : "";
-    }, [activeRatio, tier]);
+    }, [activeRatio, bananaConfig, tier]);
     const customRatioValid = ratio !== "custom" || Boolean(parseRatio(customRatio));
 
-    const applySize = (nextTier: SizeTier, nextRatio: string) => {
-        const size = calculateImageSize(nextTier, nextRatio);
-        if (size) onConfigChange("size", normalizeImageSize(size));
+    const applySize = (nextTier: BananaSizeTier, nextRatio: string) => {
+        const size = bananaConfig
+            ? bananaConfig.presets.find((preset) => preset.tier === nextTier && preset.ratio === nextRatio)?.size
+            : nextTier === "512px" ? "" : calculateImageSize(nextTier, nextRatio);
+        if (size) onConfigChange("size", bananaConfig ? size : normalizeImageSize(size));
     };
 
     useEffect(() => {
-        if (tiers.includes(tier)) return;
-        const nextTier = tiers[tiers.length - 1] || "1K";
-        setTier(nextTier);
-        const nextRatio = allowCustomRatio ? activeRatio : "1:1";
-        applySize(nextTier, nextRatio);
-    }, [activeRatio, allowCustomRatio, tier, tierKey]);
+        // 外部切换模型或尺寸时，以新模型的合法预设同步面板，不触发额外的尺寸提交。
+        if (currentPreset) {
+            setTier(currentPreset.tier);
+            setRatio(currentPreset.ratio);
+            return;
+        }
+        if (bananaConfig) return;
+        setTier((previous) => tiers.includes(previous) ? previous : tiers[tiers.length - 1] || "1K");
+        setRatio(customRatioAllowed && currentCustomRatio ? "custom" : "1:1");
+        if (currentCustomRatio) setCustomRatio(currentCustomRatio);
+    }, [imageModel, config.size, tierKey]);
 
     useEffect(() => {
-        if (allowCustomRatio || ratio !== "custom") return;
-        setRatio("1:1");
-        applySize(tier, "1:1");
-    }, [allowCustomRatio, ratio, tier]);
+        if (customRatioAllowed || ratio !== "custom") return;
+        const nextRatio = currentPreset?.ratio || ratios[0].value;
+        setRatio(nextRatio);
+        if (!bananaConfig) applySize(tier, nextRatio);
+    }, [customRatioAllowed, ratio, tier]);
 
-    const selectTier = (nextTier: SizeTier) => {
+    const selectTier = (nextTier: BananaSizeTier) => {
         setTier(nextTier);
         applySize(nextTier, activeRatio);
     };
@@ -239,7 +258,7 @@ function CanvasImageSizePanel({ config, allowedTiers, qualityOptions, allowCusto
                     </div>
                 </SettingGroup>
                 <SettingGroup title="基准分辨率" color={theme.node.muted}>
-                    <div className="grid grid-cols-3 gap-2.5">
+                    <div className={`grid gap-2.5 ${tiers.length === 4 ? "grid-cols-4" : "grid-cols-3"}`}>
                         {tiers.map((item) => (
                             <OptionPill key={item} selected={tier === item} theme={theme} onClick={() => selectTier(item)}>
                                 {item}
@@ -249,10 +268,10 @@ function CanvasImageSizePanel({ config, allowedTiers, qualityOptions, allowCusto
                 </SettingGroup>
                 <SettingGroup title="图像比例" color={theme.node.muted}>
                     <div className="grid grid-cols-4 gap-2.5">
-                        {RATIOS.map((item) => (
+                        {ratios.map((item) => (
                             <RatioButton key={item.value} selected={ratio === item.value} theme={theme} label={item.label} value={item.value} onClick={() => selectRatio(item.value)} />
                         ))}
-                        {allowCustomRatio ? (
+                        {customRatioAllowed ? (
                             <button
                                 type="button"
                                 className="col-span-4 h-9 cursor-pointer rounded-full border px-2 text-sm transition hover:opacity-80"
@@ -276,7 +295,7 @@ function CanvasImageSizePanel({ config, allowedTiers, qualityOptions, allowCusto
                         </div>
                     </SettingGroup>
                 )}
-                {allowCustomRatio && ratio === "custom" ? (
+                {customRatioAllowed && ratio === "custom" ? (
                     <SettingGroup title="自定义比例" color={theme.node.muted}>
                         <input
                             value={customRatio}
@@ -311,7 +330,7 @@ function CanvasImageSizePanel({ config, allowedTiers, qualityOptions, allowCusto
 
 function OptionPill({ selected, theme, onClick, children }: { selected: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
     return (
-        <button type="button" className="h-9 cursor-pointer rounded-full border px-2 text-sm transition hover:opacity-80" style={{ background: "transparent", borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onClick={onClick}>
+        <button type="button" aria-pressed={selected} className="h-9 cursor-pointer rounded-lg border px-2 text-sm transition hover:opacity-80" style={{ background: selected ? "rgba(59,130,246,.12)" : "transparent", borderColor: selected ? "#3b82f6" : theme.node.stroke, color: selected ? "#60a5fa" : theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onClick={onClick}>
             {children}
         </button>
     );
@@ -337,8 +356,8 @@ function CountInput({ value, max, theme, onChange }: { value: number; max: numbe
 function RatioButton({ selected, theme, label, value, onClick }: { selected: boolean; theme: CanvasTheme; label: string; value: string; onClick: () => void }) {
     const [width, height] = value.split(":").map(Number);
     return (
-        <button type="button" className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border bg-transparent text-sm transition hover:opacity-80" style={{ borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onClick={onClick}>
-            <RatioPreview width={width} height={height} color={theme.node.text} />
+        <button type="button" data-image-ratio={value} aria-pressed={selected} className="flex h-[64px] cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border text-sm transition hover:opacity-80" style={{ background: selected ? "rgba(59,130,246,.12)" : "transparent", borderColor: selected ? "#3b82f6" : theme.node.stroke, color: selected ? "#60a5fa" : theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onClick={onClick}>
+            <RatioPreview width={width} height={height} color={selected ? "#60a5fa" : theme.node.text} />
             <span>{label}</span>
         </button>
     );

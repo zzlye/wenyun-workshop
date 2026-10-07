@@ -4,8 +4,8 @@ import { CanvasImage } from "./canvas-image";
 import { Children, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent, KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUp, AudioLines, Link2, LoaderCircle, Maximize2, Minimize2, Paintbrush, Plus, Search, Trash2, Upload, Video, X } from "lucide-react";
-import { Button, Empty, Input, Modal, Tabs, Tag } from "antd";
+import { ArrowUp, AudioLines, ChevronDown, Link2, LoaderCircle, Maximize2, Minimize2, Paintbrush, Plus, Search, Trash2, Upload, Video, X } from "lucide-react";
+import { Button, Dropdown, Empty, Input, Modal, Tabs, Tag } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
@@ -22,6 +22,7 @@ import { storeImage } from "../../../../../lib/db";
 import { normalizeCanvasVideoModel } from "../../../../../lib/videoModel";
 import { useCanvasModelOptions } from "./canvas-model-options";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
+import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { getCanvasPromptDomSyncAction, isCanvasPromptImeEvent } from "./canvas-prompt-editor-state";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData, type CanvasReferenceImage } from "../types";
@@ -1021,19 +1022,30 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                         <>
                             <ModelPicker config={config} value={config.model} options={modelOptions} className="!min-w-[9rem] !max-w-[280px] shrink-0" onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
                             {isBananaModel ? (
-                                <label className="flex shrink-0 items-center gap-1.5" title="选择香蕉接口协议">
-                                    <span className="sr-only">香蕉协议</span>
-                                    <select
-                                        aria-label="香蕉协议"
-                                        value={normalizeApiFormat(activeProfile.apiFormat)}
-                                        onChange={(event) => setSettings({ apiFormat: normalizeApiFormat(event.target.value) })}
-                                        className="h-8 max-w-[126px] rounded-full border border-input bg-transparent px-2.5 text-xs shadow-sm outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/20"
+                                <ImageSettingsTheme theme={theme}>
+                                    <Dropdown
+                                        trigger={["click"]}
+                                        menu={{
+                                            selectedKeys: [normalizeApiFormat(activeProfile.apiFormat)],
+                                            items: ([
+                                                { key: "auto", label: "自动识别" },
+                                                { key: "openai", label: "OpenAI" },
+                                                { key: "gemini", label: "Gemini" },
+                                            ] as const).map((item) => ({
+                                                ...item,
+                                                style: item.key === normalizeApiFormat(activeProfile.apiFormat)
+                                                    ? { background: "rgba(59,130,246,.12)", color: theme === canvasThemes.dark ? "#93c5fd" : "#2563eb" }
+                                                    : { color: theme.node.text },
+                                            })),
+                                            onClick: ({ key }) => setSettings({ apiFormat: normalizeApiFormat(key) }),
+                                        }}
                                     >
-                                        <option value="auto">自动识别</option>
-                                        <option value="openai">OpenAI</option>
-                                        <option value="gemini">Gemini</option>
-                                    </select>
-                                </label>
+                                        <button type="button" aria-label="香蕉协议" title="香蕉协议" className="flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 text-xs transition hover:opacity-80" style={{ borderColor: theme.node.stroke, background: theme.node.fill, color: theme.node.text }}>
+                                            {({ auto: "自动识别", openai: "OpenAI", gemini: "Gemini" } as const)[normalizeApiFormat(activeProfile.apiFormat)]}
+                                            <ChevronDown className="size-3.5" />
+                                        </button>
+                                    </Dropdown>
+                                </ImageSettingsTheme>
                             ) : null}
                             <CanvasImageSettingsPopover
                                 config={config}
