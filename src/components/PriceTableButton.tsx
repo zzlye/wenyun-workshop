@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { QrCode, ReceiptText, RefreshCw, X } from 'lucide-react'
 import type { ApiPriceSnapshot, ApiProfile } from '../types'
@@ -7,6 +7,7 @@ import { buildFixedModelPriceRows } from '../lib/modelPricing'
 import { queryNewApiModelPerformance, queryNewApiPriceTable, type NewApiModelPerformanceItem } from '../lib/newApi'
 import { setApiPriceSnapshot } from '../lib/apiProfiles'
 import SupportJoinGroupNotice from './SupportJoinGroupNotice'
+import VideoModelCatalog from './VideoModelCatalog'
 
 type PriceTableButtonProps = {
   activeProfile: ApiProfile
@@ -32,6 +33,8 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
   const settings = useStore((state) => state.settings)
   const setSettings = useStore((state) => state.setSettings)
   const [open, setOpen] = useState(false)
+  const [tab, setTab] = useState<'image' | 'video'>('image')
+  const tabId = useId()
   const [contactOpen, setContactOpen] = useState(false)
   const [isLoadingPerformance, setIsLoadingPerformance] = useState(false)
   const [priceError, setPriceError] = useState('')
@@ -74,6 +77,7 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
         setPriceError('本次价格同步未获取到数据，已沿用上次同步价格或固定价格')
       }
     } catch (err) {
+      if (requestId !== loadRequestIdRef.current) return
       setPriceError(err instanceof Error ? `价格同步失败：${err.message}` : '价格同步失败，已沿用上次同步价格或固定价格')
     }
 
@@ -84,6 +88,7 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
       setPerformanceUpdatedAt(result.found ? result.updatedAt : null)
       if (!result.found) setPerformanceError('当前站点的 NewAPI 模型广场成功率未开放或暂无 24 小时数据')
     } catch (err) {
+      if (requestId !== loadRequestIdRef.current) return
       setPerformanceItems([])
       setPerformanceUpdatedAt(null)
       setPerformanceError(err instanceof Error ? err.message : '成功率检测失败')
@@ -94,11 +99,12 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
   }
 
   useEffect(() => {
-    if (!open) return
+    if (!open || tab !== 'image') return
     void loadPerformance()
+    return () => { loadRequestIdRef.current++ }
     // 模型列表打开时拉取当前站点的实时成功率，刷新按钮负责再次手动检测。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, activeProfile.id])
+  }, [open, activeProfile.id, tab])
 
   const closeModelList = () => {
     const pendingSnapshot = pendingPriceSnapshotRef.current
@@ -153,15 +159,15 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
               <div className="min-w-0">
                 <div className="flex items-center gap-2 text-base font-semibold text-gray-900 dark:text-gray-100">
                   <ReceiptText className="h-4 w-4 text-blue-500" />
-                  <span>{activeProfile.name || '当前站点'}模型列表</span>
+                  <span>{tab === 'video' ? '西米露' : activeProfile.name || '当前站点'}模型列表</span>
                 </div>
                 <div className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                  固定模型配置
-                  {performanceUpdatedAt ? `，成功率更新于 ${new Date(performanceUpdatedAt).toLocaleString()}` : ''}
+                  {tab === 'video' ? '视频模型' : '图片模型'}
+                  {tab === 'image' && performanceUpdatedAt ? `，成功率更新于 ${new Date(performanceUpdatedAt).toLocaleString()}` : ''}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <button
+                {tab === 'image' && <button
                   type="button"
                   className="inline-flex h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:border-blue-400/30 dark:hover:bg-blue-500/15 dark:hover:text-blue-200"
                   onClick={() => void loadPerformance()}
@@ -169,7 +175,7 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${isLoadingPerformance ? 'animate-spin' : ''}`} />
                   {isLoadingPerformance ? '检测中' : '刷新成功率'}
-                </button>
+                </button>}
                 <button
                   type="button"
                   className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-white/[0.08] dark:hover:text-gray-100"
@@ -181,7 +187,19 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5">
+            <div role="tablist" aria-label="模型类型" className="flex shrink-0 gap-1 border-b border-gray-100 px-5 py-3 dark:border-white/[0.08]">
+              {(['image', 'video'] as const).map((value, index) => <button
+                key={value} type="button" role="tab" id={`${tabId}-${value}`} aria-selected={tab === value} aria-controls={`${tabId}-panel`} tabIndex={tab === value ? 0 : -1}
+                onClick={() => setTab(value)}
+                onKeyDown={event => {
+                  const next = event.key === 'ArrowRight' || event.key === 'ArrowLeft' ? index === 0 ? 'video' : 'image' : event.key === 'Home' ? 'image' : event.key === 'End' ? 'video' : null
+                  if (next) { event.preventDefault(); setTab(next); document.getElementById(`${tabId}-${next}`)?.focus() }
+                }}
+                className={`rounded-full px-5 py-2 text-sm font-medium transition ${tab === value ? 'bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]'}`}
+              >{value === 'image' ? '图片' : '视频'}</button>)}
+            </div>
+            <div id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${tab}`} className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+              {tab === 'video' ? <VideoModelCatalog /> : <>
               {performanceError ? (
                 <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
                   {performanceError}
@@ -218,6 +236,7 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
                   })}
                 </div>
               </div>
+              </>}
             </div>
           </div>
         </div>,

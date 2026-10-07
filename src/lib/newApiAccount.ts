@@ -131,6 +131,7 @@ async function newApiRequest<T>(
     userId?: number | string
     authSessionId?: string
     returnEnvelope?: boolean
+    signal?: AbortSignal
   } = {},
 ): Promise<T> {
   const headers: Record<string, string> = {}
@@ -143,6 +144,7 @@ async function newApiRequest<T>(
     method: options.method ?? 'GET',
     cache: 'no-store',
     credentials: 'include',
+    ...(options.signal ? { signal: options.signal } : {}),
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   })
@@ -280,6 +282,19 @@ export async function fetchNewApiAccountRole(profile: ApiProfile, session: NewAp
     const user = await newApiRequest<{ role?: number }>(profile, '/api/user/self', { accessToken: current.accessToken, userId: current.userId })
     return user.role ?? 0
   })
+}
+
+export async function fetchNewApiAccountModelCatalog(
+  profile: ApiProfile,
+  session: NewApiAccountSession,
+  resource: 'pricing' | 'performance',
+  signal?: AbortSignal,
+): Promise<unknown> {
+  // 价格可能包含账号专属配置，使用当前用户会话而非服务器公共代理的管理凭据。
+  const path = resource === 'pricing' ? '/api/pricing' : '/api/perf-metrics/summary?hours=24'
+  return requestWithNewApiSession(profile, session, current => newApiRequest(profile, path, {
+    accessToken: current.accessToken, userId: current.userId, returnEnvelope: true, signal,
+  }))
 }
 
 export async function requestNewApiVideoProtocol<T>(profile: ApiProfile, session: NewApiAccountSession, channelId?: number, value?: unknown): Promise<T> {
