@@ -2,10 +2,10 @@
 import { CanvasImage } from "./canvas-image";
 
 import { Children, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent, KeyboardEvent, ReactNode } from "react";
+import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent, CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUp, AudioLines, ChevronDown, Link2, LoaderCircle, Maximize2, Minimize2, Paintbrush, Plus, Search, Trash2, Upload, Video, X } from "lucide-react";
-import { Button, Dropdown, Empty, Input, Modal, Tabs, Tag } from "antd";
+import { ArrowUp, AudioLines, Link2, LoaderCircle, Maximize2, Minimize2, Paintbrush, Plus, Search, Trash2, Upload, Video, X } from "lucide-react";
+import { Button, Empty, Input, Modal, Tabs, Tag } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
@@ -22,7 +22,7 @@ import { storeImage } from "../../../../../lib/db";
 import { normalizeCanvasVideoModel } from "../../../../../lib/videoModel";
 import { useCanvasModelOptions } from "./canvas-model-options";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
-import { ImageSettingsTheme } from "@/components/image-settings-panel";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { getCanvasPromptDomSyncAction, isCanvasPromptImeEvent } from "./canvas-prompt-editor-state";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData, type CanvasReferenceImage } from "../types";
@@ -1016,41 +1016,40 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                 </div>
             </div>
 
-            <div className={`mt-2 flex min-w-0 items-center gap-2 ${isPromptExpanded ? "justify-between" : ""}`}>
+            <div
+                className={`canvas-node-prompt-controls mt-2 flex min-w-0 items-center gap-2 ${isPromptExpanded ? "justify-between" : ""}`}
+                style={{
+                    "--canvas-control-background": theme.node.panel,
+                    "--canvas-control-border": theme.node.stroke,
+                    "--canvas-control-color": theme.node.text,
+                    "--canvas-control-hover": theme.toolbar.itemHover,
+                } as CSSProperties}
+            >
                 <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden">
                     {mode === "image" ? (
                         <>
-                            <ModelPicker config={config} value={config.model} options={modelOptions} className="!min-w-[9rem] !max-w-[280px] shrink-0" onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
+                            <ModelPicker config={config} value={config.model} options={modelOptions} className="canvas-node-control !min-w-[9rem] !max-w-[280px] shrink-0" onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
                             {isBananaModel ? (
-                                <ImageSettingsTheme theme={theme}>
-                                    <Dropdown
-                                        trigger={["click"]}
-                                        menu={{
-                                            selectedKeys: [normalizeApiFormat(activeProfile.apiFormat)],
-                                            items: ([
-                                                { key: "auto", label: "自动识别" },
-                                                { key: "openai", label: "OpenAI" },
-                                                { key: "gemini", label: "Gemini" },
-                                            ] as const).map((item) => ({
-                                                ...item,
-                                                style: item.key === normalizeApiFormat(activeProfile.apiFormat)
-                                                    ? { background: "rgba(59,130,246,.12)", color: theme === canvasThemes.dark ? "#93c5fd" : "#2563eb" }
-                                                    : { color: theme.node.text },
-                                            })),
-                                            onClick: ({ key }) => setSettings({ apiFormat: normalizeApiFormat(key) }),
-                                        }}
+                                <Select value={normalizeApiFormat(activeProfile.apiFormat)} onValueChange={(value) => setSettings({ apiFormat: normalizeApiFormat(value) })}>
+                                    <SelectTrigger
+                                        aria-label="香蕉协议"
+                                        title="香蕉协议"
+                                        className="canvas-node-control w-auto shrink-0 gap-1.5 px-2.5 text-xs"
+                                        onPointerDown={(event) => event.stopPropagation()}
                                     >
-                                        <button type="button" aria-label="香蕉协议" title="香蕉协议" className="flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 text-xs transition hover:opacity-80" style={{ borderColor: theme.node.stroke, background: theme.node.fill, color: theme.node.text }}>
-                                            {({ auto: "自动识别", openai: "OpenAI", gemini: "Gemini" } as const)[normalizeApiFormat(activeProfile.apiFormat)]}
-                                            <ChevronDown className="size-3.5" />
-                                        </button>
-                                    </Dropdown>
-                                </ImageSettingsTheme>
+                                        {({ auto: "自动识别", openai: "OpenAI", gemini: "Gemini" } as const)[normalizeApiFormat(activeProfile.apiFormat)]}
+                                    </SelectTrigger>
+                                    <SelectContent data-canvas-no-zoom position="popper" align="start" side="top" sideOffset={6} className="z-[1200] rounded-lg border border-border/70 p-1 shadow-xl !bg-white dark:!bg-gray-900" onPointerDown={(event) => event.stopPropagation()}>
+                                        <SelectItem value="auto">自动识别</SelectItem>
+                                        <SelectItem value="openai">OpenAI</SelectItem>
+                                        <SelectItem value="gemini">Gemini</SelectItem>
+                                    </SelectContent>
+                                </Select>
                             ) : null}
                             <CanvasImageSettingsPopover
                                 config={config}
                                 placement="topLeft"
-                                buttonClassName="!h-10 !max-w-[170px] !shrink-0 !justify-start !rounded-full !px-3"
+                                buttonClassName="canvas-node-control !max-w-[170px] !shrink-0 !justify-start !px-2.5"
                                 onConfigChange={(key, value) => onConfigChange(node.id, key === "count" ? { count: Number(value) || 1 } : { [key]: value })}
                                 onMissingConfig={() => openConfigDialog(true)}
                                 onOpenChange={onImageSettingsOpenChange}

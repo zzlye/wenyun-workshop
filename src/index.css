@@ -651,6 +651,24 @@ html[data-workspace-vt]::view-transition-new(root) {
   font-family: inherit;
 }
 
+/* 图片节点底栏的模型、协议和图像设置共用同一外观。 */
+.canvas-node-prompt-controls .canvas-node-control,
+.canvas-node-prompt-controls .canvas-node-control.ant-btn {
+  height: 32px !important;
+  border: 1px solid var(--canvas-control-border) !important;
+  border-radius: 8px !important;
+  background: var(--canvas-control-background) !important;
+  color: var(--canvas-control-color) !important;
+  box-shadow: none !important;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.canvas-node-prompt-controls .canvas-node-control:hover,
+.canvas-node-prompt-controls .canvas-node-control.ant-btn:hover {
+  background: var(--canvas-control-hover) !important;
+}
+
 /* 画布工坊通用毛玻璃表面，和文运工坊底部输入卡片保持同一质感。 */
 .canvas-glass-panel,
 .canvas-integrated-shell :where(.ant-card, .ant-modal-content, .ant-drawer-content) {
