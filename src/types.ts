@@ -137,6 +137,11 @@ export interface NewApiAccountSession {
   boundApiKey?: string
   boundApiKeyId?: number | string
   boundApiKeyName?: string
+  /** 视频凭据独立绑定视频分组，不能与图片或账号管理凭据混用。 */
+  boundVideoApiKey?: string
+  boundVideoApiKeyId?: number | string
+  boundVideoApiKeyName?: string
+  boundVideoApiKeyGroup?: string
   lastKeyRefreshAt?: number
   balanceText?: string
   balanceSource?: 'user'

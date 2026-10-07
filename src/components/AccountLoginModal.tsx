@@ -128,13 +128,21 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
   const accountSession = normalizedSettings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] ?? null
   const accountKeyCooldownRemainingMs = Math.max(0, ACCOUNT_KEY_REFRESH_COOLDOWN_MS - (Date.now() - (accountSession?.lastKeyRefreshAt ?? 0)))
 
-  const updateAccountSession = useCallback((session: NewApiAccountSession | null, patch: Partial<AppSettings> = {}) => {
+  const updateAccountSession = useCallback((session: NewApiAccountSession | null, patch: Partial<AppSettings> = {}, preserveVideoKey = true) => {
     const current = normalizeSettings(useStore.getState().settings)
     const nextSessions = { ...current.newApiAccountSessions }
     const previousSession = current.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]
+    // 后台余额、充值或刷新响应不恢复已退出的账号，也不覆盖刚切换的账号。
+    if (session && preserveVideoKey && (!previousSession || previousSession.userId !== session.userId || previousSession.username !== session.username)) return
     if (session) {
+      // 同一会话的余额和图片 Key 更新可能晚于视频绑定完成，保留较新的独立视频凭据。
+      const sameAccount = preserveVideoKey && previousSession?.userId === session.userId && previousSession?.username === session.username
       nextSessions[LOCKED_WENYUN_PROFILE_ID] = {
         ...session,
+        boundVideoApiKey: sameAccount ? previousSession?.boundVideoApiKey ?? session.boundVideoApiKey : session.boundVideoApiKey,
+        boundVideoApiKeyId: sameAccount ? previousSession?.boundVideoApiKeyId ?? session.boundVideoApiKeyId : session.boundVideoApiKeyId,
+        boundVideoApiKeyName: sameAccount ? previousSession?.boundVideoApiKeyName ?? session.boundVideoApiKeyName : session.boundVideoApiKeyName,
+        boundVideoApiKeyGroup: sameAccount ? previousSession?.boundVideoApiKeyGroup ?? session.boundVideoApiKeyGroup : session.boundVideoApiKeyGroup,
         siteProfileId: LOCKED_WENYUN_PROFILE_ID,
         lastKeyRefreshAt: session.lastKeyRefreshAt ?? previousSession?.lastKeyRefreshAt,
         registrationInviteCode: session.registrationInviteCode ?? previousSession?.registrationInviteCode,
@@ -237,7 +245,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
         username: accountUsername,
         password: accountPassword,
       })
-      updateAccountSession(session, getAccountKeyModePatch(session))
+      updateAccountSession(session, getAccountKeyModePatch(session), false)
       setAccountPassword('')
       showToast('登录成功', 'success')
     } catch (err) {
@@ -263,7 +271,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
         password: accountPassword,
         inviteCode: accountInviteCode,
       })
-      updateAccountSession(session, getAccountKeyModePatch(session))
+      updateAccountSession(session, getAccountKeyModePatch(session), false)
       setAccountPassword('')
       showToast('注册成功', 'success')
     } catch (err) {

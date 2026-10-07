@@ -1,12 +1,15 @@
 import type { ApiProfile, AppSettings } from '../types'
 import { getActiveApiProfile, LOCKED_WENYUN_PROFILE_ID, normalizeSettings } from './apiProfiles'
+import { getBoundVideoApiKey } from './videoAccount'
 
 export function getEffectiveVideoApiKey(settings: AppSettings): string {
   const normalized = normalizeSettings(settings)
   // 视频地址固定属于文运站，切换出图站点时不能使用其他站点的凭据，也不能拿管理令牌生成。
-  const accountKey = normalized.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]?.boundApiKey?.trim() ?? ''
+  const session = normalized.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]
+  const accountKey = getBoundVideoApiKey(session)
   const manualKey = normalized.videoApiKey.trim()
-  return accountKey && (normalized.accountApiKeyMode === 'account' || !manualKey) ? accountKey : manualKey
+  // 账号模式正在补齐视频令牌时保持空值，避免请求误发到手填令牌的其他分组。
+  return session && (normalized.accountApiKeyMode === 'account' || !manualKey) ? accountKey : manualKey
 }
 
 export function getAccountSessionForProfile(settings: AppSettings, profileId: string) {

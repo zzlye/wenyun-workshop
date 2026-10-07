@@ -27,8 +27,9 @@ export function ModelPicker({ config, value, onChange, options: fixedOptions, cl
     const videoModels = useVideoModels(config.videoApiKey, config.videoApiProxy, isVideo);
     const options = useMemo(() => {
         if (isVideo) {
-            // 保留当前节点的已选值，接口暂时失败或模型下架时也不自动替换节点配置。
-            return Array.from(new Set([value, ...(videoModels.data || [])].filter(Boolean))).map((model) => ({ value: model, label: model }));
+            // 接口成功时仅列出当前视频令牌可用的模型；旧节点值留在标题，不混入可选列表。
+            const models = !config.videoApiKey.trim() ? [] : videoModels.data ?? [];
+            return Array.from(new Set(models)).map((model) => ({ value: model, label: model }));
         }
         if (fixedOptions?.length) {
             return fixedOptions
@@ -36,7 +37,7 @@ export function ModelPicker({ config, value, onChange, options: fixedOptions, cl
                 .filter((item) => item.value);
         }
         return Array.from(new Set([...(config.channelMode === "local" ? [value] : []), ...config.models].filter(Boolean))).map((model) => ({ value: model, label: model }));
-    }, [config.channelMode, config.models, fixedOptions, value, isVideo, videoModels.data]);
+    }, [config.channelMode, config.models, config.videoApiKey, fixedOptions, value, isVideo, videoModels.data]);
     const current = value || "";
     const currentLabel = options.find((item) => item.value === current)?.label || current;
 
@@ -92,7 +93,7 @@ export function ModelPicker({ config, value, onChange, options: fixedOptions, cl
                             event.stopPropagation();
                             void videoModels.refetch();
                         }}>{videoModels.isFetching ? "获取中…" : "获取模型"}</button>
-                        {!config.videoApiKey.trim() ? <p className="mt-2 text-xs text-muted-foreground">请先在设置里填写视频 API Key</p> : videoModels.isError ? <p role="alert" className="mt-2 text-xs text-red-500">{videoModels.error.message}</p> : null}
+                        {!config.videoApiKey.trim() ? <p className="mt-2 text-xs text-muted-foreground">请在设置中查看视频 Key 状态，或登录账号</p> : videoModels.isError ? <p role="alert" className="mt-2 text-xs text-red-500">{videoModels.error.message}</p> : null}
                     </div>
                 )}
                 {options.length ? (

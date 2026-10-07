@@ -29,7 +29,7 @@ describe('视频 API 模型列表', () => {
   it('缺少视频密钥时不发送匿名请求', async () => {
     const request = vi.fn()
     vi.stubGlobal('fetch', request)
-    await expect(fetchVideoModelList(' ', false)).rejects.toThrow('请先在设置里填写视频 API Key')
+    await expect(fetchVideoModelList(' ', false)).rejects.toThrow('视频 Key 尚未就绪，请在设置中查看或登录账号')
     expect(request).not.toHaveBeenCalled()
   })
 

@@ -32,6 +32,9 @@ vi.mock('../hooks/useVideoModels', () => ({
     return { data: fixture.models, isFetching: false, refetch: fixture.refetch }
   },
 }))
+vi.mock('../hooks/useAccountVideoKey', () => ({
+  useAccountVideoKey: () => ({ isError: false, isFetching: false, refetch: vi.fn() }),
+}))
 vi.mock('../lib/clipboard', () => ({
   copyTextToClipboard: (...args: unknown[]) => fixture.copy(...args),
   getClipboardFailureMessage: (message: string) => message,
@@ -95,14 +98,23 @@ describe('视频 API 设置精简', () => {
       newApiAccountSessions: {
         [LOCKED_WENYUN_PROFILE_ID]: {
           siteProfileId: LOCKED_WENYUN_PROFILE_ID, username: 'demo',
-          accessToken: 'management-token', boundApiKey: 'account-video-key',
+          accessToken: 'management-token', boundApiKey: 'account-image-key',
+          boundVideoApiKey: 'account-video-key', boundVideoApiKeyGroup: '视频',
         },
       },
     })
     await act(async () => root.render(<SettingsModal key="account" />))
     expect(fixture.modelsQuery).toHaveBeenLastCalledWith('account-video-key', expect.any(Boolean), true)
-    expect((host.querySelector('input[type="password"]') as HTMLInputElement).value).toBe('')
-    expect(host.textContent).toContain('已使用登录账号 Key，无需填写。')
+    const keyInput = host.querySelector('input[type="password"]') as HTMLInputElement
+    expect(keyInput.value).toBe('account-video-key')
+    expect(keyInput.readOnly).toBe(true)
+    expect(host.textContent).toContain('已使用账号视频 Key · 视频分组')
+    await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="显示 API Key"]')!.click())
+    expect(keyInput.type).toBe('text')
+    await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="复制视频 API Key"]')!.click())
+    expect(fixture.copy).toHaveBeenCalledWith('account-video-key')
+    await act(async () => { keyInput.dispatchEvent(new FocusEvent('focusout', { bubbles: true })) })
+    expect(fixture.setSettings).not.toHaveBeenCalled()
     fixture.state.settings = { ...(fixture.state.settings as AppSettings), newApiAccountSessions: {} }
     await act(async () => root.render(<SettingsModal key="account" />))
     expect(fixture.modelsQuery).toHaveBeenLastCalledWith('', expect.any(Boolean), true)

@@ -5,7 +5,7 @@ import { CANVAS_VIDEO_BASE_URL } from './videoModel'
 // 获取模型与视频生成使用同一站点、视频密钥和代理规则，不混用生图密钥。
 export async function fetchVideoModelList(apiKey: string, apiProxy: boolean, signal?: AbortSignal): Promise<string[]> {
   const key = apiKey.trim()
-  if (!key) throw new Error('请先在设置里填写视频 API Key')
+  if (!key) throw new Error('视频 Key 尚未就绪，请在设置中查看或登录账号')
   const proxyConfig = readClientDevProxyConfig()
   const useProxy = shouldUseApiProxyForBaseUrl(apiProxy, CANVAS_VIDEO_BASE_URL, proxyConfig)
   const response = await fetch(buildApiUrl(CANVAS_VIDEO_BASE_URL, '/models', proxyConfig, useProxy), {

@@ -16,6 +16,7 @@ import AnnouncementModal from './components/AnnouncementModal'
 import HomeLanding from './components/HomeLanding'
 import { useGlobalClickSuppression } from './lib/clickSuppression'
 import { syncInfiniteCanvasConfigFromSettings } from './lib/syncInfiniteCanvasConfig'
+import { AccountVideoKeySync } from './hooks/useAccountVideoKey'
 import type { CanvasRoute } from './infiniteCanvasCompat/nextNavigation'
 
 const CanvasWorkshop = lazy(() => import('./components/CanvasWorkshop'))
@@ -276,6 +277,7 @@ export default function App() {
   return (
     <AppProviders>
       <>
+      <AccountVideoKeySync />
       <div aria-hidden className="pointer-events-none fixed inset-0 z-0 bg-white dark:bg-gray-950" />
       {!showHome && appearanceBackgroundImageUrl.trim() && (
         <>

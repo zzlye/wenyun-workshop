@@ -43,7 +43,8 @@ describe("画布视频异步接口", () => {
                 newApiAccountSessions: {
                     [LOCKED_WENYUN_PROFILE_ID]: {
                         siteProfileId: LOCKED_WENYUN_PROFILE_ID, username: "demo",
-                        accessToken: "management-token", boundApiKey: "account-video-key",
+                        accessToken: "management-token", boundApiKey: "account-image-key",
+                        boundVideoApiKey: "account-video-key", boundVideoApiKeyGroup: "视频",
                     },
                 },
             });
@@ -366,7 +367,7 @@ describe("画布视频异步接口", () => {
     });
 
     it("缺少 Key 时直接提示配置", async () => {
-        await expect(requestVideoGeneration(defaultConfig, "测试视频")).rejects.toThrow("请先在设置里填写视频 API Key");
+        await expect(requestVideoGeneration(defaultConfig, "测试视频")).rejects.toThrow("视频 Key 尚未就绪，请在设置中查看或登录账号");
         expect(axios.post).not.toHaveBeenCalled();
     });
 });

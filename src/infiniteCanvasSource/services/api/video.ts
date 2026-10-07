@@ -239,7 +239,7 @@ async function fetchVideoResultBlob(source: VideoApiSource, taskId: string, vide
 
 function resolveVideoApiSource(config: AiConfig): VideoApiSource {
     const apiKey = config.videoApiKey.trim();
-    if (!apiKey) throw new Error("请先在设置里填写视频 API Key");
+    if (!apiKey) throw new Error("视频 Key 尚未就绪，请在设置中查看或登录账号");
     return {
         baseUrl: CANVAS_VIDEO_BASE_URL,
         apiKey,

@@ -60,6 +60,7 @@ describe('syncInfiniteCanvasConfigFromSettings', () => {
           username: 'demo',
           accessToken: 'login-token',
           boundApiKey: 'account-key',
+          boundVideoApiKey: 'account-video-key', boundVideoApiKeyGroup: '视频',
         },
       },
     })
@@ -67,13 +68,13 @@ describe('syncInfiniteCanvasConfigFromSettings', () => {
     const state = useConfigStore.getState()
     expect(state.config.channelMode).toBe('local')
     expect(state.config.apiKey).toBe('account-key')
-    expect(state.config.videoApiKey).toBe('account-key')
+    expect(state.config.videoApiKey).toBe('account-video-key')
   })
 
   it.each([
-    { mode: 'manual' as const, manual: '', expected: 'account-key' },
+    { mode: 'manual' as const, manual: '', expected: 'account-video-key' },
     { mode: 'manual' as const, manual: 'video-key', expected: 'video-key' },
-    { mode: 'account' as const, manual: 'video-key', expected: 'account-key' },
+    { mode: 'account' as const, manual: 'video-key', expected: 'account-video-key' },
   ])('视频鉴权遵守账号与手填密钥选择：$mode / $manual', ({ mode, manual, expected }) => {
     const settings = {
       ...DEFAULT_SETTINGS, activeProfileId: LOCKED_PUBLIC_PROFILE_ID,
@@ -82,6 +83,7 @@ describe('syncInfiniteCanvasConfigFromSettings', () => {
         [LOCKED_WENYUN_PROFILE_ID]: {
           siteProfileId: LOCKED_WENYUN_PROFILE_ID, username: 'demo',
           accessToken: 'management-token', boundApiKey: 'account-key',
+          boundVideoApiKey: 'account-video-key', boundVideoApiKeyGroup: '视频',
         },
         [LOCKED_PUBLIC_PROFILE_ID]: {
           siteProfileId: LOCKED_PUBLIC_PROFILE_ID, username: 'other',

@@ -1,4 +1,6 @@
 import { useVideoModels } from '../hooks/useVideoModels'
+import { useAccountVideoKey } from '../hooks/useAccountVideoKey'
+import { getBoundVideoApiKey } from '../lib/videoAccount'
 import { useEffect, useRef, useState, useCallback } from 'react'
 
 import { Cloud, CloudDownload, CloudUpload, HardDrive, RefreshCw } from 'lucide-react'
@@ -189,6 +191,8 @@ type ExternalApiConfigSectionProps = {
   modelOptionsLocked?: boolean
   onCopyBaseUrl?: () => void
   apiKeyHint?: string
+  apiKeyReadOnly?: boolean
+  onCopyApiKey?: () => void
 }
 
 function ExternalApiConfigSection({
@@ -217,6 +221,8 @@ function ExternalApiConfigSection({
   modelOptionsLocked = false,
   onCopyBaseUrl,
   apiKeyHint,
+  apiKeyReadOnly = false,
+  onCopyApiKey,
 }: ExternalApiConfigSectionProps) {
   const modelInputId = `${idPrefix}-model-input`
   const modelMenuRef = useRef<HTMLDivElement>(null)
@@ -274,12 +280,16 @@ function ExternalApiConfigSection({
       </label>
 
       <div className="block">
-        <span className="mb-1.5 block text-sm text-gray-600 dark:text-gray-300">API Key</span>
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <span className="text-sm text-gray-600 dark:text-gray-300">API Key</span>
+          {onCopyApiKey && <button type="button" onClick={onCopyApiKey} disabled={!apiKey} aria-label="复制视频 API Key" className="rounded-md p-1 text-gray-500 hover:text-blue-600 disabled:opacity-40 dark:text-gray-300"><CopyIcon className="h-3 w-3" /></button>}
+        </div>
         <div className="relative">
           <input
             value={apiKey}
-            onChange={(e) => onApiKeyDraftChange(e.target.value)}
-            onBlur={(e) => onApiKeyCommit(e.target.value)}
+            readOnly={apiKeyReadOnly}
+            onChange={(e) => { if (!apiKeyReadOnly) onApiKeyDraftChange(e.target.value) }}
+            onBlur={(e) => { if (!apiKeyReadOnly) onApiKeyCommit(e.target.value) }}
             type={showApiKey ? 'text' : 'password'}
             placeholder="sk-..."
             className="w-full rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2.5 pr-10 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
@@ -420,8 +430,12 @@ export default function SettingsModal() {
     newApiAccountSessions: settings.newApiAccountSessions,
     accountApiKeyMode: settings.accountApiKeyMode,
   })
-  const videoAccountKey = settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]?.boundApiKey?.trim()
+  const videoAccountSession = settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]
+  const videoAccountKey = getBoundVideoApiKey(videoAccountSession)
+  const videoKeyQuery = useAccountVideoKey()
+  const videoUsesAccountCredentials = Boolean(videoAccountSession && (settings.accountApiKeyMode === 'account' || !draft.videoApiKey.trim()))
   const videoUsesAccountKey = Boolean(videoAccountKey && effectiveVideoApiKey === videoAccountKey)
+  useEffect(() => { setShowApiKey(false) }, [videoAccountSession?.accessToken, activeTab, showSettings])
   const videoModelsQuery = useVideoModels(effectiveVideoApiKey, draft.videoApiProxy, showSettings && activeTab === 'videoApi')
   const videoModelOptions = videoModelsQuery.data ?? []
   const isFetchingVideoModels = videoModelsQuery.isFetching
@@ -1212,9 +1226,16 @@ export default function SettingsModal() {
                   idPrefix="video-api"
                   title="视频 API 配置"
                   onCopyBaseUrl={() => void copyApiUrl(CANVAS_VIDEO_BASE_URL)}
-                  apiKeyHint={videoUsesAccountKey ? '已使用登录账号 Key，无需填写。' : undefined}
+                  apiKeyHint={videoUsesAccountKey ? '已使用账号视频 Key · 视频分组' : videoUsesAccountCredentials ? videoKeyQuery.isError ? '账号视频 Key 暂不可用' : '正在准备账号视频 Key' : undefined}
                   baseUrl={CANVAS_VIDEO_BASE_URL}
-                  apiKey={draft.videoApiKey}
+                  apiKey={videoUsesAccountCredentials ? videoAccountKey : draft.videoApiKey}
+                  apiKeyReadOnly={videoUsesAccountCredentials}
+                  onCopyApiKey={async () => {
+                    try {
+                      await copyTextToClipboard(effectiveVideoApiKey)
+                      showToast('视频 Key 已复制', 'success')
+                    } catch { showToast('复制视频 Key 失败', 'error') }
+                  }}
                   model={draft.videoModel}
                   timeout={CANVAS_VIDEO_TIMEOUT}
                   showApiKey={showApiKey}
@@ -1233,6 +1254,12 @@ export default function SettingsModal() {
                   fixedBaseUrl={CANVAS_VIDEO_BASE_URL}
                   fixedTimeout={CANVAS_VIDEO_TIMEOUT}
                 />
+                {videoUsesAccountCredentials && videoKeyQuery.isError && !videoAccountKey && (
+                  <div role="alert" className="flex items-center justify-between gap-3 text-sm text-red-600 dark:text-red-400">
+                    <span>{videoKeyQuery.error.message}</span>
+                    <button type="button" disabled={videoKeyQuery.isFetching} onClick={() => void videoKeyQuery.refetch()} className="shrink-0 rounded-xl border border-current px-3 py-1.5 disabled:opacity-50">重试</button>
+                  </div>
+                )}
               </div>
             )}
             

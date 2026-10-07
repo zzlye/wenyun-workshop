@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest'
 
-import { getEffectiveImageApiProfile, validateEffectiveImageApiProfile } from './accountApiKey'
+import { getEffectiveImageApiProfile, getEffectiveVideoApiKey, validateEffectiveImageApiProfile } from './accountApiKey'
 import { DEFAULT_SETTINGS, LOCKED_WENYUN_PROFILE_ID, normalizeSettings } from './apiProfiles'
 
 describe('getEffectiveImageApiProfile', () => {
+  it('老账号没有视频凭据或绑定了其他分组时不回退到图片Key和手填Key', () => {
+    for (const group of [undefined, 'default', 'auto']) {
+      const settings = normalizeSettings({ ...DEFAULT_SETTINGS, accountApiKeyMode: 'account', videoApiKey: 'manual-key',
+        newApiAccountSessions: { [LOCKED_WENYUN_PROFILE_ID]: {
+          siteProfileId: LOCKED_WENYUN_PROFILE_ID, username: 'demo', accessToken: 'manager-key',
+          boundApiKey: 'image-key', boundVideoApiKey: 'wrong-key', boundVideoApiKeyGroup: group,
+        } },
+      })
+      expect(getEffectiveVideoApiKey(settings)).toBe('')
+      expect(getEffectiveImageApiProfile(settings).apiKey).toBe('image-key')
+    }
+  })
   it('keeps manual key when manual mode is selected', () => {
     const settings = normalizeSettings({
       ...DEFAULT_SETTINGS,

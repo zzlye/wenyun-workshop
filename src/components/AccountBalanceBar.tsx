@@ -73,6 +73,9 @@ export default function AccountBalanceBar({
       if (useAccountKey && accountSession) {
         const session = await fetchNewApiAccountBalance(activeProfile, accountSession)
         const current = useStore.getState().settings
+        const latest = current.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]
+        // 余额响应不恢复已退出的账号，也不覆盖同时自动补齐的视频凭据。
+        if (!latest || latest.accessToken !== accountSession.accessToken) return
         setSettings({
           ...setApiBalanceSnapshot(current, activeProfile.id, {
             text: session.balanceText ?? '',
@@ -81,7 +84,13 @@ export default function AccountBalanceBar({
           }),
           newApiAccountSessions: {
             ...current.newApiAccountSessions,
-            [LOCKED_WENYUN_PROFILE_ID]: session,
+            [LOCKED_WENYUN_PROFILE_ID]: {
+              ...latest, ...session,
+              boundVideoApiKey: latest.boundVideoApiKey,
+              boundVideoApiKeyId: latest.boundVideoApiKeyId,
+              boundVideoApiKeyName: latest.boundVideoApiKeyName,
+              boundVideoApiKeyGroup: latest.boundVideoApiKeyGroup,
+            },
           },
         })
         showToast('账号余额已更新', 'success')
