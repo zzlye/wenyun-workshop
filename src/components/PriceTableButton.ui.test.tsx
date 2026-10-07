@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PriceTableButton from './PriceTableButton'
 import { DEFAULT_SETTINGS, LOCKED_WENYUN_PROFILE_ID, normalizeSettings } from '../lib/apiProfiles'
 import type { AppSettings } from '../types'
+import { queryNewApiModelPerformance, queryNewApiPriceTable } from '../lib/newApi'
 
 const fixture = vi.hoisted(() => ({ settings: {} as AppSettings, setSettings: vi.fn() }))
 vi.mock('../store', () => ({ useStore: Object.assign((selector: (state: typeof fixture) => unknown) => selector(fixture), { getState: () => fixture }) }))
@@ -26,7 +27,7 @@ let failPricing: boolean
 let expiredAccount: boolean
 let requests: { url: string; init?: RequestInit }[]
 const button = (name: string) => Array.from(document.querySelectorAll('button')).find(item => item.textContent === name)!
-const panel = () => document.querySelector('[role="tabpanel"]')!
+const panel = () => document.querySelector('[role="tabpanel"]:not([hidden])')!
 const render = async () => {
   await act(async () => root.render(<QueryClientProvider client={client}><PriceTableButton activeProfile={fixture.settings.profiles[0]} /></QueryClientProvider>))
   await act(async () => { await vi.advanceTimersByTimeAsync(30) })
@@ -43,6 +44,8 @@ beforeEach(() => {
   failPricing = false
   expiredAccount = false
   requests = []
+  vi.mocked(queryNewApiPriceTable).mockClear()
+  vi.mocked(queryNewApiModelPerformance).mockClear()
   // 使用真实查询缓存及获取函数，只替换网络，确保切页与换账号确实隔离。
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
@@ -77,6 +80,37 @@ afterEach(async () => {
 })
 
 describe('模型列表图片与视频分页', () => {
+  it('打开时同步刷新两类模型，切页不重发请求，重新打开也刷新视频缓存', async () => {
+    await render()
+    await click(button('模型列表'))
+    expect(vi.mocked(queryNewApiModelPerformance)).toHaveBeenCalledTimes(1)
+    expect(requests.filter(item => item.url.endsWith('/api/pricing'))).toHaveLength(1)
+    expect(document.querySelector('[role="tablist"]')?.parentElement?.textContent).toContain('更新于')
+    expect(document.body.textContent).not.toContain('图片模型，成功率更新于')
+    await click(button('视频'))
+    expect(requests.filter(item => item.url.endsWith('/api/pricing'))).toHaveLength(1)
+    expect(vi.mocked(queryNewApiModelPerformance)).toHaveBeenCalledTimes(1)
+    expect(panel().textContent).toContain('fresh-video-model')
+    await click(button('图片'))
+    expect(requests.filter(item => item.url.endsWith('/api/pricing'))).toHaveLength(1)
+    expect(document.querySelector('[aria-label="关闭模型列表"]')).not.toBeNull()
+    await click(document.querySelector('[aria-label="关闭模型列表"]') as HTMLElement)
+    await click(button('模型列表'))
+    expect(vi.mocked(queryNewApiModelPerformance)).toHaveBeenCalledTimes(2)
+    expect(requests.filter(item => item.url.endsWith('/api/pricing'))).toHaveLength(2)
+  })
+
+  it('图片和视频切页时共用固定高度的弹窗，列表在内部滚动', async () => {
+    await render()
+    await click(button('模型列表'))
+    const dialog = document.querySelector('.animate-modal-in') as HTMLElement
+    expect(dialog.className).toContain('h-[82vh]')
+    expect(dialog.querySelector('.overflow-y-auto')).not.toBeNull()
+    await click(button('视频'))
+    expect(document.querySelector('.animate-modal-in')).toBe(dialog)
+    expect(dialog.className).toContain('h-[82vh]')
+  })
+
   it('图片表保留，切到视频显示自动名称、简介、价格和零成功率', async () => {
     await render()
     await click(button('模型列表'))
@@ -87,6 +121,7 @@ describe('模型列表图片与视频分页', () => {
     expect(panel().textContent).toContain('接口提供的简介')
     expect(panel().textContent).toContain('HUHN 4.5 / 次')
     expect(panel().textContent).toContain('0.00%')
+    expect(panel().querySelector('[role="columnheader"]')?.textContent).toBe('模型')
     expect(panel().textContent).not.toContain('image-only')
     await click(button('图片'))
     expect(panel().textContent).toContain('支持分辨率')
@@ -102,6 +137,8 @@ describe('模型列表图片与视频分页', () => {
     expect(panel().textContent).toContain(description)
     expect(panel().textContent).not.toContain('fresh-video-model')
     expect(requests.filter(item => item.url.endsWith('/api/pricing'))).toHaveLength(2)
+    expect(vi.mocked(queryNewApiModelPerformance)).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(queryNewApiPriceTable)).toHaveBeenCalledTimes(2)
     expect(requests.every(item => !item.init?.method || item.init.method === 'GET')).toBe(true)
   })
 
@@ -111,8 +148,7 @@ describe('模型列表图片与视频分页', () => {
     await openVideo()
     expect(requests.find(item => item.url.endsWith('/models'))?.init?.headers).toMatchObject({ Authorization: 'Bearer video-a' })
     expect(requests.find(item => item.url.endsWith('/api/pricing'))?.init?.headers).toMatchObject({ Authorization: 'Bearer session-a' })
-    expect(panel().textContent).toContain('视频分组价格')
-    expect(panel().textContent).not.toContain('参考价格')
+    expect(document.querySelector('[role="dialog"]')?.textContent ?? document.body.textContent).not.toContain('视频分组参考价格')
     modelName = 'account-b-video'
     fixture.settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] = { ...account, username: 'user-b', userId: 3, accessToken: 'session-b', boundVideoApiKey: 'video-b' }
     await render()
@@ -134,7 +170,7 @@ describe('模型列表图片与视频分页', () => {
     expect(panel().textContent).toContain('接口提供的简介')
     expect(panel().textContent).toContain('HUHN 4.5 / 次')
     expect(panel().textContent).toContain('0.00%')
-    expect(panel().textContent).toContain('视频分组参考价格')
+    expect(panel().textContent).not.toContain('视频分组参考价格')
     expect(panel().querySelector('[role="alert"]')).toBeNull()
     expect(panel().textContent).not.toContain('image-only')
     expect(requests.find(item => item.url.endsWith('/models'))?.init?.headers).toMatchObject({ Authorization: 'Bearer valid-video-key' })
