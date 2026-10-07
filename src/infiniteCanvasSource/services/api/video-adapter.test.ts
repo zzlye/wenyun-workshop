@@ -68,6 +68,7 @@ it("本地图片经上传返回素材编号，再单次创建视频任务", asyn
     ]);
     expect(vi.mocked(axios.post).mock.calls[0][0]).toContain("/video/assets");
     expect(vi.mocked(axios.post).mock.calls[0][1]).toBeInstanceOf(FormData);
+    expect(vi.mocked(axios.post).mock.calls[0][2]?.timeout).toBe(1800000);
     expect(vi.mocked(axios.post).mock.calls[1][1]).toMatchObject({ image_urls: [{ asset_id: "va_saved" }] });
 });
 it("能力网络错误保留输入并阻止创建，不当作旧模型回退", async () => {
@@ -75,7 +76,7 @@ it("能力网络错误保留输入并阻止创建，不当作旧模型回退", a
     await expect(requestVideoGeneration(config, "镜头")).rejects.toThrow("网络中断");
     expect(axios.post).not.toHaveBeenCalled();
 });
-it("前台超过15分钟返回等待状态，恢复仍使用原任务编号", async () => {
+it("15分钟后继续查询，30分钟后保留等待状态且恢复原任务不重复创建", async () => {
     vi.useFakeTimers();
     vi.mocked(axios.post).mockResolvedValue({ data: { id: "saved", status: "queued" } });
     // 用虚拟时钟跨过等待窗口，不实际等待或发送付费请求。
@@ -89,6 +90,11 @@ it("前台超过15分钟返回等待状态，恢复仍使用原任务编号", as
     expect(pending).toBeInstanceOf(VideoTaskPendingError);
     expect(pending.taskId).toBe("saved");
     expect(axios.post).toHaveBeenCalledTimes(1);
+    // 第一次跨过十五分钟仍会查询；第二次跨过三十分钟才结束前台等待。
+    expect(axios.get).toHaveBeenCalledTimes(2);
+    const firstTimeout = vi.mocked(axios.get).mock.calls[0][1]?.timeout ?? 0;
+    expect(firstTimeout).toBeGreaterThan(1799000);
+    expect(firstTimeout).toBeLessThanOrEqual(1800000);
     vi.mocked(axios.get)
         .mockResolvedValueOnce({ data: { id: "saved", status: "completed" } })
         .mockResolvedValueOnce({ data: new Blob(["video"], { type: "video/mp4" }) });
@@ -96,4 +102,7 @@ it("前台超过15分钟返回等待状态，恢复仍使用原任务编号", as
     await vi.advanceTimersByTimeAsync(10);
     expect((await resumed).type).toBe("video/mp4");
     expect(axios.post).toHaveBeenCalledTimes(1);
+    const downloadTimeout = vi.mocked(axios.get).mock.calls.at(-1)?.[1]?.timeout ?? 0;
+    expect(downloadTimeout).toBeGreaterThan(1799000);
+    expect(downloadTimeout).toBeLessThanOrEqual(1800000);
 });

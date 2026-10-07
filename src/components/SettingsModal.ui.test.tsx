@@ -108,7 +108,8 @@ describe('视频 API 设置精简', () => {
     const keyInput = host.querySelector('input[type="password"]') as HTMLInputElement
     expect(keyInput.value).toBe('account-video-key')
     expect(keyInput.readOnly).toBe(true)
-    expect(host.textContent).toContain('已使用账号视频 Key · 视频分组')
+    expect(host.textContent).not.toContain('已使用账号视频 Key')
+    expect(host.textContent).not.toContain('视频分组')
     await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="显示 API Key"]')!.click())
     expect(keyInput.type).toBe('text')
     await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="复制视频 API Key"]')!.click())
@@ -134,6 +135,22 @@ describe('视频 API 设置精简', () => {
     expect(host.querySelector('section[aria-label="视频 API 配置"]')).not.toBeNull()
     expect(host.querySelector('input[type="password"]')).not.toBeNull()
     expect(host.querySelector('#video-api-model-input')).not.toBeNull()
+    expect(host.textContent).not.toContain('接口地址固定')
+    expect(host.textContent).not.toContain('画布视频任务最长等待')
+    const timeout = host.querySelector<HTMLInputElement>('section input[type="number"]')!
+    expect(timeout.value).toBe('1800')
+    expect(timeout.readOnly).toBe(true)
+  })
+
+  it('图片接口只删说明，保留地址、复制按钮和原请求时限', async () => {
+    const tab = Array.from(host.querySelectorAll('button')).find(button => button.textContent === '出图 API 配置')!
+    await act(async () => tab.click())
+    expect(host.textContent).not.toContain('固定接口地址，可选中复制')
+    const url = Array.from(host.querySelectorAll<HTMLInputElement>('input')).find(input => input.value === CANVAS_VIDEO_BASE_URL)!
+    expect(url.readOnly).toBe(true)
+    await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="复制 API URL"]')!.click())
+    expect(fixture.copy).toHaveBeenCalledWith(CANVAS_VIDEO_BASE_URL)
+    expect(host.querySelector<HTMLInputElement>('input[type="number"]')?.value).toBe('600')
   })
 
   it('仍可获取模型并保存所选模型，不因精简删除 API 功能', async () => {

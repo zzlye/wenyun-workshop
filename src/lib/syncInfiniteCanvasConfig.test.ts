@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { defaultConfig, useConfigStore } from '../infiniteCanvasSource/stores/use-config-store'
-import { DEFAULT_SETTINGS, LOCKED_WENYUN_PROFILE_ID, LOCKED_PUBLIC_PROFILE_ID } from './apiProfiles'
+import { DEFAULT_SETTINGS, LOCKED_WENYUN_PROFILE_ID, LOCKED_PUBLIC_PROFILE_ID, normalizeSettings } from './apiProfiles'
 import { syncInfiniteCanvasConfigFromSettings } from './syncInfiniteCanvasConfig'
 import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_TIMEOUT } from './videoModel'
 
@@ -16,6 +16,18 @@ afterEach(() => {
 })
 
 describe('syncInfiniteCanvasConfigFromSettings', () => {
+  it('新用户和旧配置统一使用1800秒，画布同步不再沿用900秒', () => {
+    expect(CANVAS_VIDEO_TIMEOUT).toBe(1800)
+    expect(DEFAULT_SETTINGS.videoTimeout).toBe(1800)
+    expect(defaultConfig.videoTimeout).toBe(1800)
+    for (const videoTimeout of [undefined, 900, 120]) {
+      const settings = normalizeSettings({ ...DEFAULT_SETTINGS, videoTimeout })
+      expect(settings.videoTimeout).toBe(1800)
+      syncInfiniteCanvasConfigFromSettings(settings)
+      expect(useConfigStore.getState().config.videoTimeout).toBe(1800)
+    }
+  })
+
   it('keeps canvas video requests on local direct settings when old backend settings remain in store', () => {
     useConfigStore.setState({
       publicSettings: {

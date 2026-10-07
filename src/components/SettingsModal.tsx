@@ -276,7 +276,6 @@ function ExternalApiConfigSection({
           placeholder="https://example.com/v1"
           className={`w-full rounded-xl border border-gray-200/70 px-3 py-2.5 text-sm text-gray-700 outline-none transition dark:border-white/[0.08] dark:text-gray-200 ${fixedBaseUrl ? 'cursor-default bg-gray-100/80 dark:bg-white/[0.05]' : 'bg-white/60 focus:border-blue-300 dark:bg-white/[0.03] dark:focus:border-blue-500/50'}`}
         />
-        {fixedBaseUrl ? <div data-selectable-text className="mt-1.5 text-xs text-gray-500 dark:text-gray-500">接口地址固定，画布视频请求不会使用其他 URL。</div> : null}
       </label>
 
       <div className="block">
@@ -394,7 +393,6 @@ function ExternalApiConfigSection({
           max={fixedTimeout ?? 600}
           className={`w-full rounded-xl border border-gray-200/70 px-3 py-2.5 text-sm text-gray-700 outline-none transition dark:border-white/[0.08] dark:text-gray-200 ${fixedTimeout !== undefined ? 'cursor-default bg-gray-100/80 dark:bg-white/[0.05]' : 'bg-white/60 focus:border-blue-300 dark:bg-white/[0.03] dark:focus:border-blue-500/50'}`}
         />
-        {fixedTimeout !== undefined ? <div data-selectable-text className="mt-1.5 text-xs text-gray-500 dark:text-gray-500">画布视频任务最长等待 900 秒。</div> : null}
       </label>
     </section>
   )
@@ -434,7 +432,6 @@ export default function SettingsModal() {
   const videoAccountKey = getBoundVideoApiKey(videoAccountSession)
   const videoKeyQuery = useAccountVideoKey()
   const videoUsesAccountCredentials = Boolean(videoAccountSession && (settings.accountApiKeyMode === 'account' || !draft.videoApiKey.trim()))
-  const videoUsesAccountKey = Boolean(videoAccountKey && effectiveVideoApiKey === videoAccountKey)
   useEffect(() => { setShowApiKey(false) }, [videoAccountSession?.accessToken, activeTab, showSettings])
   const videoModelsQuery = useVideoModels(effectiveVideoApiKey, draft.videoApiProxy, showSettings && activeTab === 'videoApi')
   const videoModelOptions = videoModelsQuery.data ?? []
@@ -1088,9 +1085,6 @@ export default function SettingsModal() {
                     onFocus={(event) => event.currentTarget.select()}
                     className="w-full cursor-text rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
                   />
-                  <div data-selectable-text className="mt-1.5 min-h-[22px] flex items-center text-xs text-gray-500 dark:text-gray-500">
-                    固定接口地址，可选中复制。
-                  </div>
                 </label>
               )}
 
@@ -1226,7 +1220,8 @@ export default function SettingsModal() {
                   idPrefix="video-api"
                   title="视频 API 配置"
                   onCopyBaseUrl={() => void copyApiUrl(CANVAS_VIDEO_BASE_URL)}
-                  apiKeyHint={videoUsesAccountKey ? '已使用账号视频 Key · 视频分组' : videoUsesAccountCredentials ? videoKeyQuery.isError ? '账号视频 Key 暂不可用' : '正在准备账号视频 Key' : undefined}
+                  // 正常状态不展示内部绑定说明，仅在凭据未就绪时保留必要提示。
+                  apiKeyHint={videoUsesAccountCredentials && !videoAccountKey ? videoKeyQuery.isError ? '账号视频 Key 暂不可用' : '正在准备账号视频 Key' : undefined}
                   baseUrl={CANVAS_VIDEO_BASE_URL}
                   apiKey={videoUsesAccountCredentials ? videoAccountKey : draft.videoApiKey}
                   apiKeyReadOnly={videoUsesAccountCredentials}

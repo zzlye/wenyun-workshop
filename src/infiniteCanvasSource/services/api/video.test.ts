@@ -96,7 +96,7 @@ describe("画布视频异步接口", () => {
             },
             expect.objectContaining({
                 headers: { Authorization: "Bearer video-key", "Content-Type": "application/json", Prefer: "respond-async" },
-                timeout: 900000,
+                timeout: 1800000,
             }),
         );
         expect(axios.get).toHaveBeenNthCalledWith(1, `${VIDEO_API_PROXY_BASE}/videos/task-1`, expect.objectContaining({ headers: { Authorization: "Bearer video-key" } }));

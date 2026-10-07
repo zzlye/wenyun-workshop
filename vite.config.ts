@@ -7,6 +7,7 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath, URL } from 'node:url'
 import { ASSET_PROXY_PREFIX, normalizeDevProxyConfig } from './src/lib/devProxy'
+import { CANVAS_VIDEO_TIMEOUT } from './src/lib/videoModel'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
@@ -257,7 +258,8 @@ async function proxyRawResponse(target: string, req: import('node:http').Incomin
     })
 
     upstreamRequest.once('error', reject)
-    upstreamRequest.setTimeout(900_000, () => upstreamRequest.destroy(new Error('资源下载超时')))
+    // 视频下载代理与客户端共用时限，避免代理先于客户端断开。
+    upstreamRequest.setTimeout(CANVAS_VIDEO_TIMEOUT * 1000, () => upstreamRequest.destroy(new Error('资源下载超时')))
     upstreamRequest.end()
   })
 }
