@@ -651,7 +651,7 @@ html[data-workspace-vt]::view-transition-new(root) {
   font-family: inherit;
 }
 
-/* 图片节点底栏的模型、协议和图像设置共用同一外观。 */
+/* 生成节点底栏的模型、协议和参数设置共用同一外观。 */
 .canvas-node-prompt-controls .canvas-node-control,
 .canvas-node-prompt-controls .canvas-node-control.ant-btn {
   height: 32px !important;

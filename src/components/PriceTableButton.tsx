@@ -203,11 +203,12 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
                   {rows.map((row) => {
                     const metric = findMetric(performanceItems, row.model, row.upstreamModel)
                     const rate = metric?.successRate ?? null
+                    const isLegacyBanana = /^Nano-Banana-(?:2|Pro)$/i.test(row.model)
                     return (
                       <div key={`${row.model}-${row.upstreamModel || ''}`} className="grid grid-cols-[minmax(0,1.2fr)_minmax(120px,0.9fr)_110px_100px] gap-3 border-t border-gray-100 px-4 py-3 text-sm dark:border-white/[0.06]">
                         <div className="min-w-0">
-                          <div className="break-all font-medium text-gray-800 dark:text-gray-100">{row.model}</div>
-                          {row.upstreamModel ? <div className="mt-1 break-all text-[11px] text-gray-400 dark:text-gray-500">实际模型：{row.upstreamModel}</div> : null}
+                          <div className="break-all font-medium text-gray-800 dark:text-gray-100">{isLegacyBanana ? row.model.toLowerCase() : row.model}</div>
+                          {row.upstreamModel && !isLegacyBanana ? <div className="mt-1 break-all text-[11px] text-gray-400 dark:text-gray-500">实际模型：{row.upstreamModel}</div> : null}
                         </div>
                         <div className="min-w-0 text-gray-600 dark:text-gray-300">{row.resolutionText || '—'}</div>
                         <div className="font-mono text-gray-700 dark:text-gray-200">{row.priceText}</div>

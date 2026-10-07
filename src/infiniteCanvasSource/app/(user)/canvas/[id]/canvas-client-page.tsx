@@ -2657,7 +2657,10 @@ function InfiniteCanvasPage() {
 
     const handleUploadRequest = useCallback((nodeId?: string, position?: Position) => {
         uploadTargetRef.current = { nodeId, position };
-        imageInputRef.current?.click();
+        const input = imageInputRef.current;
+        if (!input) return;
+        input.accept = nodeId && nodesRef.current.find((node) => node.id === nodeId)?.type === CanvasNodeType.Audio ? "audio/*" : "image/*,video/*,audio/*";
+        input.click();
     }, []);
 
     const uploadFromQuickMenu = useCallback(() => {
@@ -2714,6 +2717,12 @@ function InfiniteCanvasPage() {
             const file = files[0];
             const target = uploadTargetRef.current;
             if (!file) return;
+
+            if (target?.nodeId && nodesRef.current.find((node) => node.id === target.nodeId)?.type === CanvasNodeType.Audio && !file.type.startsWith("audio/")) {
+                message.error("请选择音频文件");
+                event.target.value = "";
+                return;
+            }
 
             if (target?.nodeId) {
                 if (file.type.startsWith("audio/")) {
@@ -2784,7 +2793,7 @@ function InfiniteCanvasPage() {
             uploadTargetRef.current = null;
             event.target.value = "";
         },
-        [createDroppedFileNodes, screenToCanvas, size.height, size.width],
+        [createDroppedFileNodes, message, screenToCanvas, size.height, size.width],
     );
 
     const handleDrop = useCallback(

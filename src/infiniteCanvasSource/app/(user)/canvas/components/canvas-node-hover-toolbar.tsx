@@ -152,6 +152,7 @@ export function CanvasNodeHoverToolbar({
     const left = viewport.x + (node.position.x + node.width / 2) * viewport.k;
     const top = viewport.y + node.position.y * viewport.k - 42;
     const isImage = node.type === CanvasNodeType.Image;
+    const isAudio = node.type === CanvasNodeType.Audio;
     const isVideo = node.type === CanvasNodeType.Video;
     const hasImage = isImage && Boolean(node.metadata?.content || node.metadata?.storageKey);
     const hasVideo = isVideo && Boolean(node.metadata?.content || node.metadata?.storageKey);
@@ -159,7 +160,7 @@ export function CanvasNodeHoverToolbar({
     const isConfig = node.type === CanvasNodeType.Config;
     const canOpenDialog = isText || hasImage || isVideo;
     const canRetry = node.metadata?.status === "error";
-    const hasSpecificTools = canRetry || isText || isImage || isVideo || isConfig;
+    const hasSpecificTools = canRetry || isText || isImage || isVideo || isAudio || isConfig;
 
     return (
         <div
@@ -184,6 +185,7 @@ export function CanvasNodeHoverToolbar({
             {isText ? <ToolbarAction title="增大字号" label="放大" icon={<Plus className="size-4" />} onClick={() => onIncreaseFont(node)} /> : null}
             {isImage ? <ToolbarAction title={hasImage ? "替换图片" : "上传图片"} label={hasImage ? "替换图片" : "上传图片"} icon={<Upload className="size-4" />} onClick={() => onUpload(node)} /> : null}
             {isVideo ? <ToolbarAction title={hasVideo ? "替换视频" : "上传视频"} label={hasVideo ? "替换视频" : "上传视频"} icon={<Video className="size-4" />} onClick={() => onUpload(node)} /> : null}
+            {isAudio ? <ToolbarAction title={node.metadata?.content ? "替换音频" : "上传音频"} label={node.metadata?.content ? "替换音频" : "上传音频"} icon={<Upload className="size-4" />} onClick={() => onUpload(node)} /> : null}
             {hasImage ? (
                 <ToolbarAction
                     title={node.metadata?.freeResize ? "切换为等比缩放" : "切换为自由比例"}
