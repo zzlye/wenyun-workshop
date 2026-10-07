@@ -11,6 +11,8 @@ const CASES = [
   ['Nano-Banana-2', '3072x384', '8:1', '1K'],
   ['Nano-Banana-2', '768x6144', '1:8', '2K'],
   ['Nano-Banana-2', '12288x1536', '8:1', '4K'],
+  ['nano-banana-2.1', '1376x768', '16:9', '1K'],
+  ['nano-banana-2.1', '768x6144', '1:8', '2K'],
   ['Nano-Banana-Pro', '928x1152', '4:5', '1K'],
   ['Nano-Banana-Pro', '2304x1856', '5:4', '2K'],
   ['Nano-Banana-Pro', '4096x4096', '1:1', '4K'],
@@ -55,6 +57,7 @@ describe('文运香蕉官方尺寸请求', () => {
       } else {
         const json = JSON.parse(String(body))
         const config = protocol === 'gemini' ? json.generationConfig.imageConfig : json
+        if (model === 'nano-banana-2.1' && protocol === 'openai') expect(json.model).toBe('nano-banana-2.1')
         expect(config).toMatchObject({ aspectRatio, imageSize })
         if (protocol === 'openai') expect(json.size).toBe(size)
       }

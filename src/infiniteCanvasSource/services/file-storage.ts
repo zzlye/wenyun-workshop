@@ -7,6 +7,7 @@ export type UploadedFile = { url: string; storageKey: string; bytes: number; mim
 
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "media_files" });
 const objectUrls = new Map<string, string>();
+const MEDIA_METADATA_TIMEOUT_MS = 3000;
 
 export async function uploadMediaFile(input: string | Blob, prefix = "file"): Promise<UploadedFile> {
     const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
@@ -81,7 +82,19 @@ export function collectMediaStorageKeys(value: unknown, keys = new Set<string>()
 function readVideoMeta(url: string) {
     return new Promise<{ width: number; height: number }>((resolve) => {
         const video = document.createElement("video");
-        const done = () => resolve({ width: video.videoWidth || 1280, height: video.videoHeight || 720 });
+        let settled = false;
+        const done = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            const size = { width: video.videoWidth || 1280, height: video.videoHeight || 720 };
+            video.onloadedmetadata = null;
+            video.onerror = null;
+            video.removeAttribute("src");
+            resolve(size);
+        };
+        // 浏览器可能无法解析部分视频的元数据；文件已经入库，不能因此让任务一直处于加载中。
+        const timeout = setTimeout(done, MEDIA_METADATA_TIMEOUT_MS);
         video.onloadedmetadata = done;
         video.onerror = done;
         video.src = url;

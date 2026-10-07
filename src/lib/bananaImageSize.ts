@@ -52,9 +52,15 @@ const FLASH_CONFIG = {
   ratios: Object.keys(FLASH_SIZES),
   presets: createPresets(FLASH_SIZES, FLASH_SMALL_SIZES),
 }
+const BANANA_2_1_CONFIG = {
+  tiers: ['1K', '2K', '4K'] as BananaSizeTier[],
+  ratios: Object.keys(FLASH_SIZES),
+  presets: createPresets(FLASH_SIZES),
+}
 
 export function getBananaSizeConfig(model: string) {
   const normalized = getFixedImageRequestModel(model).toLowerCase()
+  if (normalized === 'nano-banana-2.1' || normalized === 'gemini-nano-banana-2.1') return BANANA_2_1_CONFIG
   if (normalized === 'nano-banana-2' || /^gemini-3\.1-flash-image(?:-preview)?$/.test(normalized)) return FLASH_CONFIG
   if (normalized === 'nano-banana-pro' || /^gemini-3-pro-image(?:-preview)?$/.test(normalized)) return PRO_CONFIG
   return null

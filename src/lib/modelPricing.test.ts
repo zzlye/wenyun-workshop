@@ -19,6 +19,7 @@ describe('fixed image model pricing', () => {
       expect.objectContaining({ model: 'gpt-image-2-4k', resolutionText: '1K、2K、4K', priceText: 'HUHN 0.09' }),
       expect.objectContaining({ model: 'seedream-5-pro', resolutionText: '1K、2K', priceText: 'HUHN --' }),
       expect.objectContaining({ model: 'Nano-Banana-2', resolutionText: '1K、2K、4K' }),
+      expect.objectContaining({ model: 'nano-banana-2.1', resolutionText: '1K、2K、4K' }),
       expect.objectContaining({ model: 'Nano-Banana-Pro', resolutionText: '1K、2K、4K' }),
     ]))
     expect(rows.map((row) => row.model)).not.toContain('gpt-image-2-vip')
@@ -29,6 +30,7 @@ describe('fixed image model pricing', () => {
       'gpt-image-2.5-flare-4k',
     ]))
     expect(getImageSizeTiersForModel('seedream-5-pro')).toEqual(['1K', '2K'])
+    expect(getFixedImageRequestModel('nano-banana-2.1')).toBe('nano-banana-2.1')
   })
 
   it('基础2.5模型仅支持1K，列表和参数能力保持一致', () => {

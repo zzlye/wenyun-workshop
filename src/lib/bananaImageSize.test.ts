@@ -5,6 +5,11 @@ describe('文运香蕉官方尺寸', () => {
   it('按模型区分官方比例和分辨率', () => {
     const pro = getBananaSizeConfig('Nano-Banana-Pro')!
     const flash = getBananaSizeConfig('Nano-Banana-2')!
+    const banana21 = getBananaSizeConfig('nano-banana-2.1')!
+    expect(getBananaSizeConfig('gemini-nano-banana-2.1')).toBe(banana21)
+    expect(banana21.ratios).toEqual(flash.ratios)
+    expect(banana21.tiers).toEqual(['1K', '2K', '4K'])
+    expect(banana21.presets.some((preset) => preset.tier === '512px')).toBe(false)
     expect(pro.ratios).toEqual(['1:1', '3:2', '2:3', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4', '21:9'])
     expect(flash.ratios).toEqual([...pro.ratios, '1:4', '4:1', '1:8', '8:1'])
     expect(pro.tiers).toEqual(['1K', '2K', '4K'])

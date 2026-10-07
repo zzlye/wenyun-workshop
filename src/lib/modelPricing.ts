@@ -43,6 +43,8 @@ export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
   { model: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, label: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K' },
   { model: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, label: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K' },
   { model: 'Nano-Banana-2', label: 'Nano Banana 2', requestModel: 'nano-banana-2', unitCostText: 'HUHN 0.09', resolutionText: '1K、2K、4K' },
+  // 保留站点路由名，由中转映射官方模型；尺寸能力与旧版香蕉二分别维护。
+  { model: 'nano-banana-2.1', label: 'Nano Banana 2.1', requestModel: 'nano-banana-2.1', unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   { model: 'Nano-Banana-Pro', label: 'Nano Banana Pro', requestModel: 'nano-banana-pro', unitCostText: 'HUHN 0.15', resolutionText: '1K、2K、4K' },
 ]
 
@@ -80,6 +82,7 @@ export function isBananaImageModel(model: string): boolean {
 export function getBananaPricedImageModel(model: string): string {
   const normalized = model.trim()
   if (!isBananaImageModel(normalized)) return model
+  if (/^nano-banana-2\.1$/i.test(normalized)) return 'nano-banana-2.1'
   return /^Nano-Banana-Pro$/i.test(normalized) ? 'nano-banana-pro' : 'nano-banana-2'
 }
 
@@ -100,7 +103,9 @@ export function getFixedImagePricing(model: string): FixedImageModelPricing | nu
 
   if (!isBananaImageModel(normalized)) return null
   return FIXED_IMAGE_MODEL_PRICING.find((item) => (
-    /^Nano-Banana-Pro(?:-(?:1k|2k|4k))?$/i.test(normalized)
+    /^nano-banana-2\.1$/i.test(normalized)
+      ? item.requestModel === 'nano-banana-2.1'
+      : /^Nano-Banana-Pro(?:-(?:1k|2k|4k))?$/i.test(normalized)
       ? item.requestModel === 'nano-banana-pro'
       : item.requestModel === 'nano-banana-2'
   )) ?? null
