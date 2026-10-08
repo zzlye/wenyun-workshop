@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import { LOCKED_WENYUN_PROFILE_ID, normalizeSettings } from '../lib/apiProfiles'
-import { ensureNewApiVideoBoundKey } from '../lib/newApiAccount'
+import { ensureNewApiVideoBoundKey, isRetryableNewApiAccountError } from '../lib/newApiAccount'
 import { getBoundVideoApiKey } from '../lib/videoAccount'
 
 export function useAccountVideoKey() {
@@ -11,11 +11,18 @@ export function useAccountVideoKey() {
   return useQuery({
     queryKey: ['account-video-key', profile.baseUrl, session?.userId, session?.accessToken],
     enabled: Boolean(session && !getBoundVideoApiKey(session)),
-    retry: false,
+    // 老账号首次打开页面时可能短暂断网；有限重试，并先复用服务端已有的视频 Key。
+    retry: (failureCount, error) => failureCount < 2 && isRetryableNewApiAccountError(error),
+    retryDelay: attempt => Math.min(1000 * 2 ** attempt, 5000),
     staleTime: 0,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: query => isRetryableNewApiAccountError(query.state.error),
+    refetchOnReconnect: query => isRetryableNewApiAccountError(query.state.error),
     queryFn: async () => {
       if (!session) return false
+      const before = useStore.getState().settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]
+      // 重试等待期间退出或切换账号时，不能再为旧账号发送创建令牌请求。
+      if (!before || before.accessToken !== session.accessToken || before.userId !== session.userId) return false
+      if (getBoundVideoApiKey(before)) return true
       const updated = await ensureNewApiVideoBoundKey(profile, session)
       const store = useStore.getState()
       const current = store.settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]

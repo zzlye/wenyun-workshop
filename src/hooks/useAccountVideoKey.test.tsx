@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useStore } from '../store'
 import { DEFAULT_SETTINGS, LOCKED_WENYUN_PROFILE_ID, normalizeSettings } from '../lib/apiProfiles'
@@ -51,11 +51,98 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount())
   client.clear()
+  focusManager.setFocused(undefined)
   host.remove()
   vi.restoreAllMocks()
 })
 
 describe('账号视频凭据自动补齐', () => {
+  it('旧登录续期短暂失败后自动恢复，保存新会话并补齐视频Key', async () => {
+    let refreshes = 0
+    useStore.getState().setSettings({ newApiAccountSessions: { [LOCKED_WENYUN_PROFILE_ID]: { ...session, authSessionId: 'old-session' } } })
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url.endsWith('/auth/refresh')) {
+        if (++refreshes === 1) return new Response(JSON.stringify({ success: false, message: '服务暂不可用' }), { status: 503 })
+        return response({ access_token: 'renewed-manager', session: { sid: 'old-session' } })
+      }
+      if (url.endsWith('/self/groups')) {
+        if ((init?.headers as Record<string, string>).Authorization === 'Bearer manager') {
+          return new Response(JSON.stringify({ success: false, message: 'Access token invalid' }), { status: 401 })
+        }
+        return response({ 视频: {} })
+      }
+      if (url.includes('/api/token/?')) return response({ items: [{ id: 9, name: 'wy-video-old', group: '视频', unlimited_quota: true, key: 'video-key' }] })
+      if (url.endsWith('/models')) return response([{ id: 'wan' }])
+      throw new Error('意外请求：' + url)
+    })
+    await render()
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1200)) })
+    await settle()
+    expect(refreshes).toBe(2)
+    expect(useStore.getState().settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]).toMatchObject({
+      accessToken: 'renewed-manager', boundApiKey: 'image-key', boundVideoApiKey: 'video-key', boundVideoApiKeyGroup: '视频',
+    })
+  })
+
+  it('自动重试等待期间退出账号，不再发送旧账号请求', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'))
+    await render()
+    await settle()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await act(async () => useStore.getState().setSettings({ newApiAccountSessions: {} }))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1200)) })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(useStore.getState().settings.newApiAccountSessions).toEqual({})
+  })
+
+  it('老账号首次补齐遇到网络中断后自动恢复，模型列表使用视频Key', async () => {
+    let attempts = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = String(input)
+      if (url.endsWith('/self/groups')) {
+        if (++attempts === 1) throw new TypeError('Failed to fetch')
+        return response({ 视频: {} })
+      }
+      if (url.includes('/api/token/?')) return response({ items: [{ id: 9, name: 'wy-video-old', group: '视频', unlimited_quota: true, key: 'video-key' }] })
+      if (url.endsWith('/models')) return response([{ id: 'wan' }])
+      throw new Error('意外请求：' + url)
+    })
+    await render()
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1200)) })
+    await settle()
+    expect(getEffectiveVideoApiKey(useStore.getState().settings)).toBe('video-key')
+    expect(host.textContent).toContain('wan')
+    expect(attempts).toBe(2)
+  })
+
+  it('短暂服务故障重试耗尽后，切回页面会自动补齐且不重复创建Key', async () => {
+    let available = false
+    let attempts = 0
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = String(input)
+      if (url.endsWith('/self/groups')) {
+        attempts++
+        if (!available) return new Response(JSON.stringify({ success: false, message: '服务暂不可用' }), { status: 503 })
+        return response({ 视频: {} })
+      }
+      if (url.includes('/api/token/?')) return response({ items: [{ id: 9, name: 'wy-video-old', group: '视频', unlimited_quota: true, key: 'video-key' }] })
+      if (url.endsWith('/models')) return response([{ id: 'wan' }])
+      throw new Error('意外请求：' + url)
+    })
+    await render()
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 3300)) })
+    expect(attempts).toBe(3)
+    expect(getEffectiveVideoApiKey(useStore.getState().settings)).toBe('')
+    available = true
+    await act(async () => { focusManager.setFocused(false); focusManager.setFocused(true) })
+    await settle()
+    await settle()
+    expect(getEffectiveVideoApiKey(useStore.getState().settings)).toBe('video-key')
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/api/token/'))).toBe(false)
+    focusManager.setFocused(undefined)
+  })
+
   it('老账号自动绑定，两个观察者只创建一次，列表只用视频Key，退出后清空', async () => {
     let created: Record<string, unknown> | null = null
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {

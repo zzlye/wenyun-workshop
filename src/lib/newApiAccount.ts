@@ -54,6 +54,22 @@ type NewApiSessionUpdated = (session: NewApiAccountSession) => void
 
 const accountRefreshRequests = new Map<string, Promise<NewApiAccountSession>>()
 
+// 保留服务端状态，区分临时网络故障与需要用户处理的账号权限错误。
+class NewApiAccountRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message)
+    this.name = 'NewApiAccountRequestError'
+  }
+}
+
+export function isRetryableNewApiAccountError(error: unknown): boolean {
+  if (error instanceof NewApiAccountRequestError) {
+    return [408, 429, 500, 502, 503, 504].includes(error.status)
+  }
+  // fetch 在断网、连接中断等场景抛出 TypeError，不重试普通业务错误。
+  return error instanceof TypeError || error instanceof Error && error.name === 'TimeoutError'
+}
+
 function trimTrailingSlash(value: string): string {
   return value.trim().replace(/\/+$/, '')
 }
@@ -156,7 +172,7 @@ async function newApiRequest<T>(
   const businessError = /^error$/i.test(message)
 
   if (!response.ok || code !== undefined && code !== 0 || success === false || businessError) {
-    throw new Error(readErrorMessage(payload) || `请求失败：${response.status}`)
+    throw new NewApiAccountRequestError(readErrorMessage(payload) || `请求失败：${response.status}`, response.status)
   }
 
   return (options.returnEnvelope ? payload : getPayloadData(payload)) as T
@@ -246,7 +262,9 @@ async function refreshNewApiAccountSession(
         email: readEmail(refreshedPayload) ?? session.email,
         displayName: readDisplayName(refreshedPayload) ?? session.displayName,
       }
-    } catch {
+    } catch (error) {
+      // 续期服务短暂异常不等于登录过期，保留错误类型供视频凭据自动恢复。
+      if (isRetryableNewApiAccountError(error)) throw error
       // 刷新 Cookie 失效或属于其他账号时，需要重新登录一次建立当前设备会话。
       throw new Error('登录状态已过期，请退出账号后重新登录')
     }
