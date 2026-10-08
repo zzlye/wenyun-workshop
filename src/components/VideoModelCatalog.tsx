@@ -58,7 +58,12 @@ export default function VideoModelCatalog({ refreshSignal, onUpdatedAt }: VideoM
         <div role="cell" className="col-span-2 min-w-0 whitespace-pre-wrap break-words leading-relaxed text-gray-600 dark:text-gray-300 sm:col-span-1">{row.description}</div>
         <div role="cell" className="min-w-0 break-words text-gray-700 dark:text-gray-200">
           <div className="mb-1 text-xs text-gray-400 sm:hidden">价格</div>
-          <span className="font-mono">{row.priceText}</span>
+          {/* 分辨率价格逐档展示，窄屏和深色模式沿用目录的文字与换行规则。 */}
+          {row.priceTiers.length ? <div className="space-y-1">
+            {row.priceTiers.map(tier => <div key={tier.label} className="flex flex-wrap gap-x-2">
+              <span>{tier.label}</span><span className="font-mono">{tier.priceText}</span>
+            </div>)}
+          </div> : <span className="font-mono">{row.priceText}</span>}
           {row.priceNote && <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{row.priceNote}</div>}
         </div>
         <div role="cell" className="text-right text-gray-700 dark:text-gray-200 sm:text-left">

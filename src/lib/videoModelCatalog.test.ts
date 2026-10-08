@@ -24,7 +24,7 @@ describe('视频模型目录归一化', () => {
 
   it('有视频Key时名单以令牌权限为准，保留没有元数据的新模型', () => {
     const rows = buildVideoCatalogRows(catalog([price(), price({ model_name: 'image-only', enable_groups: ['default'] })]), [' unlisted ', 'unlisted', 'image-only'])
-    expect(rows).toEqual([{ model: 'unlisted', description: '暂无简介', priceText: '暂无价格', priceNote: '', successRate: null }])
+    expect(rows).toEqual([{ model: 'unlisted', description: '暂无简介', priceText: '暂无价格', priceNote: '', priceTiers: [], successRate: null }])
     expect(buildVideoCatalogRows(catalog(), [])).toEqual([])
   })
 
@@ -60,6 +60,102 @@ describe('视频模型目录归一化', () => {
     const row = buildVideoCatalogRows(catalog([price({ billing_mode: mode, billing_expr: 'duration * 3' })]))[0]
     expect(row.priceText).toBe('HUHN 3 / 秒')
     expect(row.priceNote).toContain('基准价')
+  })
+
+  it('按分辨率显示明确配置的单价，并应用视频组倍率和币种换算', () => {
+    const input = catalog([price({
+      billing_mode: 'per_second',
+      billing_expr: 'param("resolution") == "1080p" ? 0.93 : param("resolution") == "720p" ? 0.48 : 0.27',
+    })], 2)
+    input.status = { data: { quota_display_type: 'CNY', usd_exchange_rate: 7.2 } }
+    expect(buildVideoCatalogRows(input)[0]).toMatchObject({
+      priceText: '按分辨率计费',
+      priceNote: '',
+      priceTiers: [
+        { label: '480p', priceText: '¥ 3.888 / 秒' },
+        { label: '720p', priceText: '¥ 6.912 / 秒' },
+        { label: '1080p', priceText: '¥ 13.392 / 秒' },
+      ],
+    })
+  })
+
+  it('只列出表达式明确声明的档位，不把默认分支猜成缺失分辨率', () => {
+    const row = buildVideoCatalogRows(catalog([price({
+      billing_mode: 'per_second',
+      billing_expr: 'param("resolution") == "4k" ? 1.25 : 0.6',
+    })]))[0]
+    expect(row.priceTiers).toEqual([{ label: '4k', priceText: 'HUHN 1.25 / 秒' }])
+  })
+
+  it('参数不是分辨率或表达式结构不完整时不猜价格档位', () => {
+    for (const billing_expr of [
+      'param("duration") == 10 ? 0.9 : 0.4',
+      'param("resolution") == "1080p" ? 0.9 : unknown(0.4)',
+      'param("resolution") == "1080p" ? param("duration") : 0.4',
+    ]) {
+      const row = buildVideoCatalogRows(catalog([price({ billing_mode: 'per_second', billing_expr })]))[0]
+      expect(row.priceText).toBe('按参数计费')
+      expect(row.priceTiers).toEqual([])
+    }
+  })
+
+  it.each(['per_second', 'per_request'])('%s 分辨率价格来自表达式而非基础价，新增模型不需要写死', mode => {
+    const row = buildVideoCatalogRows(catalog([price({
+      model_name: 'future-resolution-model', model_price: null, billing_mode: mode,
+      billing_expr: 'param("resolution") == "1080p" ? 0.93 : param("resolution") == "720p" ? 0.48 : 0.27',
+    })]))[0]
+    const unit = mode === 'per_second' ? '秒' : '次'
+    expect(row.priceTiers).toEqual([
+      { label: '480p', priceText: `HUHN 0.27 / ${unit}` },
+      { label: '720p', priceText: `HUHN 0.48 / ${unit}` },
+      { label: '1080p', priceText: `HUHN 0.93 / ${unit}` },
+    ])
+    expect(row.priceNote).toBe('')
+  })
+
+  it('按次模型没有分辨率规则时保留固定单价', () => {
+    expect(buildVideoCatalogRows(catalog([price({ billing_mode: 'per_request' })]))[0]).toMatchObject({ priceText: 'HUHN 3 / 次', priceTiers: [] })
+  })
+
+  it('自定义币种、零档位和零分组倍率都正确应用', () => {
+    const input = catalog([price({ billing_mode: 'per_second', billing_expr: 'param("resolution") == "720p" ? 0 : param("resolution") == "1080p" ? 4.8e-1 : .27' })], 0.5)
+    input.status = { data: { quota_display_type: 'CUSTOM', custom_currency_symbol: '积分', custom_currency_exchange_rate: 10 } }
+    expect(buildVideoCatalogRows(input)[0].priceTiers.map(tier => tier.priceText)).toEqual(['积分 1.35 / 秒', '积分 0 / 秒', '积分 2.4 / 秒'])
+    input.pricing = { ...input.pricing as object, group_ratio: { 视频: 0 } }
+    expect(buildVideoCatalogRows(input)[0].priceTiers.map(tier => tier.priceText)).toEqual(['积分 0 / 秒', '积分 0 / 秒', '积分 0 / 秒'])
+  })
+
+  it('显式三档和其他分辨率均保留声明价格，不从模型名猜档位', () => {
+    const input = catalog([price({ billing_mode: 'per_second', billing_expr: 'param("resolution") == "480p" ? .1 : param("resolution") == "1080p" ? .3 : param("resolution") == "720p" ? .2 : 1' })])
+    expect(buildVideoCatalogRows(input)[0].priceTiers.map(tier => tier.priceText)).toEqual(['HUHN 0.1 / 秒', 'HUHN 0.2 / 秒', 'HUHN 0.3 / 秒'])
+    const other = catalog([price({ billing_mode: 'per_request', billing_expr: 'param ( "resolution" ) == "360p" ? 0 : param("resolution") == "4K" ? 1.6 : 1' })])
+    expect(buildVideoCatalogRows(other)[0].priceTiers).toEqual([{ label: '360p', priceText: 'HUHN 0 / 次' }, { label: '4K', priceText: 'HUHN 1.6 / 次' }])
+  })
+
+  it.each([
+    'param("resolution") == "720p" ? 1 : param("resolution") == "720p" ? 2 : 3',
+    'param("resolution") == "720p" ? -1 : 1',
+    'param("resolution") == "720p" ? 1e999 : 1',
+    'param("resolution") == "720p" ? 1 : 1e999',
+    'param("resolution") == "720p" ? 1 :',
+    'param("resolution") == "720p" ? 1 : 0; globalThis.unexpected = true',
+  ])('重复、异常数值或混入代码的规则不会产生价格档位：%s', billing_expr => {
+    expect(buildVideoCatalogRows(catalog([price({ billing_mode: 'per_second', billing_expr })]))[0]).toMatchObject({ priceText: '按参数计费', priceTiers: [] })
+  })
+
+  it('分辨率规则的倍率缺失或金额溢出时不冒充免费', () => {
+    const expression = 'param("resolution") == "1080p" ? .93 : param("resolution") == "720p" ? .48 : .27'
+    for (const ratio of [null, -1, false, Infinity]) {
+      expect(buildVideoCatalogRows(catalog([price({ billing_mode: 'per_second', billing_expr: expression })], ratio))[0]).toMatchObject({ priceText: '暂无价格', priceTiers: [] })
+    }
+    const input = catalog([price({ billing_mode: 'per_second', billing_expr: 'param("resolution") == "720p" ? 1e308 : 1' })], 1e308)
+    expect(buildVideoCatalogRows(input)[0]).toMatchObject({ priceText: '暂无价格', priceTiers: [] })
+  })
+
+  it('插件报价或用量计费仍优先，不被分辨率条件覆盖', () => {
+    const billing_expr = 'param("resolution") == "1080p" ? .93 : param("resolution") == "720p" ? .48 : .27'
+    expect(buildVideoCatalogRows(catalog([price({ billing_mode: 'per_second', billing_expr, billing_plugin_variants: [{}] })]))[0]).toMatchObject({ priceText: '按参数计费', priceTiers: [] })
+    expect(buildVideoCatalogRows(catalog([price({ billing_mode: 'per_second', billing_expr, quota_type: 0 })]))[0]).toMatchObject({ priceText: '按用量计费', priceTiers: [] })
   })
 
   it.each([{ billing_mode: 'tiered_expr' }, { billing_plugin_variants: [{}] }, { billing_mode: 'future-mode' }])('复杂或未知计费不冒充固定价格：%j', extra => {

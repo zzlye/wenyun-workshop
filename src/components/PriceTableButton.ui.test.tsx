@@ -25,6 +25,7 @@ let modelName: string
 let description: string
 let failPricing: boolean
 let expiredAccount: boolean
+let priceOverrides: Record<string, unknown>
 let requests: { url: string; init?: RequestInit }[]
 const button = (name: string) => Array.from(document.querySelectorAll('button')).find(item => item.textContent === name)!
 const panel = () => document.querySelector('[role="tabpanel"]:not([hidden])')!
@@ -43,6 +44,7 @@ beforeEach(() => {
   description = '接口提供的简介'
   failPricing = false
   expiredAccount = false
+  priceOverrides = {}
   requests = []
   vi.mocked(queryNewApiPriceTable).mockClear()
   vi.mocked(queryNewApiModelPerformance).mockClear()
@@ -57,7 +59,7 @@ beforeEach(() => {
     if (url.endsWith('/api/pricing')) {
       if (failPricing) return new Response('{}', { status: 503 })
       return new Response(JSON.stringify({ success: true, data: [
-        { model_name: modelName, description, quota_type: 1, model_price: 4.5, enable_groups: ['视频'] },
+        { model_name: modelName, description, quota_type: 1, model_price: 4.5, enable_groups: ['视频'], ...priceOverrides },
         { model_name: 'image-only', description: '不该出现在视频页', quota_type: 1, model_price: 1, enable_groups: ['default'] },
       ], group_ratio: { 视频: 1 } }))
     }
@@ -140,6 +142,23 @@ describe('模型列表图片与视频分页', () => {
     expect(vi.mocked(queryNewApiModelPerformance)).toHaveBeenCalledTimes(2)
     expect(vi.mocked(queryNewApiPriceTable)).toHaveBeenCalledTimes(2)
     expect(requests.every(item => !item.init?.method || item.init.method === 'GET')).toBe(true)
+  })
+
+  it.each(['per_second', 'per_request'])('视频列表将接口 %s 分辨率价格逐档展示，刷新后同步新价', async mode => {
+    priceOverrides = { billing_mode: mode, billing_expr: 'param("resolution") == "1080p" ? .93 : param("resolution") == "720p" ? .48 : .27' }
+    await openVideo()
+    const unit = mode === 'per_second' ? '秒' : '次'
+    const priceCell = () => panel().querySelectorAll('[role="row"]')[1].querySelectorAll('[role="cell"]')[2]
+    for (const [resolution, amount] of [['480p', '0.27'], ['720p', '0.48'], ['1080p', '0.93']]) {
+      expect(Array.from(priceCell().querySelectorAll('.flex')).some(element => element.textContent === `${resolution}HUHN ${amount} / ${unit}`)).toBe(true)
+    }
+    expect(priceCell().textContent).not.toContain('4.5')
+    expect(priceCell().textContent).not.toContain('基准价')
+    priceOverrides.billing_expr = 'param("resolution") == "1080p" ? 1.2 : param("resolution") == "720p" ? .6 : .3'
+    await click(button('刷新'))
+    expect(priceCell().textContent).toContain(`HUHN 1.2 / ${unit}`)
+    expect(priceCell().textContent).not.toContain('0.93')
+    expect(fixture.setSettings).not.toHaveBeenCalled()
   })
 
   it('登录使用独立视频Key，换账号立即隔离名称和报价缓存', async () => {
