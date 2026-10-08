@@ -913,6 +913,7 @@ describe('callImageApi', () => {
   })
 
   it('keeps Banana remote result URLs when browser-side image download fails', async () => {
+    vi.useFakeTimers()
     const imageUrl = 'https://file.example.com/final.png'
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -923,8 +924,7 @@ describe('callImageApi', () => {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }))
-      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
-      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockRejectedValue(new TypeError('Failed to fetch'))
 
     const settings = {
       ...DEFAULT_SETTINGS,
@@ -937,14 +937,17 @@ describe('callImageApi', () => {
       })),
     }
 
-    const result = await callImageApi({
+    const pending = callImageApi({
       settings,
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS, size: '3840x2160' },
       inputImageDataUrls: [],
     } as any)
 
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(3100)
+    const result = await pending
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
     expect(result.images).toEqual([getGenericAssetProxyUrl(imageUrl)])
     expect(result.rawImageUrls).toEqual([imageUrl])
   })

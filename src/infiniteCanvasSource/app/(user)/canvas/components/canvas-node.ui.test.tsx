@@ -36,6 +36,13 @@ function startResize() {
 }
 
 describe("节点缩放与媒体切换", () => {
+    it.each([undefined, "downloading", "saving"] as const)("内部阶段 %s 对用户统一只展示生成中", async (videoTaskPhase) => {
+        const { props } = await renderNode(CanvasNodeType.Video);
+        await act(async () => root.render(<CanvasNode {...props} data={{ ...props.data, metadata: { status: "loading", videoTaskPhase } }} />));
+        expect(host.textContent).toContain("生成中");
+        expect(host.textContent).not.toMatch(/加载中|下载中|保存中/);
+    });
+
     it("连续拖拽只在松手提交一次最终尺寸，并保留原始媒体分辨率", async () => {
         const { onResize, props } = await renderNode();
         startResize();

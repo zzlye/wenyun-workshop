@@ -1,6 +1,7 @@
 import type { AppSettings, TaskParams } from '../types'
 import { getLockedAssetProxyUrl } from './devProxy'
 import { normalizeImageSize } from './size'
+import { fetchResultResponse, isTransientResultError } from './resultRequest'
 
 export const MIME_MAP: Record<string, string> = {
   png: 'image/png',
@@ -22,6 +23,8 @@ export interface CallApiOptions {
   /** 输入图片的 data URL 列表 */
   inputImageDataUrls: string[]
   maskDataUrl?: string
+  /** 已收到生成响应，后续读取使用独立预算；仅内部使用，不增加前端阶段。 */
+  onResultReceived?: () => void
   onFalRequestEnqueued?: (request: { requestId: string; endpoint: string }) => void
   onCustomTaskEnqueued?: (task: { taskId: string }) => void
   /** 文运站异步图片任务凭据，用于刷新恢复和幂等续查 */
@@ -156,10 +159,20 @@ export async function fetchImageUrlAsDataUrl(url: string, fallbackMime: string, 
 
   let response: Response
   try {
-    response = await fetch(fetchUrl, {
-      cache: 'no-store',
-      signal,
-    })
+    // 所有生图入口共用结果下载；重试只读取同一链接，不重新生成、不压缩原图。
+    for (let attempt = 0; ; attempt++) {
+      try {
+        response = await fetchResultResponse(fetchUrl, { cache: 'no-store', signal })
+        if (attempt < 2 && [408, 429, 500, 502, 503, 504].includes(response.status)) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)))
+          continue
+        }
+        break
+      } catch (error) {
+        if (signal?.aborted || attempt >= 2 || !isTransientResultError(error)) throw error
+        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)))
+      }
+    }
   } catch (err) {
     if (err instanceof TypeError) {
       const probe = await probeNoCorsReachability(fetchUrl)

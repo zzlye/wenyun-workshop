@@ -19,7 +19,7 @@ describe('image transfer helpers', () => {
 
     const blob = await getImageSourceBlob('https://zzlye.xyz/uploads/final.png?token=1')
 
-    expect(fetchSpy).toHaveBeenCalledWith('/newapi-proxy/wenyun/uploads/final.png?token=1', { cache: 'no-store' })
+    expect(fetchSpy).toHaveBeenCalledWith('/newapi-proxy/wenyun/uploads/final.png?token=1', { cache: 'no-store', signal: expect.any(AbortSignal) })
     expect(blob.type).toBe('image/png')
 
     fetchSpy.mockRestore()
@@ -30,7 +30,7 @@ describe('image transfer helpers', () => {
 
     const blob = await getImageSourceBlob('https://bafang.me/result/final.png?token=1')
 
-    expect(fetchSpy).toHaveBeenCalledWith('/asset-proxy/https/bafang.me/result/final.png?token=1', { cache: 'no-store' })
+    expect(fetchSpy).toHaveBeenCalledWith('/asset-proxy/https/bafang.me/result/final.png?token=1', { cache: 'no-store', signal: expect.any(AbortSignal) })
     expect(blob.type).toBe('image/png')
 
     fetchSpy.mockRestore()

@@ -1,5 +1,6 @@
 import { getLockedApiProxyPrefix } from './devProxy'
 import { readRuntimeEnv } from './runtimeEnv'
+import { fetchResultResponse, ResultReadTimeoutError } from './resultRequest'
 
 export type ImageTaskStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 
@@ -53,6 +54,7 @@ function wait(ms: number): Promise<void> {
 
 export function isRecoverableImageTaskError(error: unknown): boolean {
   if (error instanceof ImageTaskError) return error.recoverable
+  if (error instanceof ResultReadTimeoutError) return true
   if (typeof DOMException !== 'undefined' && error instanceof DOMException && error.name === 'AbortError') return false
   const message = error instanceof Error ? error.message : String(error)
   return /network|failed to fetch|fetch failed|load failed|timeout|连接|断开|中断/i.test(message)
@@ -119,10 +121,10 @@ export async function createImageTask(
 }
 
 export async function getImageTaskSnapshot(reference: ImageTaskReference): Promise<ImageTaskSnapshot> {
-  const response = await fetch(`/image-tasks/${encodeURIComponent(reference.taskId)}`, {
+  const response = await fetchResultResponse(`/image-tasks/${encodeURIComponent(reference.taskId)}`, {
     headers: taskHeaders(reference),
     cache: 'no-store',
-  })
+  }, { timeoutMs: 30_000 })
   if (!response.ok) throw await readTaskError(response, `查询图片任务失败（HTTP ${response.status}）`, true)
   return response.json() as Promise<ImageTaskSnapshot>
 }
@@ -151,7 +153,7 @@ export async function getImageTaskResult(reference: ImageTaskReference): Promise
   // 结果已经生成，临时网络故障继续读取同一份结果；过期、鉴权失败等永久错误才结束。
   while (!result) {
     try {
-      const response = await fetch(`/image-tasks/${encodeURIComponent(reference.taskId)}/result`, {
+      const response = await fetchResultResponse(`/image-tasks/${encodeURIComponent(reference.taskId)}/result`, {
         headers: taskHeaders(reference),
         cache: 'no-store',
       })

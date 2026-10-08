@@ -2008,8 +2008,28 @@ describe('任务状态边界回归', () => {
   })
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllEnvs()
     vi.clearAllTimers()
     vi.useRealTimers()
+  })
+
+  it('生成响应已返回后，结果慢读不会被生图工坊外层计时器误判失败', async () => {
+    vi.useFakeTimers()
+    vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'disabled')
+    let finish!: (result: CallApiResult) => void
+    vi.mocked(callImageApi).mockImplementation(options => {
+      options.onResultReceived?.()
+      return new Promise(resolve => { finish = resolve })
+    })
+    await submitTask()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(callImageApi).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1_801_000)
+    expect(useStore.getState().tasks[0].status).toBe('running')
+    finish({ images: ['data:image/png;base64,b2s='] })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(useStore.getState().tasks[0].status).toBe('done')
+    expect(callImageApi).toHaveBeenCalledOnce()
   })
 
   it('连续复用两个任务时，较早任务的慢读图不能覆盖后一次选择', async () => {

@@ -4033,6 +4033,8 @@ async function executeTask(taskId: string) {
       inputImageDataUrls: inputDataUrls,
       maskDataUrl,
       imageTask: storedImageTask ?? undefined,
+      // 生成已返回后，由结果读取层管理超时；并发子请求仍各自保留生成超时。
+      onResultReceived: () => clearOpenAIWatchdogTimer(taskId),
       onImageTaskCreated: (request) => {
         updateTaskInStore(taskId, {
           imageTaskId: request.taskId,

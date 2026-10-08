@@ -3,6 +3,7 @@ import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './ca
 import { getFixedImageRequestModel, isBananaImageModel } from './apiProfiles'
 import { buildApiUrl, getLockedNewApiProxyPrefix, isLockedApiProxyTarget, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from './devProxy'
 import { fetchImageTask, hasImageTaskCredentials, shouldUseImageTasks } from './imageTasks'
+import { fetchResultResponse, ResultReadTimeoutError } from './resultRequest'
 import { formatImageRatio, normalizeImageSize, parseRatio } from './size'
 import { normalizeImageBackground, supportsTransparentImageBackground } from './modelPricing'
 import { findBananaSizePreset, resolveBananaSizePreset } from './bananaImageSize'
@@ -331,7 +332,11 @@ async function callGeminiImageApiSingle(opts: CallApiOptions, profile: ApiProfil
       ;(error as any).status = response.status
       throw error
     }
-    return parseGeminiImageResponse(await response.json() as unknown, mime, controller.signal)
+    const payload = await response.json() as unknown
+    // 生成已返回后，结果链接使用独立下载保护，不继承已经耗尽的生成计时。
+    clearTimeout(timeoutId)
+    opts.onResultReceived?.()
+    return await parseGeminiImageResponse(payload, mime)
   } finally {
     clearTimeout(timeoutId)
   }
@@ -459,11 +464,11 @@ function parseServerSentEventBlock(block: string): string | null {
   }
 
   const data = dataLines.join('\n').trim()
-  if (!data || data === '[DONE]') return null
+  if (!data) return null
   return data
 }
 
-async function readJsonServerSentEvents(response: Response, onEvent: (event: Record<string, unknown>) => void | Promise<void>): Promise<void> {
+async function readJsonServerSentEvents(response: Response, onEvent: (event: Record<string, unknown>) => boolean | void | Promise<boolean | void>): Promise<void> {
   if (!response.body) throw new Error('接口未返回可读取的流式响应')
 
   const reader = response.body.getReader()
@@ -473,6 +478,7 @@ async function readJsonServerSentEvents(response: Response, onEvent: (event: Rec
   const processBlock = async (block: string) => {
     const data = parseServerSentEventBlock(block)
     if (!data) return
+    if (data === '[DONE]') return true
 
     let event: unknown
     try {
@@ -485,26 +491,33 @@ async function readJsonServerSentEvents(response: Response, onEvent: (event: Rec
     const errorMessage = getStreamEventErrorMessage(event)
     if (errorMessage) throw new Error(errorMessage)
 
-    await onEvent(event)
+    return await onEvent(event)
   }
 
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
 
-    let separatorIndex = buffer.search(/\r?\n\r?\n/)
-    while (separatorIndex >= 0) {
-      const block = buffer.slice(0, separatorIndex)
-      const separator = buffer.match(/\r?\n\r?\n/)?.[0] ?? '\n\n'
-      buffer = buffer.slice(separatorIndex + separator.length)
-      await processBlock(block)
-      separatorIndex = buffer.search(/\r?\n\r?\n/)
+      let separatorIndex = buffer.search(/\r?\n\r?\n/)
+      while (separatorIndex >= 0) {
+        const block = buffer.slice(0, separatorIndex)
+        const separator = buffer.match(/\r?\n\r?\n/)?.[0] ?? '\n\n'
+        buffer = buffer.slice(separatorIndex + separator.length)
+        // 上游已明确完成时立即结束读取，不再等待长连接主动关闭。
+        if (await processBlock(block)) return
+        separatorIndex = buffer.search(/\r?\n\r?\n/)
+      }
     }
-  }
 
-  buffer += decoder.decode()
-  if (buffer.trim()) await processBlock(buffer)
+    buffer += decoder.decode()
+    if (buffer.trim()) await processBlock(buffer)
+  } finally {
+    // 取消不能阻塞最终结果返回，个别服务端不会及时确认连接关闭。
+    void reader.cancel().catch(() => undefined)
+    reader.releaseLock()
+  }
 }
 
 function createResponsesImageTool(
@@ -694,6 +707,8 @@ async function parseImagesApiStreamResponse(
   response: Response,
   mime: string,
   onPartialImage?: CallApiOptions['onPartialImage'],
+  expectedCount = 1,
+  onResultReceived?: () => void,
 ): Promise<CallApiResult> {
   const completedItems: ImageResponseItem[] = []
   let resultPayload: ImageApiResponse | null = null
@@ -714,13 +729,16 @@ async function parseImagesApiStreamResponse(
 
     if (object === 'image.generation.result' || object === 'image.edit.result') {
       resultPayload = normalizeImageApiPayload(event)
-      return
+      return true
     }
 
     if (type === 'image_generation.completed' || type === 'image_edit.completed') {
       completedItems.push(eventToImageResponseItem(event))
+      // 批量请求等到全部图片完成，不能在第一张完成时截断后续图片。
+      return completedItems.length >= expectedCount
     }
   })
+  onResultReceived?.()
 
   if (resultPayload) {
     return parseImagesApiResponse(resultPayload, mime)
@@ -791,6 +809,7 @@ async function parseResponsesApiStreamResponse(
     }
 
     completedPayload = payload
+    return type === 'response.completed'
   })
 
   const payload = completedPayload ?? (outputItems.length ? { output: outputItems } : null)
@@ -1050,10 +1069,17 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
     }
 
     if (isEventStreamResponse(response)) {
-      return parseImagesApiStreamResponse(response, mime, opts.onPartialImage)
+      // 必须等流读取结束再清理生成计时，防止 SSE 只返回响应头后永远挂起。
+      return await parseImagesApiStreamResponse(response, mime, opts.onPartialImage, Math.max(1, params.n), () => {
+        clearTimeout(timeoutId)
+        opts.onResultReceived?.()
+      })
     }
 
-    return parseImagesApiResponse(await response.json() as ImageApiResponse, mime, controller.signal)
+    const payload = await response.json() as ImageApiResponse
+    clearTimeout(timeoutId)
+    opts.onResultReceived?.()
+    return await parseImagesApiResponse(payload, mime)
   } finally {
     clearTimeout(timeoutId)
   }
@@ -1280,12 +1306,12 @@ async function pollCustomTaskResult(
     let taskPayload: unknown
     try {
       // 异步任务轮询要沿用提交请求的固定站点代理，避免浏览器直连非标准端口或裸域。
-      const taskResponse = await fetch(buildApiUrl(profile.baseUrl, taskPath, proxyConfig, useApiProxy), {
+      const taskResponse = await fetchResultResponse(buildApiUrl(profile.baseUrl, taskPath, proxyConfig, useApiProxy), {
         method: poll.method ?? 'GET',
         headers: requestHeaders,
         cache: 'no-store',
         signal,
-      })
+      }, { timeoutMs: 30_000 })
 
       if (!taskResponse.ok) {
         if (isRetryablePollingStatus(taskResponse.status)) continue
@@ -1294,7 +1320,7 @@ async function pollCustomTaskResult(
 
       taskPayload = await taskResponse.json()
     } catch (err) {
-      if (!signal?.aborted && isRecoverablePollingError(err)) continue
+      if (!signal?.aborted && (err instanceof ResultReadTimeoutError || isRecoverablePollingError(err))) continue
       throw err
     }
 
@@ -1351,7 +1377,11 @@ async function callCustomHttpImageApi(opts: CallApiOptions, profile: ApiProfile,
       ;(err as any).rawResponsePayload = JSON.stringify(submitPayload, null, 2)
       throw err
     }
-    if (!taskId) return extractCustomImages(submitPayload, submitMapping.result ?? {}, mime, controller.signal)
+    if (!taskId) {
+      clearTimeout(timeoutId)
+      opts.onResultReceived?.()
+      return await extractCustomImages(submitPayload, submitMapping.result ?? {}, mime)
+    }
     if (!customProvider.poll) throw new Error('异步接口返回了 task_id，但服务商配置缺少 poll')
     opts.onCustomTaskEnqueued?.({ taskId })
     if (timeoutId) {
@@ -1450,7 +1480,7 @@ async function callResponsesImageApiSingle(opts: CallApiOptions, profile: ApiPro
     }
 
     if (isEventStreamResponse(response)) {
-      return parseResponsesApiStreamResponse(response, mime, opts.onPartialImage)
+      return await parseResponsesApiStreamResponse(response, mime, opts.onPartialImage)
     }
 
     const payload = await response.json() as ResponsesApiResponse

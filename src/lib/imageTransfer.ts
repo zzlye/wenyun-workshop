@@ -1,4 +1,5 @@
 import { getLockedAssetProxyUrl } from './devProxy'
+import { fetchResultResponse } from './resultRequest'
 
 const IMAGE_MIME_EXTENSIONS: Record<string, string> = {
   'image/png': 'png',
@@ -24,7 +25,7 @@ export async function getImageSourceBlob(src: string): Promise<Blob> {
     return dataUrlToBlob(normalizedSrc)
   }
 
-  const response = await fetch(getImageFetchUrl(normalizedSrc), { cache: 'no-store' })
+  const response = await fetchResultResponse(getImageFetchUrl(normalizedSrc), { cache: 'no-store' })
   if (!response.ok) throw new Error(`读取图片失败：HTTP ${response.status}`)
 
   return withImageMimeType(await response.blob(), normalizedSrc)

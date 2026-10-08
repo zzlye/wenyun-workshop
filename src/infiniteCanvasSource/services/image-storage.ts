@@ -4,6 +4,7 @@ import localforage from "localforage";
 
 import { nanoid } from "nanoid";
 import { readImageMeta } from "@/lib/image-utils";
+import { fetchResultResponse } from "../../lib/resultRequest";
 
 export type UploadedImage = {
     url: string;
@@ -118,7 +119,10 @@ async function fetchImageBlob(url: string) {
         return dataUrlToBlob(url);
     }
     try {
-        return await (await fetch(url)).blob();
+        // 远程原图和失效的本地预览地址均设读取保护，避免保存前无限等待。
+        const response = await fetchResultResponse(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.blob();
     } catch {
         // blob 预览地址可能会在页面重载或缓存恢复后失效，给用户一个可操作的错误。
         throw new Error("图片读取失败，请重新上传或替换这张图片后重试");
