@@ -122,7 +122,11 @@ describe("画布视频异步接口", () => {
 
         expect(axios.post).not.toHaveBeenCalled();
         expect(axios.get).toHaveBeenCalledWith(`${VIDEO_API_PROXY_BASE}/videos/saved-task-1`, expect.any(Object));
-        expect(onTaskCreated).not.toHaveBeenCalled();
+        // 恢复只报告下载与保存阶段，任务编号保持不变且没有创建请求。
+        expect(onTaskCreated.mock.calls).toEqual([
+            [{ taskId: "saved-task-1", phase: "downloading" }],
+            [{ taskId: "saved-task-1", phase: "saving" }],
+        ]);
         expect(result.type).toBe("video/mp4");
     });
 

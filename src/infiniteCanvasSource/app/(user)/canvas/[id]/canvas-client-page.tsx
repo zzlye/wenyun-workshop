@@ -140,6 +140,7 @@ const CLEARED_IMAGE_TASK_METADATA = {
 };
 const CLEARED_VIDEO_TASK_METADATA = {
     videoTaskId: undefined,
+    videoTaskPhase: undefined,
 };
 // 资产保存弹窗和资产库筛选共用这组分类，避免两个入口展示不一致。
 const ASSET_CATEGORIES: AssetCategory[] = ["人物", "场景", "物品", "风格", "其他"];
@@ -525,9 +526,9 @@ function InfiniteCanvasPage() {
     );
 
     const persistCanvasVideoTaskReference = useCallback(
-        (nodeId: string, task: { taskId: string }) => {
+        (nodeId: string, task: { taskId: string; phase?: "downloading" | "saving" }) => {
             commitGenerationNodes((prev) =>
-                prev.map((node) => node.id === nodeId ? { ...node, metadata: { ...node.metadata, videoTaskId: task.taskId } } : node),
+                prev.map((node) => node.id === nodeId ? { ...node, metadata: { ...node.metadata, videoTaskId: task.taskId, videoTaskPhase: task.phase } } : node),
             );
         },
         [commitGenerationNodes],
@@ -673,7 +674,7 @@ function InfiniteCanvasPage() {
                     vquality: node.metadata.vquality || effectiveConfig.vquality,
                 };
                 const video = await uploadMediaFile(
-                    await requestVideoGeneration(generationConfig, "", [], [], [], { taskId }),
+                    await requestVideoGeneration(generationConfig, "", [], [], [], { taskId }, task => persistCanvasVideoTaskReference(node.id, task)),
                     "video",
                 );
                 const videoSize = fitNodeSize(video.width || node.width, video.height || node.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
@@ -690,7 +691,7 @@ function InfiniteCanvasPage() {
                 clearCanvasNodeRunning([node.id]);
             }
         },
-        [clearCanvasNodeRunning, commitGenerationNodes, effectiveConfig, markCanvasNodeRunning],
+        [clearCanvasNodeRunning, commitGenerationNodes, effectiveConfig, markCanvasNodeRunning, persistCanvasVideoTaskReference],
     );
 
     useEffect(() => {

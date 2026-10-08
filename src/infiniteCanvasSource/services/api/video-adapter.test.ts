@@ -93,8 +93,8 @@ it("15分钟后继续查询，30分钟后保留等待状态且恢复原任务不
     // 第一次跨过十五分钟仍会查询；第二次跨过三十分钟才结束前台等待。
     expect(axios.get).toHaveBeenCalledTimes(2);
     const firstTimeout = vi.mocked(axios.get).mock.calls[0][1]?.timeout ?? 0;
-    expect(firstTimeout).toBeGreaterThan(1799000);
-    expect(firstTimeout).toBeLessThanOrEqual(1800000);
+    // 单次查询短超时不缩短三十分钟生成等待窗口。
+    expect(firstTimeout).toBe(30000);
     vi.mocked(axios.get)
         .mockResolvedValueOnce({ data: { id: "saved", status: "completed" } })
         .mockResolvedValueOnce({ data: new Blob(["video"], { type: "video/mp4" }) });

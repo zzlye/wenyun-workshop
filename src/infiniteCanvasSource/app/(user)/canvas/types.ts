@@ -70,6 +70,8 @@ export type CanvasNodeMetadata = {
     imageTaskApiProfileId?: string;
     // 视频异步任务 ID，用于页面刷新后继续轮询原任务，避免重复提交生成请求。
     videoTaskId?: string;
+    // 已生成的视频单独显示下载和保存状态，避免继续误报生成中。
+    videoTaskPhase?: "downloading" | "saving";
     naturalWidth?: number;
     naturalHeight?: number;
     manualSize?: boolean;

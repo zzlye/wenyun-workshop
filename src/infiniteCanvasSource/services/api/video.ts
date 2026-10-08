@@ -47,10 +47,14 @@ type VideoApiSource = {
 
 export type VideoTaskReference = {
     taskId: string;
+    phase?: "downloading" | "saving";
 };
 
 const VIDEO_POLL_INTERVAL_MS = typeof process !== "undefined" && process.env.NODE_ENV === "test" ? 1 : 5000;
 const VIDEO_TOTAL_TIMEOUT_MS = CANVAS_VIDEO_TIMEOUT * 1000;
+// 生成等待窗口与单次查询分开，避免一条卡住的查询阻塞后续完成状态。
+const VIDEO_STATUS_TIMEOUT_MS = 30_000;
+const VIDEO_DOWNLOAD_IDLE_TIMEOUT_MS = 60_000;
 const VIDEO_REFERENCE_MAX_EDGE = 1920;
 const VIDEO_REFERENCE_MAX_INLINE_BYTES = 8 * 1024 * 1024;
 const VIDEO_REFERENCE_JPEG_QUALITY = 0.88;
@@ -67,7 +71,8 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
         const created = taskReference?.taskId ? { id: taskReference.taskId, status: "processing" } : unwrapVideoTask(await createVideoTask(source, await buildCanvasVideoPayload(config, prompt, references, audioReferences, videoReferences)));
         activeTaskId = created.id;
         if (!taskReference?.taskId && created.id) onTaskCreated?.({ taskId: created.id });
-        const result = await waitForVideoResult(source, created);
+        const result = await waitForVideoResult(source, created, () => onTaskCreated?.({ taskId: created.id, phase: "downloading" }));
+        onTaskCreated?.({ taskId: created.id, phase: "saving" });
         refreshRemoteUser(config);
         return result;
     } catch (error) {
@@ -141,7 +146,7 @@ export class VideoTaskPendingError extends Error {
 }
 class VideoTaskFailedError extends Error {}
 
-async function waitForVideoResult(source: VideoApiSource, created: VideoTask) {
+async function waitForVideoResult(source: VideoApiSource, created: VideoTask, onDownloading?: () => void) {
     if (!created.id) throw new Error("视频接口没有返回任务 ID");
     let task = created;
     const deadline = Date.now() + VIDEO_TOTAL_TIMEOUT_MS;
@@ -153,15 +158,19 @@ async function waitForVideoResult(source: VideoApiSource, created: VideoTask) {
         if (isVideoStatusFailed(task.status)) throw new VideoTaskFailedError(task.error?.message || "视频生成失败");
         if (task.resultExpired) throw new VideoTaskFailedError("视频文件已过期，任务记录仍然保留");
         if (backgroundTask && isVideoStatusCompleted(task.status)) {
+            onDownloading?.();
             const media = task.media?.find(item => item.kind === "video");
             const mediaPath = media?.url?.replace(/^\/v1/, "") || "";
             // 只携带鉴权访问当前任务的内容接口，不信任响应里任意外部地址。
             if (!mediaPath.startsWith(`${taskPath}/media/`) || !/^\d+$/.test(mediaPath.slice(`${taskPath}/media/`.length))) throw new Error("任务已完成，但没有返回可读取的视频文件");
-            return requestVideoContent(videoApiUrl(source, mediaPath), source, remainingTimeout(deadline));
+            return fetchVideoContentPath(source, mediaPath);
         }
         const videoUrl = findVideoUrl(task);
-        if (!backgroundTask && videoUrl) return fetchVideoResultBlob(source, created.id, videoUrl, remainingTimeout(deadline));
-        if (!backgroundTask && isVideoStatusCompleted(task.status)) return fetchVideoContent(source, created.id, remainingTimeout(deadline));
+        // 完成后开启独立下载窗口，不能把耗尽的轮询预算作为 axios 的无限等待值 0。
+        if (!backgroundTask && (videoUrl || isVideoStatusCompleted(task.status))) {
+            onDownloading?.();
+            return videoUrl ? fetchVideoResultBlob(source, created.id, videoUrl) : fetchVideoContent(source, created.id);
+        }
 
         const remaining = remainingTimeout(deadline);
         if (!remaining) throw new VideoTaskPendingError(created.id);
@@ -171,7 +180,7 @@ async function waitForVideoResult(source: VideoApiSource, created: VideoTask) {
         try {
             task = unwrapVideoTask((await axios.get<VideoApiResponse>(videoApiUrl(source, taskPath), {
                 headers: videoApiHeaders(source),
-                timeout: requestTimeout(source, nextRemaining),
+                timeout: Math.min(VIDEO_STATUS_TIMEOUT_MS, requestTimeout(source, nextRemaining)),
             })).data);
         } catch (error) {
             // 断网、限流及暂时的服务错误只重试查询，绝不重新创建已扣费的任务。
@@ -182,7 +191,11 @@ async function waitForVideoResult(source: VideoApiSource, created: VideoTask) {
 }
 
 async function fetchVideoContent(source: VideoApiSource, taskId: string, timeoutMs = requestTimeout(source)) {
-    const contentPath = `/videos/${taskId}/content`;
+    return fetchVideoContentPath(source, `/videos/${encodeURIComponent(taskId)}/content`, timeoutMs);
+}
+
+// 原生视频和后台任务复用同源下载回退，继续读取同一份已完成结果。
+async function fetchVideoContentPath(source: VideoApiSource, contentPath: string, timeoutMs = requestTimeout(source)) {
     const primaryUrl = videoApiUrl(source, contentPath);
     try {
         return await requestVideoContent(primaryUrl, source, timeoutMs);
@@ -199,13 +212,30 @@ async function fetchVideoContent(source: VideoApiSource, taskId: string, timeout
 }
 
 async function requestVideoContent(url: string, source: VideoApiSource, timeoutMs: number) {
-    const response = await axios.get<Blob>(url, {
-        headers: videoApiHeaders(source),
-        responseType: "blob",
-        timeout: timeoutMs,
-    });
-    await assertVideoBlob(response.data);
-    return response.data;
+    const controller = new AbortController();
+    let loaded = 0;
+    let idleTimer: ReturnType<typeof setTimeout>;
+    const resetIdleTimer = () => {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => controller.abort(), VIDEO_DOWNLOAD_IDLE_TIMEOUT_MS);
+    };
+    resetIdleTimer();
+    try {
+        const response = await axios.get<Blob>(url, {
+            headers: videoApiHeaders(source),
+            responseType: "blob",
+            timeout: Math.max(1000, timeoutMs),
+            signal: controller.signal,
+            onDownloadProgress: progress => {
+                // 只有实际收到更多字节才续期；正常慢速下载仍可使用完整下载窗口。
+                if (progress.loaded > loaded) { loaded = progress.loaded; resetIdleTimer(); }
+            },
+        });
+        await assertVideoBlob(response.data);
+        return response.data;
+    } finally {
+        clearTimeout(idleTimer);
+    }
 }
 
 // 优先使用带鉴权的 content 下载端点，避免外部视频地址被浏览器跨域策略拦截。
@@ -218,7 +248,13 @@ async function fetchVideoResultBlob(source: VideoApiSource, taskId: string, vide
 
     const downloadUrl = getLockedAssetProxyUrl(videoUrl);
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const timeoutId = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
+    let idleTimer: ReturnType<typeof setTimeout>;
+    const resetIdleTimer = () => {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => controller.abort(), VIDEO_DOWNLOAD_IDLE_TIMEOUT_MS);
+    };
+    resetIdleTimer();
     try {
         const response = await fetch(downloadUrl, {
             cache: "no-store",
@@ -226,7 +262,22 @@ async function fetchVideoResultBlob(source: VideoApiSource, taskId: string, vide
             signal: controller.signal,
         });
         if (!response.ok) throw new Error(`视频 URL 下载失败：HTTP ${response.status}`);
-        const blob = await response.blob();
+        // URL 回退下载同样监测字节进度，不能在第三条路径重新陷入长时间空等。
+        let blob: Blob;
+        if (response.body) {
+            const reader = response.body.getReader();
+            const chunks: Uint8Array[] = [];
+            try {
+                for (;;) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    if (value.byteLength) { chunks.push(value); resetIdleTimer(); }
+                }
+            } finally { reader.releaseLock(); }
+            blob = new Blob(chunks, { type: response.headers.get("Content-Type") || "video/mp4" });
+        } else {
+            blob = await response.blob();
+        }
         await assertVideoBlob(blob);
         return blob;
     } catch (error) {
@@ -234,6 +285,7 @@ async function fetchVideoResultBlob(source: VideoApiSource, taskId: string, vide
         throw error;
     } finally {
         clearTimeout(timeoutId);
+        clearTimeout(idleTimer);
     }
 }
 
