@@ -6,9 +6,10 @@ import { DEFAULT_SETTINGS } from './apiProfiles'
 import { normalizeParamsForSettings } from './paramCompatibility'
 
 describe('Midjourney 文档参数与结果', () => {
-  it.each(['mj-v8.2', 'mj-niji7'])('%s 保留本站模型名、原提示词、Raw false，并且仅提交一次', model => {
+  it('mj-v8.2 保留本站模型名、原提示词、Raw false，并且仅提交一次', () => {
+    const model = 'mj-v8.2'
     const request = buildMidjourneyRequest(model, '原提示词 --stylize 200', { ...DEFAULT_PARAMS, size: '16:9', n: 4, quality: 'high' }, [])
-    expect(request).toEqual({ model, prompt: '原提示词 --stylize 200', size: '16:9', raw: false, n: 1, ...(model === 'mj-niji7' ? { quality: 1 } : {}) })
+    expect(request).toEqual({ model, prompt: '原提示词 --stylize 200', size: '16:9', raw: false, n: 1 })
     expect(FIXED_IMAGE_MODEL_OPTIONS.some(option => option.value === model)).toBe(true)
   })
 
@@ -27,14 +28,14 @@ describe('Midjourney 文档参数与结果', () => {
     expect(multiple).not.toHaveProperty('image')
   })
 
-  it.each([0.25, 0.5, 1, 2])('Niji 品质 %s 作为数值提交', quality => {
-    expect(buildMidjourneyRequest('mj-niji7', '提示', { ...DEFAULT_PARAMS, midjourney: { raw: true, quality } }, [])).toMatchObject({ quality, raw: true })
+  it('已移除模型不出现在选项中，提交时也会被拒绝', () => {
+    expect(FIXED_IMAGE_MODEL_OPTIONS.some(option => option.value === 'mj-niji7')).toBe(false)
+    expect(() => buildMidjourneyRequest('mj-niji7', '提示', DEFAULT_PARAMS, [])).toThrow('不支持的 Midjourney 模型')
   })
 
-  it('超限、遮罩、非法品质在提交前明确拒绝，不截断素材', () => {
+  it('超限和遮罩在提交前明确拒绝，不截断素材', () => {
     expect(() => buildMidjourneyRequest('mj-v8.2', '提示', DEFAULT_PARAMS, Array(6).fill('https://example.com/ref.png'))).toThrow('最多支持 5 张')
     expect(() => buildMidjourneyRequest('mj-v8.2', '提示', DEFAULT_PARAMS, [], 'mask')).toThrow('不支持遮罩')
-    expect(() => buildMidjourneyRequest('mj-niji7', '提示', { ...DEFAULT_PARAMS, midjourney: { quality: 3 } }, [])).toThrow('品质仅支持')
   })
 
   it.each([3, 4])('读取实际 %s 张结果，不把四宫格封面当成额外单图', count => {

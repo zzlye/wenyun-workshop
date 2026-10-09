@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { X } from 'lucide-react'
 import type { TaskParams } from '../types'
-import { MIDJOURNEY_RATIOS, NIJI_QUALITY_OPTIONS, normalizeMidjourneyRatio } from '../lib/midjourney'
+import { MIDJOURNEY_RATIOS, normalizeMidjourneyRatio } from '../lib/midjourney'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
 
 /** 两个生图入口共用比例和专属参数，不展示文档未声明的像素档位。 */
@@ -14,7 +14,7 @@ export function MidjourneyRatioOptions({ value, onChange }: { value: string; onC
   </div>
 }
 
-export function MidjourneyOptions({ model, value, onChange }: { model: string; value: TaskParams['midjourney']; onChange: (value: NonNullable<TaskParams['midjourney']>) => void }) {
+export function MidjourneyOptions({ value, onChange }: { value: TaskParams['midjourney']; onChange: (value: NonNullable<TaskParams['midjourney']>) => void }) {
   return <>
     <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs">
       <span className="opacity-60">Raw</span>
@@ -23,13 +23,6 @@ export function MidjourneyOptions({ model, value, onChange }: { model: string; v
         原始风格
       </span>
     </label>
-    {model.toLowerCase() === 'mj-niji7' && <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs">
-      <span className="opacity-60">品质</span>
-      <select aria-label="Niji 品质" value={value?.quality ?? 1} onChange={event => onChange({ ...value, quality: Number(event.target.value) })}
-        className="h-8 min-w-0 rounded-lg border border-gray-300/60 dark:border-white/15 bg-transparent px-3 text-inherit">
-        {NIJI_QUALITY_OPTIONS.map(item => <option key={item} value={item} className="text-gray-900">{item}</option>)}
-      </select>
-    </label>}
   </>
 }
 

@@ -1,9 +1,8 @@
 import type { TaskParams } from '../types'
 
-export const MIDJOURNEY_MODELS = ['mj-v8.2', 'mj-niji7'] as const
+export const MIDJOURNEY_MODELS = ['mj-v8.2'] as const
 export const MIDJOURNEY_RATIOS = ['auto', '1:1', '3:2', '2:3', '4:3', '3:4', '5:4', '4:5', '16:9', '9:16', '21:9', '9:21'] as const
 export const MIDJOURNEY_MAX_REFERENCES = 5
-export const NIJI_QUALITY_OPTIONS = [0.25, 0.5, 1, 2] as const
 
 export function isMidjourneyModel(model: string): boolean {
   return MIDJOURNEY_MODELS.some(value => value === model.trim().toLowerCase())
@@ -37,11 +36,6 @@ export function buildMidjourneyRequest(model: string, prompt: string, params: Ta
     model: model.trim().toLowerCase(), prompt, size: normalizeMidjourneyRatio(params.size), raw,
     // n 表示提交次数；一次任务返回四张图，不能发送 n=4 导致重复计费。
     n: 1,
-  }
-  if (model.trim().toLowerCase() === 'mj-niji7') {
-    const quality = params.midjourney?.quality ?? 1
-    if (!NIJI_QUALITY_OPTIONS.some(value => value === quality)) throw new Error('Niji 品质仅支持 0.25、0.5、1、2')
-    request.quality = quality
   }
   if (references.length === 1) request.image = references[0]
   if (references.length > 1) request.images = references

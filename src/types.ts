@@ -293,8 +293,8 @@ export interface AppSettings {
 // ===== 任务参数 =====
 
 export interface TaskParams {
-  /** Midjourney 专属参数，数值品质不能混用普通图片模型的低、中、高。 */
-  midjourney?: { raw?: boolean; quality?: number }
+  /** Midjourney 专属的 Raw 设置。 */
+  midjourney?: { raw?: boolean }
   /** 仅支持背景参数的图片模型发送，旧任务未设置时由模型自动决定。 */
   background?: 'auto' | 'opaque' | 'transparent'
   size: string

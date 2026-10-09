@@ -48,7 +48,6 @@ export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
   { model: 'nano-banana-2.1', label: 'Nano Banana 2.1', requestModel: 'nano-banana-2.1', unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   { model: 'Nano-Banana-Pro', label: 'Nano Banana Pro', requestModel: 'nano-banana-pro', unitCostText: 'HUHN 0.15', resolutionText: '1K、2K、4K' },
   { model: 'mj-v8.2', label: 'mj-v8.2', requestModel: 'mj-v8.2', unitCostText: 'HUHN --', resolutionText: '自动' },
-  { model: 'mj-niji7', label: 'mj-niji7', requestModel: 'mj-niji7', unitCostText: 'HUHN --', resolutionText: '自动' },
 ]
 
 // 旧版无后缀模型保留原来的扩展质量选项，新版四 K 模型只允许基础三档。

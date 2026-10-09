@@ -586,7 +586,6 @@ function InfiniteCanvasPage() {
                     imageModel: model,
                     quality: metadata.quality || effectiveConfig.quality,
                     mjRaw: metadata.mjRaw ?? effectiveConfig.mjRaw,
-                    mjQuality: metadata.mjQuality ?? effectiveConfig.mjQuality,
                     size: normalizeImageSizeForProfile(metadata.size || effectiveConfig.size, taskProfileId, model),
                     count: "1",
                 };
@@ -3246,7 +3245,6 @@ function InfiniteCanvasPage() {
                           imageModel: savedImageModel,
                           quality: savedImageMetadata.quality || effectiveConfig.quality,
                           mjRaw: savedImageMetadata.mjRaw ?? effectiveConfig.mjRaw,
-                          mjQuality: savedImageMetadata.mjQuality ?? effectiveConfig.mjQuality,
                           size: normalizeImageSizeForProfile(savedImageMetadata.size || effectiveConfig.size, activeProfile.id, savedImageModel),
                           count: "1",
                     }
@@ -4323,7 +4321,6 @@ function buildImageGenerationMetadata(type: CanvasImageGenerationType, config: A
         quality: config.quality,
         imageBackground: config.imageBackground,
         mjRaw: config.mjRaw,
-        mjQuality: config.mjQuality,
         count,
         references: references.map(referenceUrl).filter((url): url is string => Boolean(url)),
     };
@@ -4469,7 +4466,6 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
         quality: node?.metadata?.quality || config.quality || defaultConfig.quality,
         imageBackground: node?.metadata?.imageBackground || config.imageBackground || defaultConfig.imageBackground,
         mjRaw: node?.metadata?.mjRaw ?? config.mjRaw,
-        mjQuality: node?.metadata?.mjQuality ?? config.mjQuality,
         size: mode === "video" ? (node?.metadata?.size || config.size) : normalizeImageSizeForProfile(node?.metadata?.size || config.size || defaultConfig.size, activeProfileId, resolvedModel),
         videoSeconds: node?.metadata?.seconds ?? config.videoSeconds ?? defaultConfig.videoSeconds,
         videoGenerateAudio: node?.metadata?.videoGenerateAudio !== undefined ? node.metadata.videoGenerateAudio : config.videoGenerateAudio,

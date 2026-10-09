@@ -1786,7 +1786,7 @@ export default function InputBar() {
           {displaySize === 'auto' ? '自动' : displaySize}
         </button>
       </label>
-      {isMidjourney ? <MidjourneyOptions model={activeProfile.model} value={params.midjourney} onChange={midjourney => setParams({ midjourney })} /> : <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1_1_5rem]'}`}>
+      {isMidjourney ? <MidjourneyOptions value={params.midjourney} onChange={midjourney => setParams({ midjourney })} /> : <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1_1_5rem]'}`}>
         <span className="text-gray-400 dark:text-gray-500 ml-1">品质</span>
         <Select
           native={mobile}

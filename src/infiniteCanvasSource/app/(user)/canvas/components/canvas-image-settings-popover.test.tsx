@@ -36,13 +36,14 @@ async function renderModel(model: string, size = "1376x768") {
 }
 
 describe("画布香蕉尺寸选择", () => {
-    it.each(["mj-v8.2", "mj-niji7"])("%s 提供文档比例与 Raw，移除像素档位和生成次数", async model => {
+    it("mj-v8.2 提供文档比例与 Raw，移除像素档位和生成次数", async () => {
+        const model = "mj-v8.2";
         const { onConfigChange } = await renderModel(model, "auto");
         expect(host.querySelectorAll('button[data-image-ratio]')).toHaveLength(12);
         expect(host.textContent).not.toContain("1K");
         expect(host.textContent).not.toContain("生成数量");
         expect(host.querySelector('input[aria-label="Raw"]')).not.toBeNull();
-        expect(Boolean(host.querySelector('select[aria-label="Niji 品质"]'))).toBe(model === "mj-niji7");
+        expect(host.querySelector('select[aria-label="Niji 品质"]')).toBeNull();
         await act(async () => host.querySelector<HTMLButtonElement>('button[data-image-ratio="21:9"]')!.click());
         expect(onConfigChange).toHaveBeenCalledWith("size", "21:9");
     });

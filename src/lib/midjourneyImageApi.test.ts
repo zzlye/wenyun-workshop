@@ -62,15 +62,15 @@ describe('Midjourney 提交与恢复', () => {
     expect(fetchMock.mock.calls.every(([, init]) => init?.method !== 'POST')).toBe(true)
   })
 
-  it('本站创建一次任务并持久化凭据，单参考图与 Niji 品质数值保持原样', async () => {
+  it('本站创建一次任务并持久化凭据，单参考图保持原样', async () => {
     vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'enabled')
     const onCreated = vi.fn()
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'website-task', accessToken: 'private-task-token' }), { status: 202 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'succeeded' })))
       .mockResolvedValueOnce(completed())
-    const result = await callMidjourneyImageApi({ ...options, inputImageDataUrls: ['https://example.com/reference.jpg'], params: { ...options.params, midjourney: { raw: false, quality: 0.25 } }, onImageTaskCreated: onCreated }, { ...profile, model: 'mj-niji7' })
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ model: 'mj-niji7', prompt: '原始提示', size: '16:9', raw: false, quality: 0.25, n: 1, image: 'https://example.com/reference.jpg' })
+    const result = await callMidjourneyImageApi({ ...options, inputImageDataUrls: ['https://example.com/reference.jpg'], params: { ...options.params, midjourney: { raw: false } }, onImageTaskCreated: onCreated }, profile)
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ model: 'mj-v8.2', prompt: '原始提示', size: '16:9', raw: false, n: 1, image: 'https://example.com/reference.jpg' })
     expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ taskId: 'website-task', accessToken: 'private-task-token' }))
     expect(result.images).toHaveLength(4)
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)

@@ -54,7 +54,6 @@ export type CanvasNodeMetadata = {
     imageBackground?: string;
     // 保存专属参数，节点重试和刷新恢复沿用本次生成设置。
     mjRaw?: string;
-    mjQuality?: string;
     midjourneyResultUrls?: string[];
     count?: number;
     seconds?: string;

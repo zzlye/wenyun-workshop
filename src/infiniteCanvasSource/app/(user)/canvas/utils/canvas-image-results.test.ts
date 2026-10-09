@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CanvasNodeType, type CanvasNodeData } from '../types'
 import { applyCanvasImageResults } from './canvas-image-results'
 
-const root: CanvasNodeData = { id: 'root', type: CanvasNodeType.Image, title: '任务', position: { x: 10, y: 20 }, width: 320, height: 320, metadata: { status: 'loading', generationStartedAt: 100, imageTaskRequestFingerprint: 'task-a', imageTaskId: 'id-a', mjRaw: 'false', mjQuality: '0.5' } }
+const root: CanvasNodeData = { id: 'root', type: CanvasNodeType.Image, title: '任务', position: { x: 10, y: 20 }, width: 320, height: 320, metadata: { status: 'loading', generationStartedAt: 100, imageTaskRequestFingerprint: 'task-a', imageTaskId: 'id-a', mjRaw: 'false' } }
 const images = Array.from({ length: 4 }, (_, index) => ({ url: `https://example.com/${index}.png`, storageKey: `image:${index}`, width: 1600, height: 900, bytes: 100, mimeType: 'image/png' }))
 
 describe('画布单任务多图', () => {
@@ -13,7 +13,7 @@ describe('画布单任务多图', () => {
     expect(result.nodes[0].metadata).toMatchObject({ isBatchRoot: true, status: 'success', primaryImageId: result.nodes[1].id, batchChildIds: result.nodes.slice(1).map(node => node.id) })
     expect(result.nodes.slice(1).map(node => node.metadata?.content)).toEqual(images.slice(0, count).map(image => image.url))
     for (const node of result.nodes) {
-      expect(node.metadata).toMatchObject({ mjRaw: 'false', mjQuality: '0.5', status: 'success' })
+      expect(node.metadata).toMatchObject({ mjRaw: 'false', status: 'success' })
       expect(node.metadata?.imageTaskId).toBeUndefined()
       expect(node.width / node.height).toBeCloseTo(16 / 9)
     }

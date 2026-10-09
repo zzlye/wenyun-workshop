@@ -24,7 +24,9 @@ describe('fixed image model pricing', () => {
     ]))
     expect(rows.map((row) => row.model)).not.toContain('gpt-image-2-vip')
     expect(rows.map((row) => row.model)).not.toContain('sora-2')
+    expect(rows.map((row) => row.model)).not.toContain('mj-niji7')
     expect(FIXED_IMAGE_MODEL_OPTIONS.map((option) => option.value)).toContain('seedream-5-pro')
+    expect(FIXED_IMAGE_MODEL_OPTIONS.map((option) => option.value)).not.toContain('mj-niji7')
     expect(FIXED_IMAGE_MODEL_OPTIONS.map((option) => option.value)).toEqual(expect.arrayContaining([
       'gpt-image-2.5-sunburst-4k',
       'gpt-image-2.5-flare-4k',
