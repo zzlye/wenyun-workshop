@@ -3,6 +3,8 @@ import { calculateImageSize, normalizeImageSize, parseRatio, type SizeTier } fro
 import { getBananaSizeConfig, resolveBananaSizePreset, type BananaSizeTier } from '../lib/bananaImageSize'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
 import ViewportTooltip from './ViewportTooltip'
+import { isMidjourneyModel } from '../lib/midjourney'
+import { MidjourneyRatioModal } from './MidjourneyControls'
 
 const TIERS: SizeTier[] = ['1K', '2K', '4K']
 const SIZE_LIMIT_TEXT = '由于模型限制，最终输出会规整到合法尺寸：\n宽高均为 16 的倍数，最大边长 3840px，宽高比不超过 3:1，总像素限制为 655360-8294400。'
@@ -46,7 +48,12 @@ function findPresetForSize(size: string, tiers = TIERS) {
   return null
 }
 
-export default function SizePickerModal({ currentSize, imageModel = '', allowedTiers, allowCustomRatio: customRatioAllowed = true, onSelect, onClose }: Props) {
+export default function SizePickerModal(props: Props) {
+  if (isMidjourneyModel(props.imageModel || '')) return <MidjourneyRatioModal value={props.currentSize} onSelect={props.onSelect} onClose={props.onClose} />
+  return <PixelSizePickerModal {...props} />
+}
+
+function PixelSizePickerModal({ currentSize, imageModel = '', allowedTiers, allowCustomRatio: customRatioAllowed = true, onSelect, onClose }: Props) {
   const modalRef = useRef<HTMLDivElement>(null)
   // 扩展比例超过一屏时保留弹窗内滚动，只锁定背后的页面。
   usePreventBackgroundScroll(true, modalRef)

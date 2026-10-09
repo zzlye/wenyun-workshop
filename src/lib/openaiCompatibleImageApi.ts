@@ -7,6 +7,8 @@ import { fetchResultResponse, ResultReadTimeoutError } from './resultRequest'
 import { formatImageRatio, normalizeImageSize, parseRatio } from './size'
 import { normalizeImageBackground, supportsTransparentImageBackground } from './modelPricing'
 import { findBananaSizePreset, resolveBananaSizePreset } from './bananaImageSize'
+import { isMidjourneyModel } from './midjourney'
+import { callMidjourneyImageApi } from './midjourneyImageApi'
 import {
   assertImageInputPayloadSize,
   assertMaskEditFileSize,
@@ -833,6 +835,7 @@ async function parseResponsesApiStreamResponse(
 }
 
 export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile: ApiProfile, customProvider?: CustomProviderDefinition | null): Promise<CallApiResult> {
+  if (isMidjourneyModel(profile.model)) return callMidjourneyImageApi(opts, profile)
   // 已保存的任务只查询原任务，不再次发起生成。
   if (hasImageTaskCredentials(opts.imageTask)) return callImagesApi(opts, profile)
   // 香蕉模型固定使用 Gemini，旧配置中的协议选择不影响主页和画布请求。

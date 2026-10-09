@@ -3,12 +3,14 @@ import { getActiveApiProfile, normalizeImageSizeForProfile } from './apiProfiles
 import { normalizeImageSize } from './size'
 import { normalizeImageBackground } from './modelPricing'
 import { findBananaSizePreset } from './bananaImageSize'
+import { isMidjourneyModel, normalizeMidjourneyRatio } from './midjourney'
 
 export const DEFAULT_FAL_IMAGE_SIZE = '1360x1024'
 export const MAX_FAL_OUTPUT_IMAGES = 4
 export const MAX_OPENAI_OUTPUT_IMAGES = 10
 
 export function getOutputImageLimitForSettings(settings: AppSettings) {
+  if (isMidjourneyModel(getActiveApiProfile(settings).model)) return 1
   return getActiveApiProfile(settings).provider === 'fal' ? MAX_FAL_OUTPUT_IMAGES : MAX_OPENAI_OUTPUT_IMAGES
 }
 
@@ -19,6 +21,9 @@ export function normalizeParamsForSettings(
 ): TaskParams {
   const activeProfile = getActiveApiProfile(settings)
   const outputImageLimit = getOutputImageLimitForSettings(settings)
+  if (isMidjourneyModel(activeProfile.model)) {
+    return { ...params, size: normalizeMidjourneyRatio(params.size), n: 1, background: undefined }
+  }
   // 官方香蕉预设要原样经过提交、重试和任务恢复，避免被通用尺寸规则裁小。
   const normalizedSize = findBananaSizePreset(activeProfile.model, params.size)?.size
     ?? normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id, activeProfile.model)

@@ -10,6 +10,7 @@ import { getEffectiveImageApiProfile } from "../../../lib/accountApiKey";
 import { normalizeSettings } from "../../../lib/apiProfiles";
 import { normalizeParamsForSettings } from "../../../lib/paramCompatibility";
 import { normalizeImageBackground } from "../../../lib/modelPricing";
+import { isMidjourneyModel, normalizeMidjourneyRatio } from "../../../lib/midjourney";
 import { buildApiUrl as buildDevApiUrl, readClientDevProxyConfig } from "../../../lib/devProxy";
 import { sanitizeApiErrorMessage } from "../../../lib/imageApiShared";
 import { createImageTaskIdempotencyKey, hasImageTaskCredentials, shouldUseImageTasks } from "../../../lib/imageTasks";
@@ -89,6 +90,9 @@ function resolveTaskQuality(config: AiConfig): TaskParams["quality"] {
 }
 
 function buildTaskParams(config: AiConfig): TaskParams {
+    if (isMidjourneyModel(config.imageModel || config.model)) {
+        return { ...DEFAULT_PARAMS, size: normalizeMidjourneyRatio(config.size), n: 1, midjourney: { raw: config.mjRaw === "true", quality: Number(config.mjQuality ?? 1) } };
+    }
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = resolveTaskQuality(config);
     return {

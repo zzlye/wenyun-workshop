@@ -1,3 +1,4 @@
+import { isMidjourneyModel, normalizeMidjourneyRatio } from './midjourney'
 import type {
   AccountApiKeyMode,
   ApiFormat,
@@ -114,6 +115,7 @@ export function allowsCustomImageRatioForProfile(_profileId: string): boolean {
 }
 
 export function normalizeImageSizeForProfile(size: string, _profileId: string, model = ''): string {
+  if (isMidjourneyModel(model)) return normalizeMidjourneyRatio(size)
   // 历史高分辨率配置按模型实际最高档位保留比例，避免一 K 路由仍提交二 K 参数。
   const tiers = getImageSizeTiersForModel(model)
   if (tiers.includes('4K')) return size

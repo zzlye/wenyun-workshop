@@ -1350,6 +1350,8 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         videoModel: mode === "video" ? resolvedModel : globalConfig.videoModel,
         quality: node.metadata?.quality || globalConfig.quality || defaultConfig.quality,
         imageBackground: node.metadata?.imageBackground || globalConfig.imageBackground || defaultConfig.imageBackground,
+        mjRaw: node.metadata?.mjRaw ?? globalConfig.mjRaw,
+        mjQuality: node.metadata?.mjQuality ?? globalConfig.mjQuality,
         size: mode === "video" ? (node.metadata?.size || globalConfig.size) : normalizeImageSizeForProfile(node.metadata?.size || globalConfig.size || defaultConfig.size, activeProfileId, resolvedModel),
         videoSeconds: node.metadata?.seconds ?? globalConfig.videoSeconds ?? defaultConfig.videoSeconds,
         videoGenerateAudio: node.metadata?.videoGenerateAudio !== undefined ? node.metadata.videoGenerateAudio : globalConfig.videoGenerateAudio,

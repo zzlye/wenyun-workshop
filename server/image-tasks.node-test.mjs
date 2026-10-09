@@ -49,6 +49,103 @@ async function waitForCompletion(baseUrl, task) {
   throw new Error('等待图片任务完成超时')
 }
 
+async function createMidjourneyTask(baseUrl, key = 'mj-once') {
+  const response = await fetch(`${baseUrl}/image-tasks?endpoint=/midjourney/generations`, {
+    method: 'POST', headers: { Authorization: 'Bearer mj-test-key', 'Content-Type': 'application/json', 'X-Wenyun-Idempotency-Key': key, 'X-Wenyun-Task-Client-Version': '2' },
+    body: JSON.stringify({ model: 'mj-v8.2', prompt: '文档示例', size: '16:9', raw: false, n: 1 }),
+  })
+  assert.equal(response.status, 202)
+  return response.json()
+}
+
+test('Midjourney 同 Key 查询临时 408 后恢复，只有一次 POST，保存实际四张结果', async () => {
+  let posts = 0
+  let queries = 0
+  const urls = Array.from({ length: 4 }, (_, index) => `https://example.com/${index}.png`)
+  const upstreamUrl = await listen(createServer(async (request, response) => {
+    assert.equal(request.headers.authorization, 'Bearer mj-test-key')
+    if (request.method === 'POST') {
+      assert.equal(request.url, '/v1/midjourney/generations')
+      posts++
+      const chunks = []
+      for await (const chunk of request) chunks.push(chunk)
+      assert.deepEqual(JSON.parse(Buffer.concat(chunks).toString()), { model: 'mj-v8.2', prompt: '文档示例', size: '16:9', raw: false, n: 1 })
+      response.writeHead(202, { 'Content-Type': 'application/json', 'X-NewAPI-Task-Id': 'mj-task' })
+      response.end()
+      return
+    }
+    assert.equal(request.url, '/v1/tasks/mj-task')
+    queries++
+    if (queries === 1) { response.writeHead(408); response.end('timeout'); return }
+    response.writeHead(200, { 'Content-Type': 'application/json' })
+    response.end(JSON.stringify({ data: { task_id: 'mj-task', status: queries === 2 ? 'running' : 'completed', result: { data: { image_urls: urls, grid_image_url: 'https://example.com/grid.png' } } } }))
+  }))
+  const baseUrl = await listen(createImageTaskServer({ upstreamBaseUrl: `${upstreamUrl}/v1`, logger: () => {}, midjourneyPollIntervalMs: 5 }))
+  const task = await createMidjourneyTask(baseUrl)
+  assert.equal((await waitForCompletion(baseUrl, task)).status, 'succeeded')
+  const result = await fetch(`${baseUrl}/image-tasks/${task.taskId}/result`, { headers: { Authorization: `Bearer ${task.accessToken}` } })
+  assert.deepEqual((await result.json()).data.result.data.image_urls, urls)
+  assert.equal((await createMidjourneyTask(baseUrl)).taskId, task.taskId)
+  assert.equal(posts, 1)
+  assert.equal(queries, 3)
+})
+
+test('Midjourney 受理后超过前台超时和幂等期限仍认领原任务，完成后保留恢复窗口', async () => {
+  let posts = 0
+  let complete = false
+  let accepted
+  const received = new Promise(resolve => { accepted = resolve })
+  const upstreamUrl = await listen(createServer(async (request, response) => {
+    for await (const _chunk of request) { /* 消费完整请求后受理。 */ }
+    response.writeHead(200, { 'Content-Type': 'application/json' })
+    if (request.method === 'POST') {
+      posts++
+      response.end('{"data":{"task_id":"mj-long","status":"pending"}}')
+      accepted()
+    } else response.end(JSON.stringify({ data: { task_id: 'mj-long', status: complete ? 'completed' : 'running', result: complete ? { data: { image_urls: ['https://example.com/final.png'] } } : undefined } }))
+  }))
+  const baseUrl = await listen(createImageTaskServer({ upstreamBaseUrl: `${upstreamUrl}/v1`, logger: () => {}, timeoutMs: 100, taskTtlMs: 2000, idempotencyTtlMs: 200, midjourneyPollIntervalMs: 5 }))
+  const task = await createMidjourneyTask(baseUrl)
+  await received
+  await new Promise(resolve => setTimeout(resolve, 300))
+  const reused = await createMidjourneyTask(baseUrl)
+  assert.equal(reused.taskId, task.taskId)
+  assert.equal(reused.status, 'running')
+  complete = true
+  assert.equal((await waitForCompletion(baseUrl, task)).status, 'succeeded')
+  assert.equal((await createMidjourneyTask(baseUrl)).taskId, task.taskId)
+  assert.equal(posts, 1)
+})
+
+test('Midjourney 失败终态保留上游错误', async () => {
+  const upstreamUrl = await listen(createServer(async (request, response) => {
+    for await (const _chunk of request) { /* 消费请求。 */ }
+    response.writeHead(200, { 'Content-Type': 'application/json' })
+    response.end(request.method === 'POST' ? '{"data":{"task_id":"mj-failed","status":"pending"}}' : '{"data":{"status":"failed","error_code":"content_rejected","error_message":"上游拒绝内容"}}')
+  }))
+  const baseUrl = await listen(createImageTaskServer({ upstreamBaseUrl: `${upstreamUrl}/v1`, logger: () => {}, midjourneyPollIntervalMs: 5 }))
+  const task = await createMidjourneyTask(baseUrl)
+  await waitForCompletion(baseUrl, task)
+  const result = await fetch(`${baseUrl}/image-tasks/${task.taskId}/result`, { headers: { Authorization: `Bearer ${task.accessToken}` } })
+  assert.equal((await result.json()).data.error_message, '上游拒绝内容')
+})
+
+test('Midjourney 非 JSON 受理明确失败，不反复查询或提交', async () => {
+  let calls = 0
+  const upstreamUrl = await listen(createServer(async (request, response) => {
+    calls++
+    for await (const _chunk of request) { /* 消费请求。 */ }
+    response.writeHead(200, { 'Content-Type': 'text/html' })
+    response.end('<html>invalid</html>')
+  }))
+  const baseUrl = await listen(createImageTaskServer({ upstreamBaseUrl: `${upstreamUrl}/v1`, logger: () => {}, midjourneyPollIntervalMs: 5 }))
+  const task = await createMidjourneyTask(baseUrl)
+  const completed = await waitForCompletion(baseUrl, task)
+  assert.equal(completed.status, 'failed')
+  assert.match(completed.error.message, /无效响应/)
+  assert.equal(calls, 1)
+})
+
 test('同一个幂等键只提交一次上游请求', async () => {
   let upstreamCalls = 0
   const upstreamUrl = await listen(createServer(async (request, response) => {

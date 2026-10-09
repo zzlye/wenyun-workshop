@@ -2,12 +2,25 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import axios from "axios";
 
 import { DEFAULT_SETTINGS, LOCKED_PUBLIC_PROFILE_ID } from "../../../lib/apiProfiles";
+import { getSafeImageDisplayUrl } from "../../../lib/imageApiShared";
 import { useStore } from "../../../store";
 import { defaultConfig } from "../../stores/use-config-store";
 import { requestEdit, requestGeneration, requestImageQuestion } from "./image";
 
 describe("canvas image api", () => {
     const initialSettings = useStore.getState().settings;
+
+    it.each(["mj-v8.2", "mj-niji7"])("画布 %s 仅一次提交，保留比例、Raw 和实际多图结果", async model => {
+        vi.stubEnv("VITE_IMAGE_TASKS_AVAILABLE", "disabled");
+        const urls = Array.from({ length: 4 }, (_, index) => `https://example.com/${index}.png`);
+        const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ data: { status: "completed", result: { data: { image_urls: urls } } } })));
+        useStore.setState({ settings: { ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, model, apiKey: "mj-test-key" })) } });
+        const result = await requestGeneration({ ...defaultConfig, model, imageModel: model, size: "auto", count: "4", quality: "high", mjRaw: "false", mjQuality: "0.5" }, "原提示词");
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(String(fetchMock.mock.calls[0][0])).toBe("/api-proxy/wenyun/midjourney/generations");
+        expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ model, prompt: "原提示词", size: "auto", raw: false, n: 1, ...(model === "mj-niji7" ? { quality: 0.5 } : {}) });
+        expect(result.map(image => image.dataUrl)).toEqual(urls.map(getSafeImageDisplayUrl));
+    });
 
     afterEach(() => {
         useStore.setState({ settings: initialSettings });

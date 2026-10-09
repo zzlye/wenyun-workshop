@@ -28,6 +28,8 @@ import { copyImageSourceToClipboard, getClipboardFailureMessage } from "../../..
 import { getImageBlobExtension, getImageSourceBlob } from "../../../../../lib/imageTransfer";
 import { storeImage } from "../../../../../lib/db";
 import { normalizeCanvasVideoModel } from "../../../../../lib/videoModel";
+import { isMidjourneyModel } from "../../../../../lib/midjourney";
+import { applyCanvasImageResults } from "../utils/canvas-image-results";
 import { replaceAudioMentionsForApi, replaceImageMentionsForApi, replaceVideoMentionsForApi, stripImageMentionMarkers } from "../../../../../lib/promptImageMentions";
 import { primeImageCache, useStore } from "../../../../../store";
 import AccountBalanceBar, { AccountLoginButton } from "../../../../../components/AccountBalanceBar";
@@ -501,6 +503,30 @@ function InfiniteCanvasPage() {
         };
     }, []);
 
+    const commitMidjourneyResults = useCallback(async (nodeId: string, images: Array<{ dataUrl: string }>, expected: { fingerprint?: string; startedAt?: number }, metadata = {}) => {
+        let eligible = false;
+        // 先保存全部结果地址；下载或本地存储失败时，重试只保存原结果，不再付费生成。
+        commitGenerationNodes(prev => prev.map(node => {
+            if (node.id !== nodeId || node.metadata?.status !== NODE_STATUS_LOADING
+                || (expected.fingerprint && node.metadata?.imageTaskRequestFingerprint !== expected.fingerprint)
+                || (expected.startedAt !== undefined && node.metadata?.generationStartedAt !== expected.startedAt)) return node;
+            eligible = true;
+            return { ...node, metadata: { ...node.metadata, midjourneyResultUrls: images.map(image => image.dataUrl) } };
+        }));
+        if (!eligible) return false;
+        const uploaded = await Promise.all(images.map(image => uploadImage(image.dataUrl)));
+        let connections: CanvasConnection[] = [];
+        let applied = false;
+        commitGenerationNodes(prev => {
+            const result = applyCanvasImageResults(prev, nodeId, uploaded, expected, metadata);
+            applied = result.nodes !== prev;
+            connections = result.connections;
+            return result.nodes;
+        });
+        if (connections.length) commitGenerationConnections(prev => [...prev, ...connections]);
+        return applied;
+    }, [commitGenerationNodes, commitGenerationConnections]);
+
     const persistCanvasImageTaskReference = useCallback(
         (nodeId: string, requestFingerprint: string, task: { taskId: string; accessToken: string; idempotencyKey: string; apiProfileId?: string }) => {
             // 每个画布节点只保存自己的任务凭据，乱序完成时不会覆盖其他节点。
@@ -544,6 +570,7 @@ function InfiniteCanvasPage() {
 
             recoveringImageTaskIdsRef.current.add(node.id);
             markCanvasNodeRunning(node.id);
+            commitGenerationNodes(prev => prev.map(current => current.id === node.id && current.metadata?.imageTaskRequestFingerprint === requestFingerprint ? { ...current, metadata: { ...current.metadata, status: NODE_STATUS_LOADING } } : current));
             const generationStartedAt = metadata.generationStartedAt || Date.now();
             const timing = () => buildGenerationTiming(generationStartedAt);
             try {
@@ -558,6 +585,8 @@ function InfiniteCanvasPage() {
                     model,
                     imageModel: model,
                     quality: metadata.quality || effectiveConfig.quality,
+                    mjRaw: metadata.mjRaw ?? effectiveConfig.mjRaw,
+                    mjQuality: metadata.mjQuality ?? effectiveConfig.mjQuality,
                     size: normalizeImageSizeForProfile(metadata.size || effectiveConfig.size, taskProfileId, model),
                     count: "1",
                 };
@@ -568,7 +597,7 @@ function InfiniteCanvasPage() {
                 const references = !resumingTask && metadata.generationType === "edit" ? await resolveMetadataReferences(metadata) : [];
                 if (!resumingTask && metadata.generationType === "edit" && !references) throw new Error("恢复图片任务时参考图片已不存在");
 
-                const image = metadata.generationType === "edit"
+                const images = metadata.generationType === "edit"
                     ? await requestEdit(
                           generationConfig,
                           requestPrompt,
@@ -576,14 +605,21 @@ function InfiniteCanvasPage() {
                           `recover-${node.id}`,
                           taskReference,
                           (task) => persistCanvasImageTaskReference(node.id, requestFingerprint, task),
-                      ).then((items) => items[0])
+                      )
                     : await requestGeneration(
                           generationConfig,
                           requestPrompt,
                           `recover-${node.id}`,
                           taskReference,
                           (task) => persistCanvasImageTaskReference(node.id, requestFingerprint, task),
-                      ).then((items) => items[0]);
+                      );
+                if (isMidjourneyModel(model)) {
+                    if (!await commitMidjourneyResults(node.id, images, { fingerprint: requestFingerprint }, timing())) return;
+                    const configIds = new Set(connectionsRef.current.filter(connection => connection.toNodeId === node.id).map(connection => connection.fromNodeId));
+                    commitGenerationNodes(prev => prev.map(current => current.type === CanvasNodeType.Config && configIds.has(current.id) ? { ...current, metadata: { ...current.metadata, status: NODE_STATUS_SUCCESS, errorDetails: undefined, ...timing() } } : current));
+                    return;
+                }
+                const image = images[0];
                 const uploaded = await uploadImage(image.dataUrl);
                 const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
                 const imageSize = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
@@ -650,7 +686,7 @@ function InfiniteCanvasPage() {
                 clearCanvasNodeRunning([node.id]);
             }
         },
-        [activeProfile.id, clearCanvasNodeRunning, commitGenerationNodes, effectiveConfig, getCanvasImageTaskReference, markCanvasNodeRunning, persistCanvasImageTaskReference, settings],
+        [activeProfile.id, clearCanvasNodeRunning, commitGenerationNodes, commitMidjourneyResults, effectiveConfig, getCanvasImageTaskReference, markCanvasNodeRunning, persistCanvasImageTaskReference, settings],
     );
 
     const recoverCanvasVideoTaskNode = useCallback(
@@ -2609,6 +2645,7 @@ function InfiniteCanvasPage() {
             const generationMetadata = buildImageGenerationMetadata("edit", generationConfig, 1, [
                 { id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, storageKey: node.metadata.storageKey },
             ], prompt);
+            const generationStartedAt = Date.now();
             setAngleNodeId(null);
             markCanvasNodeRunning(childId);
             commitGenerationNodes((prev) => [
@@ -2620,7 +2657,7 @@ function InfiniteCanvasPage() {
                     position: { x: node.position.x + node.width + 96, y: node.position.y },
                     width: imageConfig.width,
                     height: imageConfig.height,
-                    metadata: { prompt, status: NODE_STATUS_LOADING, ...generationMetadata },
+                    metadata: { prompt, status: NODE_STATUS_LOADING, ...generationMetadata, generationStartedAt },
                 },
             ]);
             commitGenerationConnections((prev) => [...prev, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
@@ -2629,16 +2666,19 @@ function InfiniteCanvasPage() {
             setDialogNodeId(childId);
             try {
                 const requestFingerprint = `angle:${childId}:${prompt}`;
-                const image = await requestEdit(
+                const images = await requestEdit(
                     generationConfig,
                     prompt,
                     [{ id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, storageKey: node.metadata.storageKey }],
                     `angle-${childId}`,
                     undefined,
                     (task) => persistCanvasImageTaskReference(childId, requestFingerprint, task),
-                ).then(
-                    (items) => items[0],
                 );
+                if (isMidjourneyModel(generationConfig.model)) {
+                    await commitMidjourneyResults(childId, images, { startedAt: generationStartedAt }, { prompt, ...generationMetadata });
+                    return;
+                }
+                const image = images[0];
                 const uploaded = await uploadImage(image.dataUrl);
                 const size = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
                 commitGenerationNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, ...getGeneratedMediaSizePatch(item, size), metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata, ...CLEARED_IMAGE_TASK_METADATA } } : item)));
@@ -2649,7 +2689,7 @@ function InfiniteCanvasPage() {
                 clearCanvasNodeRunning([childId]);
             }
         },
-        [activeProfile.id, clearCanvasNodeRunning, commitGenerationConnections, commitGenerationNodes, effectiveConfig, getCanvasImageTaskReference, isImageConfigReady, markCanvasNodeRunning, openConfigDialog, persistCanvasImageTaskReference, persistCanvasVideoTaskReference],
+        [activeProfile.id, clearCanvasNodeRunning, commitGenerationConnections, commitGenerationNodes, commitMidjourneyResults, effectiveConfig, getCanvasImageTaskReference, isImageConfigReady, markCanvasNodeRunning, openConfigDialog, persistCanvasImageTaskReference, persistCanvasVideoTaskReference],
     );
 
     const handleFontSizeChange = useCallback((nodeId: string, fontSize: number) => {
@@ -2886,7 +2926,7 @@ function InfiniteCanvasPage() {
                 if (markSourceStatus) commitGenerationNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, prompt, status: NODE_STATUS_LOADING, errorDetails: undefined, generationStartedAt, generationElapsedMs: undefined } } : node)));
 
                 if (mode === "image") {
-                    const count = getGenerationCount(generationConfig.count);
+                    const count = isMidjourneyModel(generationConfig.model) ? 1 : getGenerationCount(generationConfig.count);
                     const isConfigNode = sourceNode?.type === CanvasNodeType.Config;
                     const isImageNode = sourceNode?.type === CanvasNodeType.Image;
                     const referenceImages = mergeNodeReferenceImages(generationContext.referenceImages);
@@ -2930,6 +2970,8 @@ function InfiniteCanvasPage() {
                             ...generationMetadata,
                             imageBatchExpanded: count > 1 ? true : undefined,
                             ...CLEARED_IMAGE_TASK_METADATA,
+                            // 新生成不能继承上一次下载失败的结果；错误分支仍保留本次结果供续存。
+                            midjourneyResultUrls: undefined,
                         },
                     };
                     const childNodes: CanvasNodeData[] = childIds.map((id, index) => ({
@@ -2990,7 +3032,7 @@ function InfiniteCanvasPage() {
                         targetIds.map(async (targetId) => {
                             try {
                                 const requestFingerprint = `${generationType}:${targetId}:${effectivePrompt}:${generationConfig.model}:${generationConfig.size}:${generationConfig.quality}:${generationConfig.imageBackground}`;
-                                const image = referenceImages.length
+                                const images = referenceImages.length
                                     ? await requestEdit(
                                           { ...generationConfig, count: "1" },
                                           effectivePrompt,
@@ -2998,14 +3040,19 @@ function InfiniteCanvasPage() {
                                           targetId,
                                           undefined,
                                           (task) => persistCanvasImageTaskReference(targetId, requestFingerprint, task),
-                                      ).then((items) => items[0])
+                                      )
                                     : await requestGeneration(
                                           { ...generationConfig, count: "1" },
                                           effectivePrompt,
                                           targetId,
                                           undefined,
                                           (task) => persistCanvasImageTaskReference(targetId, requestFingerprint, task),
-                                      ).then((items) => items[0]);
+                                      );
+                                if (isMidjourneyModel(generationConfig.model)) {
+                                    hasSuccess = await commitMidjourneyResults(targetId, images, { startedAt: generationStartedAt }, timing()) || hasSuccess;
+                                    return hasSuccess;
+                                }
+                                const image = images[0];
                                 const uploaded = await uploadImage(image.dataUrl);
                                 const imageSize = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
                                 commitGenerationNodes((prev) => {
@@ -3159,11 +3206,30 @@ function InfiniteCanvasPage() {
                 clearCanvasNodeRunning([nodeId, ...pendingChildIds]);
             }
         },
-        [activeProfile.id, clearCanvasNodeRunning, commitGenerationConnections, commitGenerationNodes, effectiveConfig, getCanvasImageTaskReference, isImageConfigReady, markCanvasNodeRunning, openConfigDialog, persistCanvasImageTaskReference],
+        [activeProfile.id, clearCanvasNodeRunning, commitGenerationConnections, commitGenerationNodes, commitMidjourneyResults, effectiveConfig, getCanvasImageTaskReference, isImageConfigReady, markCanvasNodeRunning, openConfigDialog, persistCanvasImageTaskReference, persistCanvasVideoTaskReference],
     );
 
     const handleRetryNode = useCallback(
-        async (node: CanvasNodeData) => {
+        async (requestedNode: CanvasNodeData) => {
+            // Midjourney 子图属于同一个任务，重试从主节点开始，不给每张子图各发一次请求。
+            const node = isMidjourneyModel(requestedNode.metadata?.model || "") && requestedNode.metadata?.batchRootId
+                ? nodesRef.current.find(item => item.id === requestedNode.metadata.batchRootId) || requestedNode : requestedNode;
+            if (runningNodeIdsRef.current.has(node.id)) return;
+            if (node.metadata?.midjourneyResultUrls?.length) {
+                markCanvasNodeRunning(node.id);
+                commitGenerationNodes(prev => prev.map(item => item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING } } : item));
+                try {
+                    await commitMidjourneyResults(node.id, node.metadata.midjourneyResultUrls.map(dataUrl => ({ dataUrl })), { startedAt: node.metadata.generationStartedAt }, buildGenerationTiming(node.metadata.generationStartedAt || Date.now()));
+                } catch (error) {
+                    const errorDetails = error instanceof Error ? error.message : "读取图片结果失败";
+                    commitGenerationNodes(prev => prev.map(item => item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } } : item));
+                    message.error(errorDetails);
+                } finally {
+                    clearCanvasNodeRunning([node.id]);
+                }
+                return;
+            }
+            if (hasRecoverableCanvasImageTask(node)) { await recoverCanvasImageTaskNode({ ...node, metadata: { ...node.metadata, status: NODE_STATUS_LOADING } }); return; }
             // 有任务编号时重试按钮仅续查，绝不重新创建已计费任务。
             if (node.type === CanvasNodeType.Video && node.metadata?.videoTaskId) { await recoverCanvasVideoTaskNode({...node, metadata:{...node.metadata,status:NODE_STATUS_LOADING}}); return; }
             if (isCanvasNodeGenerationLocked(node, runningNodeIdsRef.current)) return;
@@ -3179,6 +3245,8 @@ function InfiniteCanvasPage() {
                           model: savedImageModel,
                           imageModel: savedImageModel,
                           quality: savedImageMetadata.quality || effectiveConfig.quality,
+                          mjRaw: savedImageMetadata.mjRaw ?? effectiveConfig.mjRaw,
+                          mjQuality: savedImageMetadata.mjQuality ?? effectiveConfig.mjQuality,
                           size: normalizeImageSizeForProfile(savedImageMetadata.size || effectiveConfig.size, activeProfile.id, savedImageModel),
                           count: "1",
                     }
@@ -3210,7 +3278,7 @@ function InfiniteCanvasPage() {
             const generationStartedAt = Date.now();
             const timing = () => buildGenerationTiming(generationStartedAt);
             markCanvasNodeRunning(node.id);
-            commitGenerationNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined, generationStartedAt, generationElapsedMs: undefined, ...CLEARED_IMAGE_TASK_METADATA, ...CLEARED_VIDEO_TASK_METADATA } } : item)));
+            commitGenerationNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined, generationStartedAt, generationElapsedMs: undefined, ...CLEARED_IMAGE_TASK_METADATA, ...CLEARED_VIDEO_TASK_METADATA, midjourneyResultUrls: undefined } } : item)));
 
             try {
                 if (node.type === CanvasNodeType.Text) {
@@ -3242,7 +3310,7 @@ function InfiniteCanvasPage() {
                 }
 
                 const requestFingerprint = `retry:${node.id}:${requestPrompt}:${generationConfig.model}:${generationConfig.size}:${generationConfig.quality}:${generationConfig.imageBackground}`;
-                const image = useReferenceImages
+                const images = useReferenceImages
                     ? await requestEdit(
                           generationConfig,
                           requestPrompt,
@@ -3250,14 +3318,22 @@ function InfiniteCanvasPage() {
                           `retry-${node.id}`,
                           undefined,
                           (task) => persistCanvasImageTaskReference(node.id, requestFingerprint, task),
-                      ).then((items) => items[0])
+                      )
                     : await requestGeneration(
                           generationConfig,
                           requestPrompt,
                           `retry-${node.id}`,
                           undefined,
                           (task) => persistCanvasImageTaskReference(node.id, requestFingerprint, task),
-                      ).then((items) => items[0]);
+                      );
+                if (isMidjourneyModel(generationConfig.model)) {
+                    await commitMidjourneyResults(node.id, images, { startedAt: generationStartedAt }, {
+                        ...buildImageGenerationMetadata(useReferenceImages ? "edit" : "generation", generationConfig, 1, retryReferenceImages || [], requestPrompt),
+                        prompt: sourcePrompt, ...timing(),
+                    });
+                    return;
+                }
+                const image = images[0];
                 const uploadedImage = await uploadImage(image.dataUrl);
                 const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
                 const imageSize = fitNodeSize(uploadedImage.width, uploadedImage.height, imageConfig.width, imageConfig.height);
@@ -3284,7 +3360,7 @@ function InfiniteCanvasPage() {
                 clearCanvasNodeRunning([node.id]);
             }
         },
-        [activeProfile.id, clearCanvasNodeRunning, commitGenerationNodes, effectiveConfig, getCanvasImageTaskReference, isImageConfigReady, markCanvasNodeRunning, message, openConfigDialog, persistCanvasImageTaskReference, persistCanvasVideoTaskReference],
+        [activeProfile.id, clearCanvasNodeRunning, commitGenerationNodes, commitMidjourneyResults, effectiveConfig, getCanvasImageTaskReference, isImageConfigReady, markCanvasNodeRunning, message, openConfigDialog, persistCanvasImageTaskReference, persistCanvasVideoTaskReference, recoverCanvasImageTaskNode, recoverCanvasVideoTaskNode],
     );
 
     const generateImageFromTextNode = useCallback(
@@ -4246,6 +4322,8 @@ function buildImageGenerationMetadata(type: CanvasImageGenerationType, config: A
         size: config.size,
         quality: config.quality,
         imageBackground: config.imageBackground,
+        mjRaw: config.mjRaw,
+        mjQuality: config.mjQuality,
         count,
         references: references.map(referenceUrl).filter((url): url is string => Boolean(url)),
     };
@@ -4390,13 +4468,15 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
         videoModel: mode === "video" ? resolvedModel : config.videoModel,
         quality: node?.metadata?.quality || config.quality || defaultConfig.quality,
         imageBackground: node?.metadata?.imageBackground || config.imageBackground || defaultConfig.imageBackground,
+        mjRaw: node?.metadata?.mjRaw ?? config.mjRaw,
+        mjQuality: node?.metadata?.mjQuality ?? config.mjQuality,
         size: mode === "video" ? (node?.metadata?.size || config.size) : normalizeImageSizeForProfile(node?.metadata?.size || config.size || defaultConfig.size, activeProfileId, resolvedModel),
         videoSeconds: node?.metadata?.seconds ?? config.videoSeconds ?? defaultConfig.videoSeconds,
         videoGenerateAudio: node?.metadata?.videoGenerateAudio !== undefined ? node.metadata.videoGenerateAudio : config.videoGenerateAudio,
         videoMode: node?.metadata?.videoMode ?? config.videoMode,
         videoExtraParameters: node?.metadata?.videoExtraParameters ?? config.videoExtraParameters,
         vquality: node?.metadata?.vquality || config.vquality || defaultConfig.vquality,
-        count: String(node?.metadata?.count || (mode === "image" ? 1 : config.count) || defaultConfig.count),
+        count: mode === "image" && isMidjourneyModel(resolvedModel) ? "1" : String(node?.metadata?.count || (mode === "image" ? 1 : config.count) || defaultConfig.count),
     };
 }
 

@@ -1,8 +1,9 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import { pathToFileURL } from 'node:url'
+import { pollMidjourneyTask } from './midjourney.mjs'
 
-const ALLOWED_ENDPOINTS = new Set(['/images/generations', '/images/edits'])
+const ALLOWED_ENDPOINTS = new Set(['/images/generations', '/images/edits', '/midjourney/generations'])
 const BLOCKED_REQUEST_HEADERS = new Set([
   'accept-encoding',
   'connection',
@@ -220,12 +221,15 @@ export function createImageTaskServer(options = {}) {
   const timeoutMs = options.timeoutMs ?? Number(process.env.IMAGE_TASK_TIMEOUT_MS || DEFAULT_TIMEOUT_MS)
   const cleanupIntervalMs = options.cleanupIntervalMs ?? Number(process.env.IMAGE_TASK_CLEANUP_INTERVAL_MS || DEFAULT_CLEANUP_INTERVAL_MS)
   const logger = options.logger ?? defaultLogger
+  const midjourneyPollIntervalMs = options.midjourneyPollIntervalMs ?? 3_000
   const tasks = new Map()
   const idempotencyTasks = new Map()
+  const activeControllers = new Set()
 
   const cleanupExpiredTasks = () => {
     const now = Date.now()
     for (const [taskId, task] of tasks) {
+      if (task.endpoint === '/midjourney/generations' && (task.status === 'pending' || task.status === 'running')) continue
       if (task.expiresAt > now) continue
       tasks.delete(taskId)
       if (task.idempotencyScope && idempotencyTasks.get(task.idempotencyScope)?.taskId === taskId) {
@@ -233,7 +237,9 @@ export function createImageTaskServer(options = {}) {
       }
     }
     for (const [key, entry] of idempotencyTasks) {
-      if (entry.expiresAt <= now || !tasks.has(entry.taskId)) idempotencyTasks.delete(key)
+      const task = tasks.get(entry.taskId)
+      const polling = task?.endpoint === '/midjourney/generations' && (task.status === 'pending' || task.status === 'running')
+      if (!task || (!polling && entry.expiresAt <= now)) idempotencyTasks.delete(key)
     }
   }
 
@@ -248,6 +254,7 @@ export function createImageTaskServer(options = {}) {
     task.status = 'running'
     task.startedAt = Date.now()
     const abortController = new AbortController()
+    activeControllers.add(abortController)
     const timeoutTimer = setTimeout(() => abortController.abort(new Error('图片生成超过总时间限制')), task.timeoutMs)
 
     const log = (status, detail = {}) => {
@@ -257,7 +264,7 @@ export function createImageTaskServer(options = {}) {
 
     try {
       log('upstream_started')
-      const upstreamResponse = await fetch(`${upstreamBaseUrl}${task.endpoint}`, {
+      let upstreamResponse = await fetch(`${upstreamBaseUrl}${task.endpoint}`, {
         method: 'POST',
         headers: task.headers,
         body: task.requestBody,
@@ -267,8 +274,19 @@ export function createImageTaskServer(options = {}) {
       upstreamStatus = upstreamResponse.status
       upstreamContentLength = upstreamResponse.headers.get('content-length') || undefined
       upstreamContentEncoding = upstreamResponse.headers.get('content-encoding') || 'identity'
+      let responseBody = await readResponseBody(upstreamResponse, maxResponseBodyBytes)
+      // 提交已完成，长时间轮询期间不继续占用参考图请求体。
+      task.requestBody = null
+      if (task.endpoint === '/midjourney/generations' && upstreamResponse.ok) {
+        const result = await pollMidjourneyTask({ response: upstreamResponse, body: responseBody, baseUrl: upstreamBaseUrl, headers: task.headers, signal: abortController.signal, readBody: response => readResponseBody(response, maxResponseBodyBytes), pollIntervalMs: midjourneyPollIntervalMs,
+          // 上游受理后生成时长由任务终态决定，不再把长时间排队判为失败。
+          onAccepted: () => clearTimeout(timeoutTimer),
+        })
+        upstreamResponse = result.response
+        responseBody = result.body
+        upstreamStatus = upstreamResponse.status
+      }
       const upstreamMetadata = createResponseMetadata(upstreamResponse)
-      const responseBody = await readResponseBody(upstreamResponse, maxResponseBodyBytes)
       task.upstreamMetadata = upstreamMetadata
       task.responseBody = responseBody
       task.status = 'succeeded'
@@ -307,7 +325,13 @@ export function createImageTaskServer(options = {}) {
         ...getErrorDetail(error),
       })
     } finally {
+      // 长任务完成后仍保留完整认领窗口，防止旧幂等键立即过期而重复收费。
+      if (task.endpoint === '/midjourney/generations') {
+        const entry = idempotencyTasks.get(task.idempotencyScope)
+        if (entry?.taskId === task.id) entry.expiresAt = task.finishedAt + idempotencyTtlMs
+      }
       clearTimeout(timeoutTimer)
+      activeControllers.delete(abortController)
     }
   }
 
@@ -347,7 +371,9 @@ export function createImageTaskServer(options = {}) {
 
       const idempotencyScope = createIdempotencyScope(request, endpoint, idempotencyKey)
       const existingEntry = idempotencyTasks.get(idempotencyScope)
-      const existingTask = existingEntry && existingEntry.expiresAt > Date.now() ? tasks.get(existingEntry.taskId) : null
+      const candidate = existingEntry ? tasks.get(existingEntry.taskId) : null
+      const activeMidjourney = candidate?.endpoint === '/midjourney/generations' && (candidate.status === 'pending' || candidate.status === 'running')
+      const existingTask = existingEntry && (existingEntry.expiresAt > Date.now() || activeMidjourney) ? candidate : null
       if (existingTask) {
         request.resume()
         sendJson(response, 202, {
@@ -463,7 +489,10 @@ export function createImageTaskServer(options = {}) {
     sendJson(response, 405, { error: { message: 'Method Not Allowed' } }, { Allow: 'GET, DELETE, OPTIONS' })
   })
 
-  server.once('close', () => clearInterval(cleanupTimer))
+  server.once('close', () => {
+    clearInterval(cleanupTimer)
+    for (const controller of activeControllers) controller.abort()
+  })
   return server
 }
 

@@ -5,6 +5,7 @@ import { callOpenAICompatibleImageApi } from './openaiCompatibleImageApi'
 import { prepareReferenceImageDataUrlForApi, type CallApiOptions, type CallApiResult } from './imageApiShared'
 import { beginImageGenerationActivity } from './generationActivity'
 import { hasImageTaskCredentials } from './imageTasks'
+import { buildMidjourneyRequest, isMidjourneyModel } from './midjourney'
 
 export type { CallApiOptions, CallApiResult } from './imageApiShared'
 export { normalizeBaseUrl } from './devProxy'
@@ -13,6 +14,10 @@ export async function callImageApi(opts: CallApiOptions): Promise<CallApiResult>
   const endActivity = beginImageGenerationActivity()
   try {
     const profile = getEffectiveImageApiProfile(opts.settings, getActiveApiProfile(opts.settings))
+    // 素材预处理前先拒绝超限及遮罩，避免无效请求耗时或丢失参考图。
+    if (isMidjourneyModel(profile.model) && !hasImageTaskCredentials(opts.imageTask)) {
+      buildMidjourneyRequest(profile.model, opts.prompt, opts.params, opts.inputImageDataUrls, opts.maskDataUrl)
+    }
     // 服务端已有完整请求，恢复时不能再读取可能失效的本地原图或遮罩。
     const optimizedOpts = hasImageTaskCredentials(opts.imageTask)
       ? { ...opts, inputImageDataUrls: [], maskDataUrl: undefined }

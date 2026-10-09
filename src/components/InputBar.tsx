@@ -19,6 +19,8 @@ import { downloadImageIds, formatExportFileTime } from '../lib/downloadImages'
 import { Maximize2, Minimize2 } from 'lucide-react'
 import Select from './Select'
 import SizePickerModal from './SizePickerModal'
+import { MidjourneyOptions } from './MidjourneyControls'
+import { isMidjourneyModel, MIDJOURNEY_MAX_REFERENCES, normalizeMidjourneyRatio } from '../lib/midjourney'
 import ViewportTooltip from './ViewportTooltip'
 import { CloseIcon } from './icons'
 
@@ -637,34 +639,37 @@ export default function InputBar() {
     syncMentionTagSelection(el)
     setPrompt(getContentEditablePlainText(el))
   }, [setPrompt])
+  const isMidjourney = isMidjourneyModel(activeProfile.model)
   const activeProvider = activeProfile.provider
   const isFalProvider = activeProvider === 'fal'
   const agentAutoImageCount = appMode === 'agent' && activeProfile.provider === 'openai' && activeProfile.apiMode === 'responses'
   const outputImageLimit = getOutputImageLimitForSettings(effectiveSettings)
   const nDraftValue = Number(nInput)
   const effectiveNValue = Number.isNaN(nDraftValue) ? params.n : nDraftValue
-  const splitIntoIndependentTasks = !agentAutoImageCount && effectiveNValue > 1
+  // Midjourney 的四图属于一次生成，切换模型后也不能沿用旧数量拆成多次付费提交。
+  const splitIntoIndependentTasks = !isMidjourney && !agentAutoImageCount && effectiveNValue > 1
   const nLimitHintText = agentAutoImageCount
     ? 'Agent 模式下数量由模型根据提示词自动决定'
     : isFalProvider
     ? `fal.ai 最大请求数量为 ${outputImageLimit}`
     : `OpenAI 最大请求数量为 ${outputImageLimit}`
-  const normalizedDisplaySize = resolveBananaSizePreset(activeProfile.model, params.size)?.size
+  const normalizedDisplaySize = isMidjourney ? normalizeMidjourneyRatio(params.size) : resolveBananaSizePreset(activeProfile.model, params.size)?.size
     ?? normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id, activeProfile.model)
-  const displaySize = normalizedDisplaySize === 'auto' ? DEFAULT_PARAMS.size : normalizedDisplaySize || DEFAULT_PARAMS.size
+  const displaySize = isMidjourney ? normalizedDisplaySize : normalizedDisplaySize === 'auto' ? DEFAULT_PARAMS.size : normalizedDisplaySize || DEFAULT_PARAMS.size
   const imageSizeTiers = getImageSizeTiersForProfile(activeProfile.id, activeProfile.model)
   const allowCustomImageRatio = allowsCustomImageRatioForProfile(activeProfile.id)
   const modelOptions = [...FIXED_IMAGE_MODEL_OPTIONS]
   const selectedModelOption = modelOptions.find((option) => option.value === activeProfile.model)
 
   useEffect(() => {
-    const nextSize = resolveBananaSizePreset(activeProfile.model, params.size)?.size
+    const nextSize = isMidjourney ? normalizeMidjourneyRatio(params.size) : resolveBananaSizePreset(activeProfile.model, params.size)?.size
       ?? normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id, activeProfile.model)
     if (nextSize && nextSize !== params.size) setParams({ size: nextSize })
   }, [activeProfile.id, activeProfile.model, params.size, setParams])
 
-  const atImageLimit = inputImages.length >= API_MAX_IMAGES
-  const uploadImageTooltipText = atImageLimit ? `参考图数量已达上限（${API_MAX_IMAGES} 张），无法继续添加` : '上传图片'
+  const referenceImageLimit = isMidjourney ? MIDJOURNEY_MAX_REFERENCES : API_MAX_IMAGES
+  const atImageLimit = inputImages.length >= referenceImageLimit
+  const uploadImageTooltipText = atImageLimit ? `参考图数量已达上限（${referenceImageLimit} 张），无法继续添加` : '上传图片'
   const nLimitHint = useHintTooltip({ autoHideMs: 2000 })
   const maskTargetImage = maskDraft
     ? inputImages.find((img) => img.id === maskDraft.targetImageId) ?? null
@@ -936,16 +941,21 @@ export default function InputBar() {
   const handleFiles = async (files: FileList | File[]) => {
     try {
       const currentCount = useStore.getState().inputImages.length
-      if (currentCount >= API_MAX_IMAGES) {
+      if (currentCount >= referenceImageLimit) {
         useStore.getState().showToast(
-          `参考图数量已达上限（${API_MAX_IMAGES} 张），无法继续添加`,
+          `参考图数量已达上限（${referenceImageLimit} 张），无法继续添加`,
           'error',
         )
         return
       }
 
-      const remaining = API_MAX_IMAGES - currentCount
+      const remaining = referenceImageLimit - currentCount
       const accepted = Array.from(files).filter((f) => f.type.startsWith('image/'))
+      // 专属协议不截断参考图；超限时让用户先确认素材再提交。
+      if (isMidjourney && accepted.length > remaining) {
+        useStore.getState().showToast(`此模型最多支持 ${referenceImageLimit} 张参考图，请减少图片后添加`, 'error')
+        return
+      }
       const toAdd = accepted.slice(0, remaining)
       const discarded = accepted.length - toAdd.length
 
@@ -955,7 +965,7 @@ export default function InputBar() {
 
       if (discarded > 0) {
         useStore.getState().showToast(
-          `已达上限 ${API_MAX_IMAGES} 张，${discarded} 张图片被丢弃`,
+          `已达上限 ${referenceImageLimit} 张，${discarded} 张图片被丢弃`,
           'error',
         )
       }
@@ -1766,17 +1776,17 @@ export default function InputBar() {
       <label
         className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1.2_1_9rem]'}`}
       >
-        <span className="text-gray-400 dark:text-gray-500 ml-1">尺寸</span>
+        <span className="text-gray-400 dark:text-gray-500 ml-1">{isMidjourney ? '比例' : '尺寸'}</span>
         <button
           type="button"
           onClick={() => { dismissAllTooltips(); setShowSizePicker(true) }}
           className="px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/[0.06] focus:outline-none text-xs text-left transition-all duration-200 shadow-sm font-mono"
           title="选择尺寸"
         >
-          {displaySize}
+          {displaySize === 'auto' ? '自动' : displaySize}
         </button>
       </label>
-      <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1_1_5rem]'}`}>
+      {isMidjourney ? <MidjourneyOptions model={activeProfile.model} value={params.midjourney} onChange={midjourney => setParams({ midjourney })} /> : <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1_1_5rem]'}`}>
         <span className="text-gray-400 dark:text-gray-500 ml-1">品质</span>
         <Select
           native={mobile}
@@ -1787,6 +1797,7 @@ export default function InputBar() {
           className="px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/[0.06] focus:outline-none text-xs transition-all duration-200 shadow-sm"
         />
       </label>
+      }
       {supportsTransparentImageBackground(activeProfile.model) && (
         <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1_1_7rem]'}`}>
           <span className="text-gray-400 dark:text-gray-500 ml-1">背景</span>
@@ -1800,7 +1811,7 @@ export default function InputBar() {
           />
         </label>
       )}
-      <label
+      {!isMidjourney && <label
         className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? '' : 'flex-[1_1_4.5rem]'}`}
         onMouseEnter={showAgentNHint}
         onMouseLeave={hideNLimitHint}
@@ -1845,7 +1856,7 @@ export default function InputBar() {
         />
         <ButtonTooltip visible={nLimitHint.visible} text={nLimitHintText} />
         <ButtonTooltip visible={splitIntoIndependentTasks && !nLimitHint.visible} text="数量大于 1 时会创建多个独立任务，完成一张显示一张" />
-      </label>
+      </label>}
     </div>
   )
 
@@ -1871,7 +1882,7 @@ export default function InputBar() {
             <div className="text-center">
               {atImageLimit ? (
                 <>
-                  <p className="text-lg font-semibold text-red-500">已达上限 {API_MAX_IMAGES} 张</p>
+                  <p className="text-lg font-semibold text-red-500">已达上限 {referenceImageLimit} 张</p>
                   <p className="text-sm text-gray-400 mt-1">请先移除部分参考图后再添加</p>
                 </>
               ) : (

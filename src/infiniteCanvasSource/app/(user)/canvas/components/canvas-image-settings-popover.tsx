@@ -14,6 +14,8 @@ import { calculateImageSize, normalizeImageSize, parseRatio, type SizeTier } fro
 import { useStore } from "../../../../../store";
 import { normalizeImageBackground, supportsTransparentImageBackground } from "../../../../../lib/modelPricing";
 import { getBananaSizeConfig, resolveBananaSizePreset, type BananaSizeTier } from "../../../../../lib/bananaImageSize";
+import { isMidjourneyModel, normalizeMidjourneyRatio } from "../../../../../lib/midjourney";
+import { MidjourneyOptions, MidjourneyRatioOptions } from "../../../../../components/MidjourneyControls";
 
 const ALL_TIERS: SizeTier[] = ["1K", "2K", "4K"];
 const QUALITY_OPTIONS = [
@@ -60,7 +62,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = config.quality || "auto";
-    const profileSize = getBananaSizeConfig(imageModel)
+    const profileSize = isMidjourneyModel(imageModel) ? normalizeMidjourneyRatio(config.size || "9:16") : getBananaSizeConfig(imageModel)
         ? config.size || "1024x1024"
         : normalizeImageSizeForProfile(normalizeImageSize(config.size || "1024x1024"), activeProfile.id, imageModel);
     const activeSize = resolveBananaSizePreset(imageModel, profileSize)?.size || profileSize;
@@ -106,7 +108,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
             <span ref={buttonRef} className="inline-flex min-w-0">
                 <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[180px] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => updateOpen(!open)}>
                     <span className="truncate">
-                        {activeSize} · {imageQualityLabel(quality)} · {count} 张
+                        {isMidjourneyModel(imageModel) ? (activeSize === "auto" ? "自动" : activeSize) : `${activeSize} · ${imageQualityLabel(quality)} · ${count} 张`}
                     </span>
                 </Button>
             </span>
@@ -174,6 +176,15 @@ function ImageSizePortal({
 }
 
 export function CanvasImageSizePanel({ config, allowedTiers, qualityOptions, allowCustomRatio, onConfigChange, theme }: { config: AiConfig; allowedTiers: SizeTier[]; qualityOptions: Array<{ value: string; label: string }>; allowCustomRatio: boolean; onConfigChange: (key: keyof AiConfig, value: string) => void; theme: CanvasTheme }) {
+    if (isMidjourneyModel(config.imageModel || config.model)) return <div className="space-y-4" style={{ color: theme.node.text }}>
+        <div className="text-lg font-semibold">图像设置</div>
+        <SettingGroup title="图像比例" color={theme.node.muted}><MidjourneyRatioOptions value={normalizeMidjourneyRatio(config.size)} onChange={value => onConfigChange("size", value)} /></SettingGroup>
+        <div className="flex gap-3"><MidjourneyOptions model={config.imageModel || config.model} value={{ raw: config.mjRaw === "true", quality: Number(config.mjQuality ?? 1) }} onChange={value => { onConfigChange("mjRaw", String(value.raw ?? false)); onConfigChange("mjQuality", String(value.quality ?? 1)); }} /></div>
+    </div>;
+    return <PixelImageSizePanel config={config} allowedTiers={allowedTiers} qualityOptions={qualityOptions} allowCustomRatio={allowCustomRatio} onConfigChange={onConfigChange} theme={theme} />;
+}
+
+function PixelImageSizePanel({ config, allowedTiers, qualityOptions, allowCustomRatio, onConfigChange, theme }: { config: AiConfig; allowedTiers: SizeTier[]; qualityOptions: Array<{ value: string; label: string }>; allowCustomRatio: boolean; onConfigChange: (key: keyof AiConfig, value: string) => void; theme: CanvasTheme }) {
     const imageModel = config.imageModel || config.model;
     const bananaConfig = getBananaSizeConfig(imageModel);
     const tiers = bananaConfig?.tiers ?? (allowedTiers.length ? allowedTiers : ALL_TIERS);

@@ -38,6 +38,8 @@ export type AiConfig = {
     models: string[];
     quality: string;
     imageBackground: string;
+    mjRaw?: string;
+    mjQuality?: string;
     size: string;
     count: string;
 };

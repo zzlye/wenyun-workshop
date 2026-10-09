@@ -1,4 +1,5 @@
 import type { SizeTier } from './size'
+import { isMidjourneyModel } from './midjourney'
 
 export const DEFAULT_IMAGES_MODEL = 'gpt-image-2'
 export const GPT_IMAGE_2_4K_MODEL = 'gpt-image-2-4k'
@@ -46,6 +47,8 @@ export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
   // 保留站点路由名，由中转映射官方模型；尺寸能力与旧版香蕉二分别维护。
   { model: 'nano-banana-2.1', label: 'Nano Banana 2.1', requestModel: 'nano-banana-2.1', unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   { model: 'Nano-Banana-Pro', label: 'Nano Banana Pro', requestModel: 'nano-banana-pro', unitCostText: 'HUHN 0.15', resolutionText: '1K、2K、4K' },
+  { model: 'mj-v8.2', label: 'mj-v8.2', requestModel: 'mj-v8.2', unitCostText: 'HUHN --', resolutionText: '自动' },
+  { model: 'mj-niji7', label: 'mj-niji7', requestModel: 'mj-niji7', unitCostText: 'HUHN --', resolutionText: '自动' },
 ]
 
 // 旧版无后缀模型保留原来的扩展质量选项，新版四 K 模型只允许基础三档。
@@ -116,6 +119,7 @@ export function getFixedImageRequestModel(model: string): string {
 }
 
 export function getImageSizeTiersForModel(model: string): SizeTier[] {
+  if (isMidjourneyModel(model)) return []
   const normalized = getFixedImageRequestModel(model).toLowerCase()
   // 无后缀的两个基础路由仅支持一 K，不影响四 K 和满血路由。
   if (normalized === GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL || normalized === GPT_IMAGE_2_5_FLARE_LEGACY_MODEL) return ['1K']

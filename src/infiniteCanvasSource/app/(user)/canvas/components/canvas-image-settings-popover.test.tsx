@@ -36,6 +36,16 @@ async function renderModel(model: string, size = "1376x768") {
 }
 
 describe("画布香蕉尺寸选择", () => {
+    it.each(["mj-v8.2", "mj-niji7"])("%s 提供文档比例与 Raw，移除像素档位和生成次数", async model => {
+        const { onConfigChange } = await renderModel(model, "auto");
+        expect(host.querySelectorAll('button[data-image-ratio]')).toHaveLength(12);
+        expect(host.textContent).not.toContain("1K");
+        expect(host.textContent).not.toContain("生成数量");
+        expect(host.querySelector('input[aria-label="Raw"]')).not.toBeNull();
+        expect(Boolean(host.querySelector('select[aria-label="Niji 品质"]'))).toBe(model === "mj-niji7");
+        await act(async () => host.querySelector<HTMLButtonElement>('button[data-image-ratio="21:9"]')!.click());
+        expect(onConfigChange).toHaveBeenCalledWith("size", "21:9");
+    });
     it("Pro 展示官方十种比例并提交官方尺寸", async () => {
         const { onConfigChange: onChange } = await renderModel("Nano-Banana-Pro");
         expect(host.querySelectorAll('button[data-image-ratio]')).toHaveLength(10);
