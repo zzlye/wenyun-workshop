@@ -1,8 +1,6 @@
 import { DEFAULT_PARAMS, type AppSettings, type TaskParams } from '../types'
 import { getActiveApiProfile, normalizeImageSizeForProfile } from './apiProfiles'
-import { normalizeImageSize } from './size'
-import { normalizeImageBackground } from './modelPricing'
-import { findBananaSizePreset } from './bananaImageSize'
+import { normalizeImageBackground, supportsExtendedImageQuality } from './modelPricing'
 import { isMidjourneyModel, normalizeMidjourneyRatio } from './midjourney'
 
 export const DEFAULT_FAL_IMAGE_SIZE = '1360x1024'
@@ -24,13 +22,13 @@ export function normalizeParamsForSettings(
   if (isMidjourneyModel(activeProfile.model)) {
     return { ...params, size: normalizeMidjourneyRatio(params.size), n: 1, background: undefined }
   }
-  // 官方香蕉预设要原样经过提交、重试和任务恢复，避免被通用尺寸规则裁小。
-  const normalizedSize = findBananaSizePreset(activeProfile.model, params.size)?.size
-    ?? normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id, activeProfile.model)
+  // 所有模型共用尺寸转换，香蕉官方预设和 MJ 比例均按目标模型处理。
+  const normalizedSize = normalizeImageSizeForProfile(params.size, activeProfile.id, activeProfile.model)
   const nextParams: TaskParams = {
     ...params,
     size: normalizedSize === 'auto' ? DEFAULT_PARAMS.size : normalizedSize || DEFAULT_PARAMS.size,
-    quality: params.quality || DEFAULT_PARAMS.quality,
+    quality: (params.quality === 'xhigh' || params.quality === 'max') && !supportsExtendedImageQuality(activeProfile.model)
+      ? DEFAULT_PARAMS.quality : params.quality || DEFAULT_PARAMS.quality,
     output_format: 'png',
     output_compression: DEFAULT_PARAMS.output_compression,
     n: Math.min(outputImageLimit, Math.max(1, params.n || DEFAULT_PARAMS.n)),

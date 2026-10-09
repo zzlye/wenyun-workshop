@@ -62,10 +62,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = config.quality || "auto";
-    const profileSize = isMidjourneyModel(imageModel) ? normalizeMidjourneyRatio(config.size || "9:16") : getBananaSizeConfig(imageModel)
-        ? config.size || "1024x1024"
-        : normalizeImageSizeForProfile(normalizeImageSize(config.size || "1024x1024"), activeProfile.id, imageModel);
-    const activeSize = resolveBananaSizePreset(imageModel, profileSize)?.size || profileSize;
+    const activeSize = normalizeImageSizeForProfile(config.size || "1024x1024", activeProfile.id, imageModel);
     const normalizedConfig = useMemo(() => activeSize === config.size ? config : { ...config, size: activeSize }, [activeSize, config]);
 
     useEffect(() => {

@@ -1,9 +1,38 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PARAMS } from '../types'
-import { createDefaultFalProfile, createDefaultOpenAIProfile, DEFAULT_SETTINGS, LOCKED_PUBLIC_PROFILE_ID, normalizeSettings } from './apiProfiles'
+import { createDefaultFalProfile, createDefaultOpenAIProfile, DEFAULT_SETTINGS, FIXED_IMAGE_MODEL_OPTIONS, LOCKED_PUBLIC_PROFILE_ID, normalizeImageSizeForProfile, normalizeSettings } from './apiProfiles'
 import { getOutputImageLimitForSettings, normalizeParamsForSettings } from './paramCompatibility'
 
 describe('parameter compatibility', () => {
+  it.each(FIXED_IMAGE_MODEL_OPTIONS)('MJ 比例切换至 $value 时转为目标模型可用尺寸', ({ value: model }) => {
+    const size = normalizeImageSizeForProfile('16:9', DEFAULT_SETTINGS.activeProfileId, model)
+    if (model === 'mj-v8.2') {
+      expect(size).toBe('16:9')
+      return
+    }
+    expect(size).toMatch(/^\d+x\d+$/)
+    expect(size).toBe(model.toLowerCase().includes('banana') ? '1376x768' : '1280x720')
+
+    const settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({ ...profile, model })),
+    })
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: '16:9' }, settings).size).toBe(size)
+  })
+
+  it.each(FIXED_IMAGE_MODEL_OPTIONS)('从 $value 切换回 MJ 时只保留比例', ({ value: model }) => {
+    const size = normalizeImageSizeForProfile('16:9', DEFAULT_SETTINGS.activeProfileId, model)
+    expect(normalizeImageSizeForProfile(size, DEFAULT_SETTINGS.activeProfileId, 'mj-v8.2')).toBe('16:9')
+  })
+
+  it('切换模型时清理不支持的极高品质', () => {
+    const settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({ ...profile, model: 'gpt-image-2' })),
+    })
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, quality: 'xhigh' }, settings).quality).toBe('auto')
+  })
+
   it.each([
     ['Nano-Banana-2', '512x512'],
     ['Nano-Banana-2', '12288x1536'],

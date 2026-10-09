@@ -6,8 +6,6 @@ import { FIXED_IMAGE_MODEL_OPTIONS, allowsCustomImageRatioForProfile, getActiveA
 import { supportsTransparentImageBackground } from '../lib/modelPricing'
 import { getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
-import { normalizeImageSize } from '../lib/size'
-import { resolveBananaSizePreset } from '../lib/bananaImageSize'
 import { createMaskPreviewDataUrl } from '../lib/canvasImage'
 import { dismissAllTooltips } from '../lib/tooltipDismiss'
 import { getSafeBoundingClientRect } from '../lib/domRect'
@@ -20,7 +18,7 @@ import { Maximize2, Minimize2 } from 'lucide-react'
 import Select from './Select'
 import SizePickerModal from './SizePickerModal'
 import { MidjourneyOptions } from './MidjourneyControls'
-import { isMidjourneyModel, MIDJOURNEY_MAX_REFERENCES, normalizeMidjourneyRatio } from '../lib/midjourney'
+import { isMidjourneyModel, MIDJOURNEY_MAX_REFERENCES } from '../lib/midjourney'
 import ViewportTooltip from './ViewportTooltip'
 import { CloseIcon } from './icons'
 
@@ -653,8 +651,7 @@ export default function InputBar() {
     : isFalProvider
     ? `fal.ai 最大请求数量为 ${outputImageLimit}`
     : `OpenAI 最大请求数量为 ${outputImageLimit}`
-  const normalizedDisplaySize = isMidjourney ? normalizeMidjourneyRatio(params.size) : resolveBananaSizePreset(activeProfile.model, params.size)?.size
-    ?? normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id, activeProfile.model)
+  const normalizedDisplaySize = normalizeImageSizeForProfile(params.size, activeProfile.id, activeProfile.model)
   const displaySize = isMidjourney ? normalizedDisplaySize : normalizedDisplaySize === 'auto' ? DEFAULT_PARAMS.size : normalizedDisplaySize || DEFAULT_PARAMS.size
   const imageSizeTiers = getImageSizeTiersForProfile(activeProfile.id, activeProfile.model)
   const allowCustomImageRatio = allowsCustomImageRatioForProfile(activeProfile.id)
@@ -662,8 +659,7 @@ export default function InputBar() {
   const selectedModelOption = modelOptions.find((option) => option.value === activeProfile.model)
 
   useEffect(() => {
-    const nextSize = isMidjourney ? normalizeMidjourneyRatio(params.size) : resolveBananaSizePreset(activeProfile.model, params.size)?.size
-      ?? normalizeImageSizeForProfile(normalizeImageSize(params.size), activeProfile.id, activeProfile.model)
+    const nextSize = normalizeImageSizeForProfile(params.size, activeProfile.id, activeProfile.model)
     if (nextSize && nextSize !== params.size) setParams({ size: nextSize })
   }, [activeProfile.id, activeProfile.model, params.size, setParams])
 

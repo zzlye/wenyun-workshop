@@ -25,7 +25,8 @@ import type {
 import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_STREAM_PARTIAL_IMAGES } from '../types'
 import { normalizeBaseUrl, shouldUseApiProxyForBaseUrl } from './devProxy'
 import { readRuntimeEnv } from './runtimeEnv'
-import { normalizeImageSizeForMaxTier, type SizeTier } from './size'
+import { calculateImageSize, normalizeImageSize, normalizeImageSizeForMaxTier, type SizeTier } from './size'
+import { resolveBananaSizePreset } from './bananaImageSize'
 import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_MODEL, CANVAS_VIDEO_TIMEOUT, normalizeCanvasVideoModel } from './videoModel'
 import {
   DEFAULT_IMAGES_MODEL,
@@ -116,10 +117,16 @@ export function allowsCustomImageRatioForProfile(_profileId: string): boolean {
 
 export function normalizeImageSizeForProfile(size: string, _profileId: string, model = ''): string {
   if (isMidjourneyModel(model)) return normalizeMidjourneyRatio(size)
+  const bananaSize = resolveBananaSizePreset(model, size)
+  if (bananaSize) return bananaSize.size
+  // MJ 的比例值不能直接作为普通图片模型的像素尺寸提交。
+  const pixelSize = /^\s*\d+(?:\.\d+)?\s*:\s*\d+(?:\.\d+)?\s*$/.test(size)
+    ? calculateImageSize('1K', size) ?? '1024x1024'
+    : size === 'auto' ? '1024x1024' : normalizeImageSize(size)
   // 历史高分辨率配置按模型实际最高档位保留比例，避免一 K 路由仍提交二 K 参数。
   const tiers = getImageSizeTiersForModel(model)
-  if (tiers.includes('4K')) return size
-  return normalizeImageSizeForMaxTier(size, tiers.includes('2K') ? '2K' : '1K')
+  if (tiers.includes('4K')) return pixelSize
+  return normalizeImageSizeForMaxTier(pixelSize, tiers.includes('2K') ? '2K' : '1K')
 }
 
 function normalizeApiPriceItem(value: unknown): ApiPriceSnapshot['items'][number] | null {
