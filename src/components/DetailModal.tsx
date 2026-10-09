@@ -1,6 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useStore, getCachedImage, ensureImageCached, reuseConfig, editOutputs, removeTask, updateTaskInStore, showCodexCliPrompt, getCodexCliPromptKey, retryTask } from '../store'
-import { getTaskApiProfileDisplayName } from '../lib/apiProfiles'
 import { useCloseOnEscape } from '../hooks/useCloseOnEscape'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
 import { useTooltip } from '../hooks/useTooltip'
@@ -215,10 +214,6 @@ export default function DetailModal() {
   const taskProvider = task.apiProvider
   const isOpenAiTask = (taskProvider ?? 'openai') === 'openai'
   const showPromptWarning = Boolean(isOpenAiTask && task.apiMode === 'responses' && currentOutputImageId && (!currentRevisedPrompt || showRevisedPrompt) && !hasHandledPromptWarning)
-  const taskProviderName = taskProvider === 'fal' ? 'fal.ai' : taskProvider ? 'OpenAI' : '未知'
-  const taskProfileName = getTaskApiProfileDisplayName(task) || '未知'
-  const taskModel = task.apiModel || '未知'
-  const showSourceInfo = Boolean(task.apiProvider || task.apiProfileName || task.apiModel)
   const isFalReconnecting = task.status === 'error' && task.falRecoverable
   const isCustomReconnecting = task.status === 'error' && task.customRecoverable
   const rawImageUrls = task.rawImageUrls ?? []
@@ -843,14 +838,6 @@ export default function DetailModal() {
             <h3 className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">
               参数配置
             </h3>
-            {showSourceInfo && (
-              <div className="mb-2 rounded-lg bg-gray-50 px-3 py-2 text-xs dark:bg-white/[0.03]">
-                <span className="text-gray-400 dark:text-gray-500">来源</span>
-                <br />
-                <span className="font-medium text-gray-700 dark:text-gray-200">{taskProviderName}</span>
-                <span className="text-gray-400 dark:text-gray-500"> · {taskProfileName} · {taskModel}</span>
-              </div>
-            )}
             <div className="grid grid-cols-2 gap-2 text-xs mb-4">
               <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
                 <span className="text-gray-400 dark:text-gray-500">尺寸</span>
