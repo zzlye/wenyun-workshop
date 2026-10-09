@@ -37,7 +37,10 @@ COPY --from=build /app/dist /usr/share/nginx/html
 COPY deploy/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --chmod=755 deploy/migrate-api-env.envsh /docker-entrypoint.d/05-migrate-api-env.envsh
 COPY --chmod=755 deploy/inject-api-url.sh /docker-entrypoint.d/40-inject-api-url.sh
+# 图片任务服务依赖轮询模块，构建时验证运行镜像可加载完整服务。
 COPY server/image-tasks.mjs /opt/wenyun/image-tasks.mjs
+COPY server/midjourney.mjs /opt/wenyun/midjourney.mjs
+RUN node --input-type=module -e "import('/opt/wenyun/image-tasks.mjs')"
 COPY --chmod=755 deploy/start-services.sh /opt/wenyun/start-services.sh
 
 EXPOSE 80
