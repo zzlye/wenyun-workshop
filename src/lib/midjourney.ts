@@ -48,12 +48,22 @@ export function buildMidjourneyRequest(model: string, prompt: string, params: Ta
   return request
 }
 
-export function readMidjourneyTask(payload: unknown, headerTaskId = '') {
+export function readMidjourneyTask(payload: unknown, headerTaskId = '', baseUrl?: string) {
   const root = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {}
   const task = root.data && typeof root.data === 'object' && !Array.isArray(root.data) ? root.data as Record<string, unknown> : root
   const result = task.result && typeof task.result === 'object' ? task.result as Record<string, unknown> : task
   const data = result.data && typeof result.data === 'object' ? result.data as Record<string, unknown> : result
-  const images = Array.isArray(data.image_urls) ? data.image_urls.filter((value): value is string => typeof value === 'string' && (/^https?:\/\//i.test(value) || /^data:image\//i.test(value))) : []
+  // 中转可能返回带签名的相对地址；以原 API 地址补全，不能使用本站或代理路径作为基准。
+  const images = Array.isArray(data.image_urls) ? data.image_urls.flatMap(value => {
+    if (typeof value !== 'string' || !value.trim()) return []
+    if (/^data:image\//i.test(value)) return [value]
+    try {
+      const url = new URL(value, baseUrl ? `${baseUrl.replace(/\/$/, '')}/` : undefined)
+      return url.protocol === 'http:' || url.protocol === 'https:' ? [url.toString()] : []
+    } catch {
+      return []
+    }
+  }) : []
   const error = task.error_message ?? root.error_message ?? (root.error as { message?: string } | undefined)?.message ?? task.error_code
   return {
     taskId: typeof task.task_id === 'string' ? task.task_id : headerTaskId,

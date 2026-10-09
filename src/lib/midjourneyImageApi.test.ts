@@ -18,6 +18,20 @@ afterEach(() => {
 })
 
 describe('Midjourney 提交与恢复', () => {
+  it.each(['直连', '本站恢复'])('%s 读取中转签名相对地址，返回四张原图而非空结果', async mode => {
+    vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'disabled')
+    const relativeUrls = images.map((_, index) => `/task-media/async-real/media/${index}?expires=123&signature=test-${index}`)
+    const payload = { task_id: 'async-real', status: 'succeeded', data: { task_id: 'async-real', status: 'completed', result: { data: { image_urls: relativeUrls } } }, result: { data: { image_urls: relativeUrls } } }
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    if (mode === '本站恢复') fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ status: 'succeeded' })))
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(payload)))
+    const result = await callMidjourneyImageApi({ ...options, ...(mode === '本站恢复' ? { imageTask: { taskId: 'website-task', accessToken: 'token', idempotencyKey: 'once' } } : {}) }, profile)
+    const absoluteUrls = relativeUrls.map(url => `https://api.zzlye.xyz${url}`)
+    expect(result.rawImageUrls).toEqual(absoluteUrls)
+    expect(result.images).toEqual(absoluteUrls.map(getSafeImageDisplayUrl))
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(mode === '直连' ? 1 : 0)
+  })
+
   it('直连受理后临时 408 和断网仅续查原任务，同 Key 返回全部单图', async () => {
     vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'disabled')
     vi.useFakeTimers()

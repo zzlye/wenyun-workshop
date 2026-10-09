@@ -43,6 +43,13 @@ describe('Midjourney 文档参数与结果', () => {
     expect(task).toMatchObject({ taskId: 'task-1', status: 'completed', images })
   })
 
+  it('相对结果地址保留完整签名，忽略非图片协议及四宫格封面', () => {
+    const signed = '/task-media/task/media/0?expires=123&signature=a%2Fb%2Bc%3D&name=image+one'
+    const task = readMidjourneyTask({ status: 'succeeded', result: { data: { image_urls: [signed, 'task-media/one.png', 'https://cdn.example.com/two.png', 'data:image/png;base64,YQ==', 'javascript:alert(1)', 'file:///tmp/image.png', null, ''], grid_image_url: '/grid.png' } } }, '', 'https://api.example.com/v1')
+    expect(task.images).toEqual([`https://api.example.com${signed}`, 'https://api.example.com/v1/task-media/one.png', 'https://cdn.example.com/two.png', 'data:image/png;base64,YQ=='])
+    expect(readMidjourneyTask({ image_urls: [signed] }).images).toEqual([])
+  })
+
   it('允许响应头受理 ID、读取失败终态，并拒绝非 JSON 响应', async () => {
     expect(readMidjourneyTask(await readMidjourneyResponse(new Response(null)), 'header-task').taskId).toBe('header-task')
     expect(readMidjourneyTask({ data: { status: 'failed', error_code: 408, error_message: '上游超时' } })).toMatchObject({ status: 'failed', error: '上游超时' })

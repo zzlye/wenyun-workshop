@@ -23,7 +23,7 @@ export async function callMidjourneyImageApi(opts: CallApiOptions, profile: ApiP
     ? await fetchImageTask(ENDPOINT, { method: 'POST', headers, body }, { timeoutMs, reference: opts.imageTask, onCreated: opts.onImageTaskCreated })
     : await fetchResultResponse(buildApiUrl(profile.baseUrl, ENDPOINT, proxy, useProxy), { method: 'POST', headers, body }, { timeoutMs })
   let payload: unknown = await readMidjourneyResponse(response)
-  let task = readMidjourneyTask(payload, response.headers.get('x-newapi-task-id') || '')
+  let task = readMidjourneyTask(payload, response.headers.get('x-newapi-task-id') || '', profile.baseUrl)
   if (!response.ok) throw new Error(sanitizeApiErrorMessage(task.error || `图片请求失败（HTTP ${response.status}）`))
   if (!useTasks && !task.images.length && !TERMINAL_STATUSES.includes(task.status)) {
     if (!task.taskId) throw new Error('接口没有返回有效的图片任务 ID')
@@ -35,7 +35,7 @@ export async function callMidjourneyImageApi(opts: CallApiOptions, profile: ApiP
         response = await fetchResultResponse(buildApiUrl(profile.baseUrl, `tasks/${encodeURIComponent(taskId)}`, proxy, useProxy), { headers: { Authorization: headers.Authorization }, cache: 'no-store' }, { timeoutMs: 30_000 })
         if ([408, 429, 500, 502, 503, 504].includes(response.status)) continue
         payload = await readMidjourneyResponse(response)
-        task = readMidjourneyTask(payload, taskId)
+        task = readMidjourneyTask(payload, taskId, profile.baseUrl)
         if (!response.ok) throw new Error(task.error || `查询图片任务失败（HTTP ${response.status}）`)
       } catch (error) {
         if (isTransientResultError(error)) continue

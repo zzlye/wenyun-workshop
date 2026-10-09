@@ -58,6 +58,7 @@ import { createImageTaskIdempotencyKey, hasImageTaskCredentials, isRecoverableIm
 import { validateMaskMatchesImage } from './lib/canvasImage'
 import { orderInputImagesForMask } from './lib/mask'
 import { getChangedParams, normalizeParamsForSettings } from './lib/paramCompatibility'
+import { isMidjourneyModel } from './lib/midjourney'
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate'
 
 // ===== Image cache =====
@@ -1909,7 +1910,7 @@ async function completeRecoveredImageTask(task: TaskRecord, result: Awaited<Retu
     return acc
   }, {})
 
-  await updateTaskInStore(task.id, {
+  await completeGalleryTaskInStore(task.id, {
     outputImages: outputIds,
     rawImageUrls: result.rawImageUrls?.length ? result.rawImageUrls : undefined,
     actualParams: result.actualParams ? { ...result.actualParams, n: outputIds.length } : { n: outputIds.length },
@@ -2087,10 +2088,11 @@ export async function initStore() {
   }
   const { tasks: markedTasks, interruptedTasks } = markInterruptedOpenAIRunningTasks(storedTasks)
   const interruptedTaskIds = new Set(interruptedTasks.map((task) => task.id))
-  const tasks = markedTasks.map(getPersistableTask)
+  const tasks = markedTasks.flatMap(task => splitMidjourneyGalleryResult(getPersistableTask(task)))
+  const storedById = new Map(markedTasks.map(task => [task.id, task]))
   await Promise.all(tasks
-    .filter((task, index) => interruptedTaskIds.has(task.id) || task.rawResponsePayload !== markedTasks[index]?.rawResponsePayload)
-    .map((task) => putTask(task)))
+    .filter(task => interruptedTaskIds.has(task.id) || task !== storedById.get(task.id))
+    .map(task => persistTaskInBackground(task, '初始化时保存独立图片记录')))
   useStore.getState().setTasks(tasks)
   showSupportPromptForExistingLocalData(tasks)
   for (const task of tasks) {
@@ -4119,7 +4121,7 @@ async function executeTask(taskId: string) {
     clearOpenAIWatchdogTimer(taskId)
     clearImageTaskRecoveryTimer(taskId)
     useStore.getState().setTaskStreamPreview(taskId)
-    await updateTaskInStore(taskId, {
+    await completeGalleryTaskInStore(taskId, {
       outputImages: outputIds,
       streamPartialImageIds: undefined,
       rawImageUrls: result.rawImageUrls?.length ? result.rawImageUrls : undefined,
@@ -4217,6 +4219,36 @@ async function executeTask(taskId: string) {
       imageCache.delete(imgId)
     }
   }
+}
+
+/** 一次 MJ 任务的多张结果各占一个栏位；稳定编号保证刷新不会反复复制记录。 */
+function splitMidjourneyGalleryResult(task: TaskRecord): TaskRecord[] {
+  if (task.status !== 'done' || task.outputImages.length <= 1 || task.sourceMode === 'agent' || !isMidjourneyModel(task.apiModel || '')) return [task]
+  return task.outputImages.map((imageId, index) => {
+    const actualParams = { ...task.actualParams, ...task.actualParamsByImage?.[imageId], n: 1 }
+    return {
+      ...task,
+      id: index === 0 ? task.id : `${task.id}-mj-result-${index + 1}`,
+      params: { ...task.params, n: 1 },
+      outputImages: [imageId],
+      rawImageUrls: task.rawImageUrls?.[index] ? [task.rawImageUrls[index]] : undefined,
+      actualParams,
+      actualParamsByImage: { [imageId]: actualParams },
+      revisedPromptByImage: task.revisedPromptByImage?.[imageId] ? { [imageId]: task.revisedPromptByImage[imageId] } : undefined,
+    }
+  })
+}
+
+/** 正常返回和断线恢复共用结果落盘，只拆展示记录，不重新提交生成请求。 */
+function completeGalleryTaskInStore(taskId: string, patch: Partial<TaskRecord>): Promise<void> {
+  const { tasks, setTasks } = useStore.getState()
+  const original = tasks.find(task => task.id === taskId)
+  if (!original) return Promise.resolve()
+  const completed = splitMidjourneyGalleryResult({ ...original, ...patch })
+  const updated = tasks.flatMap(task => task.id === taskId ? completed : [task])
+  setTasks(updated)
+  maybeOpenSupportPrompt(tasks, updated, taskId)
+  return Promise.all(completed.map(task => persistTaskInBackground(task, '保存独立图片结果'))).then(() => {})
 }
 
 export function updateTaskInStore(taskId: string, patch: Partial<TaskRecord>): Promise<void> {

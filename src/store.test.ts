@@ -288,6 +288,20 @@ describe('mask draft lifecycle in store actions', () => {
     expect(createdTask?.outputImages.length).toBe(1)
   })
 
+  it.each([3, 4])('MJ 一次生成的 %s 张图片拆成独立记录，不再次请求或重复计费', async count => {
+    const urls = Array.from({ length: count }, (_, index) => `https://example.com/mj-${index}.png`)
+    vi.mocked(callImageApi).mockResolvedValueOnce({ images: urls, rawImageUrls: urls, actualParams: { size: '16:9', n: 1 } })
+    useStore.setState({ settings: normalizeSettings({ ...DEFAULT_SETTINGS, model: 'mj-v8.2', apiKey: 'test-key', profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, model: 'mj-v8.2', apiKey: 'test-key' })) }), reusedTaskApiProfileId: null, reusedTaskApiProfileMissing: false })
+    await submitTask()
+    await vi.waitFor(() => expect(useStore.getState().tasks.filter(task => task.status === 'done')).toHaveLength(count))
+    const completed = useStore.getState().tasks
+    expect(new Set(completed.map(task => task.id)).size).toBe(count)
+    expect(completed.every(task => task.outputImages.length === 1 && task.actualParams?.n === 1)).toBe(true)
+    expect(completed.map(task => task.rawImageUrls)).toEqual(urls.map(url => [url]))
+    expect(callImageApi).toHaveBeenCalledTimes(1)
+    await vi.waitFor(async () => expect(await getAllTasks()).toEqual(expect.arrayContaining(completed)))
+  })
+
   it('still marks the task done when output image persistence hangs', async () => {
     vi.mocked(putImage).mockImplementationOnce(() => new Promise(() => {}))
     vi.mocked(callImageApi).mockResolvedValueOnce({
@@ -2071,6 +2085,47 @@ describe('任务状态边界回归', () => {
     await vi.waitFor(() => expect(callImageApi).toHaveBeenCalledOnce())
     expect(vi.mocked(callImageApi).mock.calls[0][0]).toMatchObject({ inputImageDataUrls: [], imageTask: { taskId: 'server-task', accessToken: 'server-token' } })
     await vi.waitFor(() => expect(useStore.getState().tasks[0].status).toBe('done'))
+  })
+
+  it('MJ 刷新后恢复四张结果，每张独立落盘并保留对应参数，再次初始化不重复拆分', async () => {
+    const urls = Array.from({ length: 4 }, (_, index) => `https://example.com/recovered-${index}.png`)
+    const sizes = ['1920x1080', '1600x900', '1280x720', '960x540']
+    vi.mocked(callImageApi).mockResolvedValueOnce({ images: urls, rawImageUrls: urls, actualParams: { size: '16:9', n: 4 }, actualParamsList: sizes.map(size => ({ size, n: 4 })), revisedPrompts: sizes.map((_, index) => `提示-${index}`) })
+    const record = task({ id: 'mj-recovered', apiModel: 'mj-v8.2', status: 'running', apiProvider: 'openai', apiProfileId: LOCKED_WENYUN_PROFILE_ID, imageTaskId: 'mj-server-task', imageTaskAccessToken: 'mj-token', imageTaskIdempotencyKey: 'mj-once' })
+    await putDbTask(record)
+    await initStore()
+    await vi.waitFor(() => expect(useStore.getState().tasks.filter(item => item.status === 'done')).toHaveLength(4))
+    const completed = useStore.getState().tasks
+    expect(completed[0].id).toBe(record.id)
+    completed.forEach((item, index) => {
+      expect(item.outputImages).toHaveLength(1)
+      expect(item.rawImageUrls).toEqual([urls[index]])
+      expect(item.actualParams).toEqual({ size: sizes[index], n: 1 })
+      expect(item.actualParamsByImage).toEqual({ [item.outputImages[0]]: { size: sizes[index], n: 1 } })
+      expect(item.revisedPromptByImage).toEqual({ [item.outputImages[0]]: `提示-${index}` })
+      expect(item.imageTaskId).toBe('mj-server-task')
+    })
+    await vi.waitFor(async () => expect(await getAllTasks()).toHaveLength(4))
+    await initStore()
+    expect(useStore.getState().tasks.map(item => item.id)).toEqual(completed.map(item => item.id))
+    expect(callImageApi).toHaveBeenCalledOnce()
+    await removeTask(completed[1])
+    expect(useStore.getState().tasks).toHaveLength(3)
+    expect(await getAllTasks()).toHaveLength(3)
+  })
+
+  it('已有 MJ 四图记录自动拆为四栏，其他模型和 Agent 记录保持原样', async () => {
+    const outputs = ['legacy-1', 'legacy-2', 'legacy-3', 'legacy-4']
+    const mj = task({ id: 'legacy-mj', apiModel: 'mj-v8.2', outputImages: outputs, actualParams: { n: 4 } })
+    const normal = task({ id: 'normal-multiple', apiModel: 'gpt-image-2', outputImages: outputs })
+    const agent = task({ id: 'agent-mj', apiModel: 'mj-v8.2', sourceMode: 'agent', outputImages: outputs })
+    for (const record of [mj, normal, agent]) await putDbTask(record)
+    await initStore()
+    expect(useStore.getState().tasks.filter(item => item.apiModel === 'mj-v8.2' && item.sourceMode !== 'agent')).toHaveLength(4)
+    expect(useStore.getState().tasks.find(item => item.id === normal.id)).toEqual(normal)
+    expect(useStore.getState().tasks.find(item => item.id === agent.id)).toEqual(agent)
+    expect(await getAllTasks()).toHaveLength(6)
+    expect(callImageApi).not.toHaveBeenCalled()
   })
 
   it('服务端明确失败且错误包含超时时，保持失败终态而非无限恢复', async () => {
