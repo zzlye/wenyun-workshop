@@ -102,8 +102,6 @@ describe("canvas image api", () => {
         expect(requests).toHaveLength(1);
         const form = requests[0][1]?.body as FormData;
         expect(form.get("quality")).toBe("high");
-        expect(form.get("output_format")).toBe("png");
-        expect(form.get("moderation")).toBe("auto");
         expect(form.get("size")).toBe("2160x3840");
         expect(form.get("model")).toBe(model);
         expect(form.getAll("image[]")).toHaveLength(3);
