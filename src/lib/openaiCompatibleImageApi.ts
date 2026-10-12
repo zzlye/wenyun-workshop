@@ -965,14 +965,13 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       // GPT Image 官方接口默认返回 Base64，不接受旧模型的 response_format 参数。
       if (!usesOfficialImageParams) formData.append('response_format', 'b64_json')
 
+      // 品质是图生图与文生图共用的请求参数，不能被旧站点的输出格式过滤规则丢弃。
+      if (!profile.codexCli) formData.append('quality', params.quality)
+
       if (!isLockedImageApi || usesOfficialImageParams) {
         formData.append('output_format', params.output_format)
         if (params.background) formData.append('background', params.background)
         formData.append('moderation', params.moderation)
-
-        if (!profile.codexCli) {
-          formData.append('quality', params.quality)
-        }
 
         if (params.output_format !== 'png' && params.output_compression != null) {
           formData.append('output_compression', String(params.output_compression))

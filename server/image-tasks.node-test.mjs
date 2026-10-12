@@ -58,6 +58,51 @@ async function createMidjourneyTask(baseUrl, key = 'mj-once') {
   return response.json()
 }
 
+for (const edit of [false, true]) {
+  test(`图片异步任务原样转发${edit ? '图生图表单' : '文生图 JSON'}中的品质和尺寸`, async () => {
+    let forwarded
+    const upstreamUrl = await listen(createServer(async (request, response) => {
+      const chunks = []
+      for await (const chunk of request) chunks.push(chunk)
+      forwarded = { body: Buffer.concat(chunks), contentType: request.headers['content-type'], url: request.url }
+      response.writeHead(200, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ data: [{ b64_json: 'aW1hZ2U=' }] }))
+    }))
+    const baseUrl = await listen(createImageTaskServer({ upstreamBaseUrl: `${upstreamUrl}/v1` }))
+    const parameters = { model: 'gpt-image-2.5-sunburst-4k', prompt: '生成背面全身图', quality: 'high', size: '2160x3840', response_format: 'b64_json' }
+    let body = JSON.stringify(parameters)
+    let contentType = 'application/json'
+    if (edit) {
+      const form = new FormData()
+      for (const [key, value] of Object.entries(parameters)) form.append(key, value)
+      for (let i = 1; i <= 3; i++) form.append('image[]', new Blob([`reference-${i}`], { type: 'image/jpeg' }), `input-${i}.jpeg`)
+      // 固定本次表单边界，核对经过任务服务后连图片内容都未改动。
+      const encoded = new Request('http://127.0.0.1', { method: 'POST', body: form })
+      body = Buffer.from(await encoded.arrayBuffer())
+      contentType = encoded.headers.get('content-type')
+    }
+    const endpoint = edit ? '/images/edits' : '/images/generations'
+    const response = await fetch(`${baseUrl}/image-tasks?endpoint=${endpoint}`, {
+      method: 'POST', body,
+      headers: { Authorization: 'Bearer test-key', 'Content-Type': contentType,
+        'X-Wenyun-Idempotency-Key': `quality-${edit}`, 'X-Wenyun-Task-Client-Version': '2' },
+    })
+    assert.equal(response.status, 202)
+    assert.equal((await waitForCompletion(baseUrl, await response.json())).status, 'succeeded')
+    assert.equal(forwarded.url, `/v1${endpoint}`)
+    assert.equal(forwarded.contentType, contentType)
+    assert.deepEqual(forwarded.body, Buffer.from(body))
+    if (edit) {
+      const form = await new Response(forwarded.body, { headers: { 'Content-Type': contentType } }).formData()
+      assert.equal(form.get('quality'), 'high')
+      assert.equal(form.get('size'), '2160x3840')
+      assert.equal(form.getAll('image[]').length, 3)
+    } else {
+      assert.deepEqual(JSON.parse(forwarded.body), parameters)
+    }
+  })
+}
+
 test('Midjourney 同 Key 查询临时 408 后恢复，只有一次 POST，保存实际四张结果', async () => {
   let posts = 0
   let queries = 0

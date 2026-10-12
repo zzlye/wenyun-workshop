@@ -91,6 +91,22 @@ describe("canvas image api", () => {
         expect(form.get("model")).toBe(model);
     });
 
+    it.each(["gpt-image-2", "gpt-image-2-4k", "gpt-image-2.5-sunburst-4k", "gpt-image-2.5-flare-4k"])("画布 %s 图生图保留高品质、竖版尺寸和三张参考图", async (model) => {
+        const originalFetch = globalThis.fetch;
+        const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => String(input).startsWith("data:") ? originalFetch(input, init) : new Response(JSON.stringify({ data: [{ b64_json: "aW1hZ2U=" }] }), { headers: { "Content-Type": "application/json" } }));
+        useStore.setState({ settings: { ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, model, apiKey: "test-key" })) } });
+        const reference = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==";
+        await requestEdit({ ...defaultConfig, model, imageModel: model, quality: "high", size: "2160x3840" }, "生成背面全身图",
+            [1, 2, 3].map(index => ({ id: `ref-${index}`, name: `参考图${index}`, type: "image/png", dataUrl: reference })));
+        const requests = fetchMock.mock.calls.filter(([url]) => String(url).includes("/images/edits"));
+        expect(requests).toHaveLength(1);
+        const form = requests[0][1]?.body as FormData;
+        expect(form.get("quality")).toBe("high");
+        expect(form.get("size")).toBe("2160x3840");
+        expect(form.get("model")).toBe(model);
+        expect(form.getAll("image[]")).toHaveLength(3);
+    });
+
     it("让 Seedream 5 Pro 沿用标准图片接口并把 4K 请求限制为 2K", async () => {
         const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
             new Response(JSON.stringify({ data: [{ b64_json: "c2VlZHJlYW0=" }] }), {

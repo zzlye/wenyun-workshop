@@ -483,7 +483,7 @@ describe('callImageApi', () => {
     expect(result.images).toEqual(['data:image/png;base64,ZWRpdC1maW5hbA=='])
   })
 
-  it('按公开文档提交文运站图生图且不发送 mask', async () => {
+  it('文运站图生图保留品质，同时维持旧渠道的其他参数兼容规则', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input)
       if (url.startsWith('data:')) return new Response(new Blob(['ref'], { type: 'image/png' }))
@@ -519,7 +519,7 @@ describe('callImageApi', () => {
     expect(formData.getAll('image')).toHaveLength(1)
     expect(formData.get('image[]')).toBeNull()
     expect(formData.get('mask')).toBeNull()
-    expect(formData.get('quality')).toBeNull()
+    expect(formData.get('quality')).toBe(DEFAULT_PARAMS.quality)
     expect(formData.get('output_format')).toBeNull()
     expect(formData.get('output_compression')).toBeNull()
     expect(formData.get('moderation')).toBeNull()
