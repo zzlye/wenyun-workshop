@@ -24,12 +24,13 @@ describe('callAgentResponsesApi', () => {
       headers: { 'Content-Type': 'text/event-stream' },
     }))
     const textDeltas: string[] = []
-    const profile = createDefaultOpenAIProfile({
+    // 固定站点默认关闭流式，流式用例需显式设置实际运行配置。
+    const profile = { ...createDefaultOpenAIProfile({
       apiKey: 'test-key',
       apiMode: 'responses',
       streamImages: true,
       streamPartialImages: 2,
-    })
+    }), streamImages: true, streamPartialImages: 2 }
 
     const result = await callAgentResponsesApi({
       settings: DEFAULT_SETTINGS,
@@ -126,11 +127,11 @@ describe('callAgentResponsesApi', () => {
     }))
     const textDeltas: string[] = []
     const abortController = new AbortController()
-    const profile = createDefaultOpenAIProfile({
+    const profile = { ...createDefaultOpenAIProfile({
       apiKey: 'test-key',
       apiMode: 'responses',
       streamImages: true,
-    })
+    }), streamImages: true }
 
     await expect(callAgentResponsesApi({
       settings: DEFAULT_SETTINGS,

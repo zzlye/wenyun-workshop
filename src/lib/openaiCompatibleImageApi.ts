@@ -929,6 +929,8 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
   const proxyConfig = readClientDevProxyConfig()
   const isLockedImageApi = isLockedApiProxyTarget(profile.baseUrl)
   const usesOfficialImageParams = supportsTransparentImageBackground(profile.model)
+  // GPT 图片路由共用标准输出和审核参数；背景与遮罩仍按当前渠道已开放的能力处理。
+  const usesStandardImageParams = !isLockedImageApi || /^gpt-image-/i.test(profile.model)
   const useImageTasks = hasImageTaskCredentials(opts.imageTask) || (Boolean(opts.imageTask) && shouldUseImageTasks(profile.baseUrl))
   // 文运站使用短轮询异步任务；其他内置站点和自定义接口继续保持原路径。
   const useApiProxy = shouldUseApiProxyForBaseUrl(profile.apiProxy, profile.baseUrl, proxyConfig) && !isLockedImageApi
@@ -968,7 +970,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       // 品质是图生图与文生图共用的请求参数，不能被旧站点的输出格式过滤规则丢弃。
       if (!profile.codexCli) formData.append('quality', params.quality)
 
-      if (!isLockedImageApi || usesOfficialImageParams) {
+      if (usesStandardImageParams) {
         formData.append('output_format', params.output_format)
         if (params.background) formData.append('background', params.background)
         formData.append('moderation', params.moderation)

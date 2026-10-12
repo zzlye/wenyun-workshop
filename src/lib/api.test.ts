@@ -483,7 +483,7 @@ describe('callImageApi', () => {
     expect(result.images).toEqual(['data:image/png;base64,ZWRpdC1maW5hbA=='])
   })
 
-  it('文运站图生图保留品质，同时维持旧渠道的其他参数兼容规则', async () => {
+  it('文运站图生图保留品质、审核和输出格式', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input)
       if (url.startsWith('data:')) return new Response(new Blob(['ref'], { type: 'image/png' }))
@@ -509,7 +509,6 @@ describe('callImageApi', () => {
       prompt: '保留主体并修改背景',
       params: { ...DEFAULT_PARAMS },
       inputImageDataUrls: ['data:image/png;base64,cmVm'],
-      maskDataUrl: 'data:image/png;base64,bWFzaw==',
     } as any)
 
     const apiCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/images/edits'))
@@ -520,9 +519,9 @@ describe('callImageApi', () => {
     expect(formData.get('image[]')).toBeNull()
     expect(formData.get('mask')).toBeNull()
     expect(formData.get('quality')).toBe(DEFAULT_PARAMS.quality)
-    expect(formData.get('output_format')).toBeNull()
+    expect(formData.get('output_format')).toBe(DEFAULT_PARAMS.output_format)
     expect(formData.get('output_compression')).toBeNull()
-    expect(formData.get('moderation')).toBeNull()
+    expect(formData.get('moderation')).toBe(DEFAULT_PARAMS.moderation)
   })
 
   it('routes Banana image models through Gemini even with old auto settings', async () => {

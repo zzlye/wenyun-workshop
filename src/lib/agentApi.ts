@@ -92,6 +92,8 @@ function createImageTool(params: TaskParams, profile: ApiProfile, maskDataUrl?: 
   }
 
   tool.quality = params.quality
+  // 已校验的背景设置需跟随图片工具发送，不能在 Agent 请求组装时丢失。
+  if (params.background) tool.background = params.background
 
   if (params.output_format !== 'png' && params.output_compression != null) {
     tool.output_compression = params.output_compression
@@ -790,6 +792,8 @@ export async function callBatchImageSingle(opts: {
       moderation: params.moderation,
       quality: params.quality,
     }
+    // 批量工具和单次工具沿用相同的背景设置。
+    if (params.background) tool.background = params.background
     if (params.output_format !== 'png' && params.output_compression != null) {
       tool.output_compression = params.output_compression
     }
