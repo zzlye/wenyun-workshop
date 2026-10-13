@@ -5,3 +5,4 @@ dev-proxy.config.json
 vite-dev.*.log
 public/downloads/wenyun-canvas-agent.zip
 desktop/release/
+desktop/输出/

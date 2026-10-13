@@ -1,8 +1,8 @@
 const { app, BrowserWindow, Menu, protocol, net, ipcMain, shell, dialog, safeStorage } = require('electron');
-const fs = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { DiskStore } = require('./storage.cjs');
+const { DataDirectoryManager } = require('./data-directory.cjs');
 const { AgentRuntime } = require('./agent-runtime.cjs');
 const { APP_ORIGIN, isAppUrl, isAppDocumentUrl, createProtocolHandler } = require('./protocol.cjs');
 
@@ -18,6 +18,7 @@ let taskServer;
 let closing = false;
 let allowClose = false;
 let closeRequest = null;
+let changingDirectory = false;
 
 function checkSender(event) {
   if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !isAppDocumentUrl(event.senderFrame.url)) throw new Error('不允许的桌面操作来源');
@@ -92,8 +93,21 @@ async function prepareClose() {
 }
 
 async function start() {
-  const dataRoot = path.resolve(process.env.WENYUN_DESKTOP_DATA_HOME || path.join(app.getPath('documents'), '西米露桌面版'));
-  await fs.mkdir(dataRoot, { recursive: true });
+  const directories = new DataDirectoryManager({
+    profileRoot,
+    softwareDirectory: app.isPackaged ? (process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath('exe'))) : __dirname,
+    legacyDirectory: path.join(app.getPath('documents'), '西米露桌面版'),
+    override: process.env.WENYUN_DESKTOP_DATA_HOME,
+  });
+  let dataRoot;
+  try { dataRoot = await directories.initialize(); }
+  catch (error) {
+    const answer = await dialog.showMessageBox({ type: 'error', title: '存储位置不可用', message: '无法使用当前存储位置', detail: error.message, buttons: ['选择其他文件夹', '退出'], defaultId: 0, cancelId: 1 });
+    if (answer.response !== 0) { app.quit(); return; }
+    const selection = await dialog.showOpenDialog({ title: '选择本地数据存储位置', properties: ['openDirectory', 'createDirectory'] });
+    if (selection.canceled || !selection.filePaths[0]) { app.quit(); return; }
+    dataRoot = await directories.initialize(selection.filePaths[0]);
+  }
   store = new DiskStore(dataRoot, {
     privateRoot: profileRoot,
     encrypt: (value) => {
@@ -114,8 +128,26 @@ async function start() {
     fetch: (url, options) => net.fetch(url, options),
   }));
 
-  handle('desktop:info', () => ({ version: app.getVersion(), dataDirectory: dataRoot }));
-  handle('desktop:open-data', async () => { const error = await shell.openPath(dataRoot); if (error) throw new Error('数据目录无法打开'); });
+  handle('desktop:info', () => ({ version: app.getVersion(), dataDirectory: store.root }));
+  handle('desktop:open-data', async () => { const error = await shell.openPath(store.root); if (error) throw new Error('数据目录无法打开'); });
+  handle('desktop:change-data', async () => {
+    if (changingDirectory || closing) throw new Error('请等待当前操作完成');
+    changingDirectory = true;
+    try {
+      const selection = await dialog.showOpenDialog(window, { title: '选择本地数据存储位置', defaultPath: store.root, properties: ['openDirectory', 'createDirectory'] });
+      if (selection.canceled || !selection.filePaths[0]) return null;
+      const next = await directories.validateTarget(selection.filePaths[0], store.root);
+      if (path.relative(store.root, next) === '') return { dataDirectory: store.root };
+      const answer = await dialog.showMessageBox(window, {
+        type: 'question', title: '更换存储位置', message: '将现有数据迁移到新位置？',
+        detail: `${next}\n\n迁移成功后使用新位置，原目录保留备份。`,
+        buttons: ['迁移数据', '取消'], defaultId: 0, cancelId: 1, noLink: true,
+      });
+      if (answer.response !== 0) return null;
+      await store.relocate(next, (directory) => directories.save(directory));
+      return { dataDirectory: store.root };
+    } finally { changingDirectory = false; }
+  });
   handle('desktop:open-payment', openPayment);
   handle('desktop:store', (operation, scope, ...args) => {
     if (!['get', 'all', 'keys', 'put', 'remove', 'clear', 'replace'].includes(operation)) throw new Error('本地存储操作无效');
@@ -136,7 +168,7 @@ async function start() {
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true },
   });
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: '文件', submenu: [{ label: '打开数据目录', click: () => { void shell.openPath(dataRoot); } }, { type: 'separator' }, { label: '退出', accelerator: 'Alt+F4', click: () => window.close() }] },
+    { label: '文件', submenu: [{ label: '打开数据目录', click: () => { void shell.openPath(store.root); } }, { type: 'separator' }, { label: '退出', accelerator: 'Alt+F4', click: () => window.close() }] },
     { label: '编辑', submenu: [{ role: 'undo', label: '撤销' }, { role: 'redo', label: '重做' }, { type: 'separator' }, { role: 'cut', label: '剪切' }, { role: 'copy', label: '复制' }, { role: 'paste', label: '粘贴' }, { role: 'selectAll', label: '全选' }] },
     { label: '视图', submenu: [{ role: 'resetZoom', label: '实际大小' }, { role: 'zoomIn', label: '放大' }, { role: 'zoomOut', label: '缩小' }, { type: 'separator' }, { role: 'togglefullscreen', label: '全屏' }] },
   ]));
@@ -149,7 +181,15 @@ async function start() {
   window.webContents.session.on('will-download', (_event, item) => {
     item.setSaveDialogOptions({ defaultPath: path.join(app.getPath('downloads'), path.basename(item.getFilename())) });
   });
-  window.on('close', (event) => { if (!allowClose) { event.preventDefault(); void prepareClose(); } });
+  window.on('close', (event) => {
+    if (allowClose) return;
+    event.preventDefault();
+    if (changingDirectory) {
+      void dialog.showMessageBox(window, { type: 'info', message: '正在更换存储位置，请完成后再退出。' });
+      return;
+    }
+    void prepareClose();
+  });
   window.once('ready-to-show', () => window.show());
   await window.loadURL(`${APP_ORIGIN}/wenyun`);
 }

@@ -205,6 +205,19 @@ class DiskStore {
     await this.queue;
     if (this.errors.size) throw new Error(`本地保存尚未完成：${this.errors.values().next().value.message}`);
   }
+
+  relocate(directory, persistLocation) {
+    const pending = this.queue.then(async () => {
+      if (this.errors.size) throw new Error('还有数据未保存，请先处理保存错误');
+      const { migrateDataDirectory } = require('./data-directory.cjs');
+      // 迁移与所有写入共用队列；迁移期间的新保存请求在切换后写入新目录。
+      this.root = await migrateDataDirectory(this.root, directory, persistLocation);
+      return this.root;
+    });
+    // 迁移失败仍继续使用原目录，不影响后续正常保存，也不清除已有保存错误。
+    this.queue = pending.catch(() => undefined);
+    return pending;
+  }
 }
 
 module.exports = { DiskStore, atomicWrite };

@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('wenyunDesktop', {
   version: 1,
   info: () => ipcRenderer.invoke('desktop:info'),
   openDataDirectory: () => ipcRenderer.invoke('desktop:open-data'),
+  changeDataDirectory: () => ipcRenderer.invoke('desktop:change-data'),
   openPayment: (order) => ipcRenderer.invoke('desktop:open-payment', order),
   storage: {
     get: (scope, key) => ipcRenderer.invoke('desktop:store', 'get', scope, key),

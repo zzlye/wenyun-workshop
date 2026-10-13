@@ -6,6 +6,7 @@ export interface DesktopBridge {
   version: number
   info(): Promise<{ version: string; dataDirectory: string }>
   openDataDirectory(): Promise<void>
+  changeDataDirectory(): Promise<{ dataDirectory: string } | null>
   openPayment(order: { kind: 'redirect'; url: string } | { kind: 'form'; url: string; fields: Record<string, string> }): Promise<void>
   storage: {
     get<T>(scope: DesktopScope, key: string): Promise<T | null>

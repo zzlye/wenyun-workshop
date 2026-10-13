@@ -98,6 +98,40 @@ try {
   assert.deepEqual(await fs.readFile(path.join(testRoot, 'data/图片/画布', filenames[0])), bytes);
   console.log('界面导入透明 PNG，原始文件字节保持一致：通过');
 
+  const movedDirectory = path.join(testRoot, 'moved-data');
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await page.getByRole('button', { name: '数据管理', exact: true }).click();
+  await app.evaluate(({ dialog }) => {
+    globalThis.directoryDialogs = { open: dialog.showOpenDialog, message: dialog.showMessageBox };
+    dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] });
+  });
+  await page.getByRole('button', { name: '更换位置', exact: true }).click();
+  await page.getByRole('button', { name: '更换位置', exact: true }).waitFor();
+  assert.equal((await page.evaluate(() => window.wenyunDesktop.info())).dataDirectory, path.join(testRoot, 'data'));
+  await app.evaluate(({ dialog }, destination) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [destination] });
+    dialog.showMessageBox = async () => ({ response: 0, checkboxChecked: false });
+  }, movedDirectory);
+  await page.getByRole('button', { name: '更换位置', exact: true }).click();
+  await page.getByText(movedDirectory, { exact: true }).waitFor();
+  assert.equal((await page.evaluate(() => window.wenyunDesktop.info())).dataDirectory, movedDirectory);
+  assert.deepEqual(await fs.readFile(path.join(movedDirectory, '图片/画布', filenames[0])), bytes);
+  assert.deepEqual(await fs.readFile(path.join(testRoot, 'data/图片/画布', filenames[0])), bytes);
+  await page.screenshot({ path: path.join(testRoot, 'storage-directory.png') });
+  const occupied = path.join(testRoot, 'occupied');
+  await fs.mkdir(occupied);
+  await fs.writeFile(path.join(occupied, 'keep.txt'), '已有文件');
+  await app.evaluate(({ dialog }, destination) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [destination] }); }, occupied);
+  await page.getByRole('button', { name: '更换位置', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: '请选择空文件夹' }).waitFor();
+  assert.equal((await page.evaluate(() => window.wenyunDesktop.info())).dataDirectory, movedDirectory);
+  await app.evaluate(({ dialog }) => {
+    dialog.showOpenDialog = globalThis.directoryDialogs.open;
+    dialog.showMessageBox = globalThis.directoryDialogs.message;
+  });
+  await page.getByRole('button', { name: '关闭', exact: true }).click();
+  console.log('设置中取消、更换、原图迁移和非空目录保护：通过');
+
   await page.getByRole('button', { name: '打开 Canvas Agent', exact: true }).click();
   await page.getByRole('button', { name: '连接设置，当前已连接' }).waitFor({ timeout: 45_000 });
   const agentUrl = await page.evaluate(async () => (await window.wenyunDesktop.agent.ensure()).url);
@@ -136,6 +170,7 @@ try {
   console.log('正常退出时保存画布并停止内置 Agent：通过');
 
   await launch();
+  assert.equal((await page.evaluate(() => window.wenyunDesktop.info())).dataDirectory, movedDirectory);
   await page.goto(canvasUrl);
   await page.waitForFunction(() => [...document.images].some((image) => image.naturalWidth === 384));
   const alpha = await page.evaluate(async () => {
