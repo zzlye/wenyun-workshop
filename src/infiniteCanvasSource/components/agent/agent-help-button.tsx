@@ -1,15 +1,22 @@
 import { useState } from 'react';
 import { Button, Modal, Tooltip } from 'antd';
 import { Download, CircleHelp } from 'lucide-react';
+import { getDesktopBridge } from '../../../lib/desktop';
 
 export function AgentHelpButton() {
     const [open, setOpen] = useState(false);
+    const desktop = getDesktopBridge();
     return <>
         <Tooltip title="连接教程" placement="bottom">
             <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" aria-label="Canvas Agent 连接教程" icon={<CircleHelp size={16} />} onClick={() => setOpen(true)} />
         </Tooltip>
         <Modal title="连接 Canvas Agent" open={open} onCancel={() => setOpen(false)} footer={null} width={540}>
             <div className="space-y-5 py-2 text-sm leading-6">
+                {desktop ? <ol className="list-decimal space-y-3 pl-5">
+                    <li>打开助手面板后会自动连接。未连接时点击“启动并连接”，无需填写地址和令牌。</li>
+                    <li>首次使用可点击“登录 Codex”，在浏览器中完成登录。已有可用 Codex 配置会继续沿用。</li>
+                    <li>选择模型后即可对话。使用期间保持西米露运行，退出软件会停止本机助手。</li>
+                </ol> : <>
                 <ol className="list-decimal space-y-3 pl-5">
                     <li>首次使用先安装 <a className="text-blue-600 underline" href="https://nodejs.org/zh-cn/download" target="_blank" rel="noreferrer">Node.js 22 或更新的 LTS 版本</a>。</li>
                     <li>下载 Windows 启动包，解压后双击 <strong>启动画布助手.cmd</strong>，等待准备完成。若提示未登录，双击同目录的 <strong>登录Codex.cmd</strong> 完成登录。</li>
@@ -22,6 +29,7 @@ export function AgentHelpButton() {
                     <p>网站部署在服务器也连接你自己的电脑。每人使用自己的 Codex 登录和令牌；同一电脑共用同一服务时，会共用会话。</p>
                     <p>若浏览器询问本地网络访问权限，请允许当前站点访问。手机需使用电脑上的画布助手。</p>
                 </div>
+                </>}
             </div>
         </Modal>
     </>;

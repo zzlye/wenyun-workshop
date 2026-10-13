@@ -5,6 +5,7 @@ import App from './App'
 import 'streamdown/styles.css'
 import './index.css'
 import { installMobileViewportGuards } from './lib/viewport'
+import { getDesktopBridge } from './lib/desktop'
 
 installMobileViewportGuards()
 
@@ -29,8 +30,20 @@ function clearLegacyAppShellCache() {
 
 clearLegacyAppShellCache()
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+async function mountApp() {
+  if (getDesktopBridge()) await (await import('./lib/desktopLifecycle')).initializeDesktop()
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+}
+
+void mountApp().catch((error) => {
+  const root = document.getElementById('root')!
+  const alert = document.createElement('p')
+  alert.setAttribute('role', 'alert')
+  alert.className = 'm-8 text-sm text-red-600'
+  alert.textContent = error instanceof Error ? error.message : '本地数据读取失败，请重新启动'
+  root.append(alert)
+})

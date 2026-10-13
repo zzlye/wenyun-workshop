@@ -1,6 +1,7 @@
 import { getLockedApiProxyPrefix } from './devProxy'
 import { readRuntimeEnv } from './runtimeEnv'
 import { fetchResultResponse, ResultReadTimeoutError } from './resultRequest'
+import { getDesktopBridge } from './desktop'
 
 export type ImageTaskStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 
@@ -80,7 +81,7 @@ function taskHeaders(reference: Pick<ImageTaskReference, 'accessToken'>): Header
 
 export function shouldUseImageTasks(baseUrl: string): boolean {
   // 只让文运站内置 NewAPI 使用网站异步任务；公益站和自定义接口保持原调用路径。
-  return readRuntimeEnv(import.meta.env.VITE_IMAGE_TASKS_AVAILABLE) === 'enabled'
+  return (Boolean(getDesktopBridge()) || readRuntimeEnv(import.meta.env.VITE_IMAGE_TASKS_AVAILABLE) === 'enabled')
     && getLockedApiProxyPrefix(baseUrl) === '/api-proxy/wenyun'
 }
 

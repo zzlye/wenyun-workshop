@@ -1,0 +1,17 @@
+{
+  "name": "wenyun-desktop",
+  "version": "0.4.13",
+  "private": true,
+  "description": "西米露桌面版",
+  "author": "西米露",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "node scripts/run.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.cjs"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3"
+  }
+}

@@ -5,6 +5,7 @@ import localforage from "localforage";
 import { nanoid } from "nanoid";
 import { readImageMeta } from "@/lib/image-utils";
 import { fetchResultResponse } from "../../lib/resultRequest";
+import { createDesktopBlobStorage } from "../../lib/desktop";
 
 export type UploadedImage = {
     url: string;
@@ -15,7 +16,7 @@ export type UploadedImage = {
     mimeType: string;
 };
 
-const store = localforage.createInstance({ name: "infinite-canvas", storeName: "image_files" });
+const store = createDesktopBlobStorage('canvas-images') ?? localforage.createInstance({ name: "infinite-canvas", storeName: "image_files" });
 const objectUrls = new Map<string, string>();
 const BASE64_DECODE_CHUNK_CHARS = 32 * 1024;
 

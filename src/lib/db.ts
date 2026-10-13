@@ -1,4 +1,5 @@
 import type { AgentConversation, TaskRecord, StoredImage, StoredImageThumbnail } from '../types'
+import { getDesktopBridge } from './desktop'
 
 const DB_NAME = 'gpt-image-playground'
 const DB_VERSION = 3
@@ -55,40 +56,58 @@ function dbTransaction<T>(
 // ===== Tasks =====
 
 export function getAllTasks(): Promise<TaskRecord[]> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.all(STORE_TASKS)
   return dbTransaction(STORE_TASKS, 'readonly', (s) => s.getAll())
 }
 
 export function putTask(task: TaskRecord): Promise<IDBValidKey> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.put(STORE_TASKS, task.id, task)
   return dbTransaction(STORE_TASKS, 'readwrite', (s) => s.put(task))
 }
 
 export function deleteTask(id: string): Promise<undefined> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.remove(STORE_TASKS, id).then(() => undefined)
   return dbTransaction(STORE_TASKS, 'readwrite', (s) => s.delete(id))
 }
 
 export function clearTasks(): Promise<undefined> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.clear(STORE_TASKS).then(() => undefined)
   return dbTransaction(STORE_TASKS, 'readwrite', (s) => s.clear())
 }
 
 // ===== Agent conversations =====
 
 export function getAllAgentConversations(): Promise<AgentConversation[]> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.all(STORE_AGENT_CONVERSATIONS)
   return dbTransaction(STORE_AGENT_CONVERSATIONS, 'readonly', (s) => s.getAll())
 }
 
 export function putAgentConversation(conversation: AgentConversation): Promise<IDBValidKey> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.put(STORE_AGENT_CONVERSATIONS, conversation.id, conversation)
   return dbTransaction(STORE_AGENT_CONVERSATIONS, 'readwrite', (s) => s.put(conversation))
 }
 
 export function deleteAgentConversation(id: string): Promise<undefined> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.remove(STORE_AGENT_CONVERSATIONS, id).then(() => undefined)
   return dbTransaction(STORE_AGENT_CONVERSATIONS, 'readwrite', (s) => s.delete(id))
 }
 
 export function clearAgentConversations(): Promise<undefined> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.clear(STORE_AGENT_CONVERSATIONS).then(() => undefined)
   return dbTransaction(STORE_AGENT_CONVERSATIONS, 'readwrite', (s) => s.clear())
 }
 
 export function replaceAgentConversations(conversations: AgentConversation[]): Promise<undefined> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.replace(STORE_AGENT_CONVERSATIONS, conversations).then(() => undefined)
   return openDB().then(
     (db) =>
       new Promise((resolve, reject) => {
@@ -106,10 +125,14 @@ export function replaceAgentConversations(conversations: AgentConversation[]): P
 // ===== Images =====
 
 export function getImage(id: string): Promise<StoredImage | undefined> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.get<StoredImage>(STORE_IMAGES, id).then((image) => image ?? undefined)
   return dbTransaction(STORE_IMAGES, 'readonly', (s) => s.get(id))
 }
 
 export function getStoredImageThumbnail(id: string): Promise<StoredImageThumbnail | undefined> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.get<StoredImageThumbnail>(STORE_THUMBNAILS, id).then((image) => image ?? undefined)
   return dbTransaction(STORE_THUMBNAILS, 'readonly', (s) => s.get(id))
 }
 
@@ -119,6 +142,8 @@ export async function getStoredFreshImageThumbnail(id: string): Promise<StoredIm
 }
 
 export function putImageThumbnail(thumbnail: StoredImageThumbnail): Promise<IDBValidKey> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.put(STORE_THUMBNAILS, thumbnail.id, thumbnail)
   return dbTransaction(STORE_THUMBNAILS, 'readwrite', (s) => s.put(thumbnail))
 }
 
@@ -167,20 +192,28 @@ export async function getImageThumbnail(id: string): Promise<StoredImageThumbnai
 }
 
 export function getAllImages(): Promise<StoredImage[]> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.all(STORE_IMAGES)
   return dbTransaction(STORE_IMAGES, 'readonly', (s) => s.getAll())
 }
 
 export function getAllImageIds(): Promise<string[]> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.keys(STORE_IMAGES)
   return dbTransaction(STORE_IMAGES, 'readonly', (s) => s.getAllKeys()).then((keys) =>
     keys.map(String),
   )
 }
 
 export function putImage(image: StoredImage): Promise<IDBValidKey> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.put(STORE_IMAGES, image.id, image)
   return dbTransaction(STORE_IMAGES, 'readwrite', (s) => s.put(image))
 }
 
 export function deleteImage(id: string): Promise<undefined> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.remove(STORE_IMAGES, id).then(() => desktop.storage.remove(STORE_THUMBNAILS, id)).then(() => undefined)
   return openDB().then(
     (db) =>
       new Promise((resolve, reject) => {
@@ -194,6 +227,8 @@ export function deleteImage(id: string): Promise<undefined> {
 }
 
 export function clearImages(): Promise<undefined> {
+  const desktop = getDesktopBridge()
+  if (desktop) return desktop.storage.clear(STORE_IMAGES).then(() => desktop.storage.clear(STORE_THUMBNAILS)).then(() => undefined)
   return openDB().then(
     (db) =>
       new Promise((resolve, reject) => {

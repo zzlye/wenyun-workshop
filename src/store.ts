@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
+import { desktopSettingsStorage } from './lib/desktop'
 import type {
   AgentConversation,
   AgentMessage,
@@ -1480,6 +1481,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'gpt-image-playground',
+      ...(desktopSettingsStorage ? { storage: createJSONStorage(() => desktopSettingsStorage!), skipHydration: true } : {}),
       version: 2,
       migrate: (persistedState) => migratePersistedState(persistedState),
       partialize: getPersistedState,
@@ -1519,6 +1521,15 @@ useStore.subscribe((state) => {
   }
   void flushAgentConversationsToIndexedDB()
 })
+
+/** 桌面退出前等待已有后台保存完成，不重新发送任何生成请求。 */
+export async function flushAppPersistence() {
+  while (taskPersistenceQueues.size) await Promise.all(taskPersistenceQueues.values())
+  while (agentConversationPersistRunning) await new Promise((resolve) => setTimeout(resolve, 10))
+  if (agentConversationPersistenceReady && useStore.getState().agentConversations !== lastStoredAgentConversations) {
+    await flushAgentConversationsToIndexedDB()
+  }
+}
 
 // ===== Actions =====
 

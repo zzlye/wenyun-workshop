@@ -1,3 +1,5 @@
+import { desktopRequestUrl } from './desktop'
+
 /** 读取已创建任务和生成结果时的超时，不能触发重新生成。 */
 export class ResultReadTimeoutError extends Error {
   constructor() { super('结果读取超时，请稍后继续读取'); this.name = 'TimeoutError' }
@@ -32,7 +34,7 @@ export async function fetchResultResponse(url: string, init: RequestInit = {}, o
   try {
     return await Promise.race([interrupted, (async () => {
       controller.signal.throwIfAborted()
-      const response = await fetch(url, { ...init, signal: controller.signal })
+      const response = await fetch(desktopRequestUrl(url), { ...init, signal: controller.signal })
       controller.signal.throwIfAborted()
       if (!response.body) return response
       reader = response.body.getReader()

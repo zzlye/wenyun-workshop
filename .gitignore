@@ -4,3 +4,4 @@ dev-proxy.config.json
 .wrangler/
 vite-dev.*.log
 public/downloads/wenyun-canvas-agent.zip
+desktop/release/

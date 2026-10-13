@@ -1,5 +1,6 @@
 import localforage from "localforage";
 import type { StateStorage } from "zustand/middleware";
+import { createDesktopStateStorage } from "../../lib/desktop";
 
 localforage.config({
     name: "infinite-canvas",
@@ -33,7 +34,7 @@ function removeLocalStorageBackup(name: string) {
     }
 }
 
-export const localForageStorage: StateStorage = {
+export const localForageStorage: StateStorage = createDesktopStateStorage('canvas-state') ?? {
     getItem: async (name) => {
         if (typeof window === "undefined") return null;
         try {

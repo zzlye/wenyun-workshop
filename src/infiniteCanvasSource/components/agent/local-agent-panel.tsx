@@ -68,6 +68,7 @@ import { AgentLogView } from "./agent-log-view";
 import { AgentPanelTabs } from "./agent-panel-tabs";
 import { AgentSkillsView } from "./agent-skills-view";
 import { AgentUndoButton } from "./agent-undo-button";
+import { getDesktopBridge } from "../../../lib/desktop";
 
 const MAX_ATTACHMENTS = 6;
 const MAX_ATTACHMENT_PAYLOAD_BYTES = 28 * 1024 * 1024;
@@ -181,6 +182,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const attachmentUrlsRef = useRef(new Set<string>());
     const clientIdRef = useRef("");
     const [clientReady, setClientReady] = useState(false);
+    const [desktopStarting, setDesktopStarting] = useState(false);
+    const panelOpen = useAgentStore((state) => state.panelOpen);
     const loadThreadsSequenceRef = useRef(0);
     const loadThreadsRequestRef = useRef(0);
     const threadMessagesRef = useRef(new Map<string, AgentChatItem[]>());
@@ -914,6 +917,22 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             clearAgentSession({ enabled: false, connected: false, activity: rt("offline"), connectError: "" });
             return;
         }
+        const desktop = getDesktopBridge();
+        if (desktop) {
+            if (desktopStarting) return;
+            setDesktopStarting(true);
+            setAgentState({ connectError: "", activity: "正在启动本机助手" });
+            try {
+                const connection = await desktop.agent.ensure();
+                errorLoggedRef.current = false;
+                setAgentState({ ...connection, enabled: true, connected: false, silentConnect: silent, fragmentBootstrap: false, activity: rt("connecting"), connectError: "", activeTab: "setup" });
+            } catch (error) {
+                setAgentState({ connectError: error instanceof Error ? error.message : "本机助手启动失败" });
+            } finally {
+                setDesktopStarting(false);
+            }
+            return;
+        }
         const urlToken = searchParams.get("agentToken") || "";
         const urlEndpoint = searchParams.get("agentUrl") || "";
         const discovered = urlToken ? null : await discoverAgentConfig(endpoint || DEFAULT_AGENT_URL);
@@ -951,6 +970,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     };
 
     useLayoutEffect(() => {
+        if (getDesktopBridge()) return;
         const bootstrap = readAgentUrlBootstrap(hash);
         if (!bootstrap) return;
         navigate(`${window.location.pathname}${window.location.search}${bootstrap.remainingHash}`, { replace: true });
@@ -976,10 +996,11 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     }, [confirmTools, setAgentState, urlAgentAutoConnect]);
 
     useEffect(() => {
-        if ((!autoConnect && !urlAgentAutoConnect) || autoConnectRef.current || enabled || connected) return;
+        const shouldConnect = getDesktopBridge() ? panelOpen : (autoConnect || urlAgentAutoConnect);
+        if (!shouldConnect || autoConnectRef.current || enabled || connected) return;
         autoConnectRef.current = true;
         void toggleAgentConnection({ silent: true });
-    }, [autoConnect, connected, enabled, urlAgentAutoConnect]);
+    }, [autoConnect, connected, enabled, panelOpen, urlAgentAutoConnect]);
 
     function clearAgentSession(patch: Parameters<typeof setAgentState>[0] = {}) {
         loadThreadsSequenceRef.current += 1;
@@ -1373,6 +1394,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                     connected={connected}
                     activity={activity}
                     connectError={connectError}
+                    starting={desktopStarting}
                     onUrlChange={(url) => setAgentState({ url, connectError: "" })}
                     onTokenChange={(token) => setAgentState({ token, connectError: "" })}
                     onToggleEnabled={toggleAgentConnection}

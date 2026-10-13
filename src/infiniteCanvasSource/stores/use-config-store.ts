@@ -2,7 +2,8 @@
 
 import { useMemo } from "react";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { desktopRequestUrl, desktopSettingsStorage } from "../../lib/desktop";
 
 import { apiGet } from "@/services/api/request";
 import type { AdminPublicSettings } from "@/services/api/admin";
@@ -148,9 +149,10 @@ export const useConfigStore = create<ConfigStore>()(
         }),
         {
             name: CONFIG_STORE_KEY,
+            ...(desktopSettingsStorage ? { storage: createJSONStorage(() => desktopSettingsStorage!), skipHydration: true } : {}),
             partialize: (state) => ({ config: state.config }),
             merge: (persisted, current) => {
-                const config = { ...defaultConfig, ...((persisted as Partial<ConfigStore>).config || {}) };
+                const config = { ...defaultConfig, ...((persisted as Partial<ConfigStore> | undefined)?.config || {}) };
                 const legacyTextVideoBaseUrl = config.textVideoBaseUrl || "";
                 const legacyTextVideoApiKey = config.textVideoApiKey || "";
                 const legacyTextVideoApiProxy = Boolean(config.textVideoApiProxy);
@@ -195,5 +197,5 @@ export function useEffectiveConfig() {
 export function buildApiUrl(baseUrl: string, path: string) {
     const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
     const apiBaseUrl = normalizedBaseUrl.endsWith("/v1") ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`;
-    return `${apiBaseUrl}${path}`;
+    return desktopRequestUrl(`${apiBaseUrl}${path}`);
 }

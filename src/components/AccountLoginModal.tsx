@@ -19,6 +19,7 @@ import { copyTextToClipboard, getClipboardFailureMessage } from '../lib/clipboar
 import { useStore } from '../store'
 import type { AppSettings, NewApiAccountSession } from '../types'
 import { CloseIcon } from './icons'
+import { getDesktopBridge } from '../lib/desktop'
 
 function EyeIcon({ hidden, className }: { hidden: boolean; className?: string }) {
   return (
@@ -354,8 +355,9 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
       return
     }
 
-    const popup = window.open('about:blank', '_blank')
-    if (!popup) {
+    const desktop = getDesktopBridge()
+    const popup = desktop ? null : window.open('about:blank', '_blank')
+    if (!desktop && !popup) {
       showToast('浏览器拦截了支付页面，请允许弹窗后重试', 'error')
       return
     }
@@ -363,10 +365,11 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
     setIsCreatingTopupOrder(true)
     try {
       const order = await createNewApiTopupOrder(wenyunProfile, accountSession, amount, method.type, persistRefreshedSession)
-      submitPaymentOrder(order, popup)
+      if (desktop) await desktop.openPayment(order)
+      else submitPaymentOrder(order, popup!)
       showToast('支付页面已打开，完成后请查询账号余额', 'success')
     } catch (err) {
-      popup.close()
+      popup?.close()
       showToast(err instanceof Error ? err.message : '创建支付订单失败', 'error')
     } finally {
       setIsCreatingTopupOrder(false)

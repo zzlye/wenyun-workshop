@@ -902,6 +902,16 @@ function InfiniteCanvasPage() {
         };
     }, [projectId, projectLoaded, updateProject, viewport]);
 
+    useEffect(() => {
+        if (!window.wenyunDesktop || !projectLoaded) return;
+        const flush = () => {
+            if (viewportSaveTimerRef.current) clearTimeout(viewportSaveTimerRef.current);
+            updateProject(projectId, { nodes: nodesRef.current, connections: connectionsRef.current, groups: groupsRef.current, chatSessions, activeChatId, backgroundMode, showImageInfo, viewport: viewportRef.current });
+        };
+        window.addEventListener('wenyun:flush-desktop-state', flush);
+        return () => window.removeEventListener('wenyun:flush-desktop-state', flush);
+    }, [projectId, projectLoaded, updateProject, chatSessions, activeChatId, backgroundMode, showImageInfo]);
+
     useLayoutEffect(() => {
         nodesRef.current = nodes;
         connectionsRef.current = connections;

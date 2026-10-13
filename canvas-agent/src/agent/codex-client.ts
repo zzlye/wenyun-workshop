@@ -785,7 +785,9 @@ function canvasAgentMcpCommand() {
 /** 生成 Codex app-server 使用的 MCP 配置。 */
 function codexConfig(permissionMode: AgentPermissionMode) {
     // app-server 不保证继承自定义环境变量，显式传入目录以读取同一份连接令牌。
-    return { model_reasoning_summary: "auto", ...(permissionMode === "automatic" ? { approvals_reviewer: "auto_review" } : {}), mcp_servers: { "infinite-canvas": { command: canvasAgentMcp.command, args: canvasAgentMcp.args, env: { WENYUN_AGENT_HOME: CONFIG_DIR }, default_tools_approval_mode: "approve", startup_timeout_sec: 20, tool_timeout_sec: 90 } } };
+    // 桌面版复用内置运行时，MCP 子进程也必须以 Node 模式启动，不能再次打开应用窗口。
+    const env = { WENYUN_AGENT_HOME: CONFIG_DIR, ...(process.env.ELECTRON_RUN_AS_NODE === "1" ? { ELECTRON_RUN_AS_NODE: "1" } : {}) };
+    return { model_reasoning_summary: "auto", ...(permissionMode === "automatic" ? { approvals_reviewer: "auto_review" } : {}), mcp_servers: { "infinite-canvas": { command: canvasAgentMcp.command, args: canvasAgentMcp.args, env, default_tools_approval_mode: "approve", startup_timeout_sec: 20, tool_timeout_sec: 90 } } };
 }
 
 function threadSettings(permissionMode: AgentPermissionMode) {

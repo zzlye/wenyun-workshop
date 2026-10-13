@@ -1,4 +1,5 @@
 import { readRuntimeEnv } from './runtimeEnv'
+import { desktopRequestUrl, getDesktopBridge } from './desktop'
 
 export interface DevProxyConfig {
   enabled: boolean
@@ -183,6 +184,12 @@ export function buildApiUrl(
 ): string {
   const normalizedBaseUrl = normalizeBaseUrl(baseUrl)
   const endpointPath = path.replace(/^\/+/, '')
+
+  // 桌面自定义接口由本机转发，保留浏览器的跨域保护，不依赖网站代理。
+  if (getDesktopBridge() && !getLockedApiProxyPrefix(normalizedBaseUrl)) {
+    const apiPath = normalizedBaseUrl.endsWith('/v1') ? endpointPath : `v1/${endpointPath}`
+    return desktopRequestUrl(`${normalizedBaseUrl}/${apiPath}`)
+  }
 
   if (useApiProxy) {
     return `${getLockedApiProxyPrefix(normalizedBaseUrl) ?? proxyConfig?.prefix ?? DEFAULT_PROXY_PREFIX}/${endpointPath}`

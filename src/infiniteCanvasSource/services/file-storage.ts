@@ -2,15 +2,16 @@
 
 import localforage from "localforage";
 import { nanoid } from "nanoid";
+import { createDesktopBlobStorage, desktopRequestUrl } from "../../lib/desktop";
 
 export type UploadedFile = { url: string; storageKey: string; bytes: number; mimeType: string; width?: number; height?: number; duration?: number };
 
-const store = localforage.createInstance({ name: "infinite-canvas", storeName: "media_files" });
+const store = createDesktopBlobStorage('canvas-media') ?? localforage.createInstance({ name: "infinite-canvas", storeName: "media_files" });
 const objectUrls = new Map<string, string>();
 const MEDIA_METADATA_TIMEOUT_MS = 3000;
 
 export async function uploadMediaFile(input: string | Blob, prefix = "file"): Promise<UploadedFile> {
-    const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
+    const blob = typeof input === "string" ? await readRemoteMedia(input) : input;
     const storageKey = `${prefix}:${nanoid()}`;
     await store.setItem(storageKey, blob);
     const url = URL.createObjectURL(blob);
@@ -42,7 +43,13 @@ export async function mediaToDataUrl(media: { url?: string; storageKey?: string 
 
     const directUrl = media.url || "";
     if (!directUrl || directUrl.startsWith("data:")) return directUrl;
-    return blobToDataUrl(await (await fetch(directUrl)).blob());
+    return blobToDataUrl(await readRemoteMedia(directUrl));
+}
+
+async function readRemoteMedia(url: string) {
+    const response = await fetch(desktopRequestUrl(url));
+    if (!response.ok) throw new Error(`媒体下载失败（HTTP ${response.status}）`);
+    return response.blob();
 }
 
 export async function setMediaBlob(storageKey: string, blob: Blob) {
