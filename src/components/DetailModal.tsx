@@ -839,6 +839,14 @@ export default function DetailModal() {
               参数配置
             </h3>
             <div className="grid grid-cols-2 gap-2 text-xs mb-4">
+              {/* 使用任务保存的模型，避免切换当前配置后误显示历史记录。 */}
+              {task.apiModel?.trim() && (
+                <div className="col-span-2 min-w-0 bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
+                  <span className="text-gray-400 dark:text-gray-500">模型</span>
+                  <br />
+                  <span className="font-medium text-gray-700 dark:text-gray-300 [overflow-wrap:anywhere]">{task.apiModel}</span>
+                </div>
+              )}
               <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
                 <span className="text-gray-400 dark:text-gray-500">尺寸</span>
                 <br />
