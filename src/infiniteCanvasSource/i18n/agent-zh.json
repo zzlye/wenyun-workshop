@@ -577,7 +577,7 @@
       "enableFullAccessAction": "启用完全访问",
       "offline": "离线",
       "addressRequired": "请填写本地 Agent 地址",
-      "agentNotFound": "没有发现本地 Agent，请先在 Codex 使用插件或手动启动 Canvas Agent",
+      "agentNotFound": "没有发现本机 Agent，请点击标题栏的连接教程，下载并启动画布助手",
       "invalidAddress": "本地 Agent 地址格式不正确",
       "connecting": "连接中",
       "creatingConversation": "正在新建对话",

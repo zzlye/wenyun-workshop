@@ -25,6 +25,7 @@ import { acknowledgeCodexHistory, activateAgentClient, AgentApiError, discoverAg
 import { AgentChatTimeline, AgentTaskProgress, AgentUsageBar } from "./agent-chat";
 import { AgentChatComposer } from "./agent-chat-composer";
 import { AgentConnectView } from "./agent-connect-view";
+import { AgentHelpButton } from "./agent-help-button";
 import {
     activityDeltaFallback,
     activityDetail,
@@ -1349,6 +1350,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 }}
                 right={
                     <>
+                        <AgentHelpButton />
                         <AgentUndoButton />
                         <Tooltip title={t("agent.history.newThread")} placement="bottom">
                             <Button size="small" type="text" className="!h-8 !w-8 !min-w-8 !px-0 @min-[560px]:!w-auto @min-[560px]:!min-w-0 @min-[560px]:!px-[7px]" aria-label={t("agent.history.newThread")} disabled={!connected || loadingThreads || sending || waiting || conversationBusy} icon={<Plus className="size-3.5" />} onClick={startNewThread}>

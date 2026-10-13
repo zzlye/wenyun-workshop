@@ -1,6 +1,7 @@
 node_modules
 **/node_modules
-canvas-agent
+canvas-agent/dist
+public/downloads/wenyun-canvas-agent.zip
 dist
 .git
 .gitignore

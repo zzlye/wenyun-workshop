@@ -150,6 +150,8 @@ export default function CanvasWorkshop({ onBack, onOpenHome, onOpenWenyun, onOpe
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     const link = (event.target as HTMLElement | null)?.closest('a[href]')
     if (!link) return
+    // 下载与新窗口链接由浏览器处理，不能当作画布内部页面跳转。
+    if (link.hasAttribute('download') || (link.getAttribute('target') && link.getAttribute('target') !== '_self')) return
     const href = link.getAttribute('href') || ''
     if (!href.startsWith('/')) return
     event.preventDefault()
