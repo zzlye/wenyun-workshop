@@ -5,7 +5,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { flushSync } from "react-dom";
 import { useParams, useRouter } from "next/navigation";
-import { AudioLines, Home, ImageIcon, Images, List, Menu, Paintbrush, Plus, Redo2, Scissors, Settings, Trash2, Undo2, Upload, Video, WandSparkles } from "lucide-react";
+import { AudioLines, Bot, Home, ImageIcon, Images, List, Menu, Paintbrush, Plus, Redo2, Scissors, Settings, Trash2, Undo2, Upload, Video, WandSparkles } from "lucide-react";
+import { useAgentStore } from "@/stores/use-agent-store";
+import { useAgentBridge } from "@/lib/canvas/use-agent-bridge";
 import { saveAs } from "file-saver";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
@@ -1638,6 +1640,9 @@ function InfiniteCanvasPage() {
             historyCommitTimerRef.current = null;
         }
         applyingHistoryRef.current = true;
+        nodesRef.current = entry.nodes;
+        connectionsRef.current = entry.connections;
+        groupsRef.current = entry.groups || [];
         setNodes(entry.nodes);
         setConnections(entry.connections);
         setGroups(entry.groups || []);
@@ -3570,11 +3575,50 @@ function InfiniteCanvasPage() {
         [connections, handleConfigNodeChange, handleGenerateNode, handleNodeImageSettingsOpenChange, handleNodePromptChange, nodes, runningNodeIds],
     );
 
+    const agentSnapshot = useMemo(() => ({ projectId, title: currentProject?.title || "未命名画布", nodes, connections, groups, selectedNodeIds: Array.from(selectedNodeIds), viewport }), [projectId, currentProject?.title, nodes, connections, groups, selectedNodeIds, viewport]);
+    const readAgentSnapshot = () => ({ ...agentSnapshot, nodes: nodesRef.current, connections: connectionsRef.current, groups: groupsRef.current, selectedNodeIds: Array.from(selectedNodeIdsRef.current), viewport: viewportRef.current });
+    useAgentBridge({
+        ready: projectLoaded,
+        snapshot: agentSnapshot,
+        read: readAgentSnapshot,
+        canUndo: historyState.canUndo,
+        undo: undoCanvas,
+        generate: handleGenerateNode,
+        validateGeneration: (node, mode) => {
+            if (isCanvasNodeGenerationLocked(node, runningNodeIdsRef.current)) throw new Error("节点正在生成，请等待完成");
+            const config = buildGenerationConfig(effectiveConfig, node, mode, activeProfile.id);
+            if (!isCanvasGenerationConfigReady(config, mode, isImageConfigReady)) throw new Error("请先完成对应模型的接口配置");
+        },
+        commit: next => {
+            // 将 Agent 的批量修改记为一次撤销，分组和原有助手历史一起保留。
+            if (historyCommitTimerRef.current) clearTimeout(historyCommitTimerRef.current);
+            historyCommitTimerRef.current = null;
+            const before = createHistoryEntry();
+            const changed = next.nodes !== nodesRef.current || next.connections !== connectionsRef.current;
+            if (changed) {
+                historyRef.current.past = [...historyRef.current.past.slice(-49), before];
+                historyRef.current.future = [];
+            }
+            nodesRef.current = next.nodes;
+            connectionsRef.current = next.connections;
+            groupsRef.current = next.groups || [];
+            selectedNodeIdsRef.current = new Set(next.selectedNodeIds);
+            viewportRef.current = next.viewport;
+            setNodes(next.nodes); setConnections(next.connections); setGroups(next.groups || []);
+            setSelectedNodeIds(new Set(next.selectedNodeIds)); setSelectedGroupId(null); setSelectedConnectionId(null);
+            setViewport(next.viewport); setContextMenu(null);
+            lastHistoryRef.current = { ...before, nodes: next.nodes, connections: next.connections, groups: next.groups || [] };
+            setHistoryState({ canUndo: historyRef.current.past.length > 0, canRedo: historyRef.current.future.length > 0 });
+            updateProject(projectId, { nodes: next.nodes, connections: next.connections, groups: next.groups || [], viewport: next.viewport });
+        },
+    });
+
     if (!projectLoaded) return <CanvasRefreshShell />;
 
     return (
-        <main className="flex h-full min-h-0 overflow-hidden" style={{ background: "transparent", color: theme.node.text }}>
+        <main className="relative flex h-full min-h-0 overflow-hidden" style={{ background: "transparent", color: theme.node.text }}>
             <section className="relative min-w-0 flex-1 overflow-hidden">
+                <button type="button" aria-label="打开 Canvas Agent" title="Canvas Agent" onClick={() => useAgentStore.getState().togglePanel()} className="absolute right-4 top-20 z-[60] flex h-10 w-10 items-center justify-center rounded-lg border shadow-sm" style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}><Bot size={20} /></button>
                 <CanvasTopBar
                     title={currentProject?.title || "未命名画布"}
                     titleDraft={titleDraft}

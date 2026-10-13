@@ -7,6 +7,7 @@ import AssetsPage from '../infiniteCanvasSource/app/(user)/assets/page'
 import { AppProviders } from '../infiniteCanvasSource/components/layout/app-providers'
 import { useThemeStore } from '../infiniteCanvasSource/stores/use-theme-store'
 import { CanvasNavigationProvider, type CanvasRoute } from '../infiniteCanvasCompat/nextNavigation'
+import { AgentPanel } from '../infiniteCanvasSource/components/agent/agent-panel'
 import { useStore } from '../store'
 import { normalizeSettings } from '../lib/apiProfiles'
 import { syncInfiniteCanvasConfigFromSettings } from '../lib/syncInfiniteCanvasConfig'
@@ -160,10 +161,13 @@ export default function CanvasWorkshop({ onBack, onOpenHome, onOpenWenyun, onOpe
       <AppProviders>
         <div className="canvas-integrated-shell" onClickCapture={handleInternalLinkClick}>
           <UserLayout>
-            <div className="h-full overflow-hidden bg-transparent text-foreground">
-              <CanvasErrorBoundary>
-                <CanvasRoutePage route={route} />
-              </CanvasErrorBoundary>
+            <div className="relative flex h-full overflow-hidden bg-transparent text-foreground">
+              <div className="min-w-0 flex-1 overflow-hidden">
+                <CanvasErrorBoundary>
+                  <CanvasRoutePage route={route} />
+                </CanvasErrorBoundary>
+              </div>
+              <AgentPanel />
             </div>
           </UserLayout>
         </div>
