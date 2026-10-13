@@ -37,7 +37,8 @@ async function launch() {
   page.on('pageerror', (error) => errors.push(error.message));
   await page.getByRole('button', { name: '画布工坊', exact: true }).waitFor({ timeout: 30_000 });
   const dismiss = page.getByRole('button', { name: '今日不再提醒', exact: true });
-  if (await dismiss.isVisible()) await dismiss.click();
+  // 公告可能在首页加载后才出现，操作前统一关闭，避免遮罩造成随机超时。
+  await page.addLocatorHandler(dismiss, async (button) => { await button.click(); });
 }
 
 async function close() {
