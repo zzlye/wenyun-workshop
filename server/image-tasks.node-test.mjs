@@ -172,7 +172,8 @@ test('Midjourney 失败终态保留上游错误', async () => {
   const task = await createMidjourneyTask(baseUrl)
   await waitForCompletion(baseUrl, task)
   const result = await fetch(`${baseUrl}/image-tasks/${task.taskId}/result`, { headers: { Authorization: `Bearer ${task.accessToken}` } })
-  assert.equal((await result.json()).data.error_message, '上游拒绝内容')
+  assert.equal(result.status, 422)
+  assert.equal((await result.json()).error.message, '上游拒绝内容')
 })
 
 test('Midjourney 非 JSON 受理明确失败，不反复查询或提交', async () => {

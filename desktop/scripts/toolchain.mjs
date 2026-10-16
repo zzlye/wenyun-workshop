@@ -57,3 +57,12 @@ export async function prepareAgentDependencies() {
   await npm(['ci', '--prefix', runtime, '--omit=dev', '--no-audit', '--no-fund']);
   return runtime;
 }
+
+// 更新组件只将锁定的运行依赖打入安装包，不携带构建工具和开发目录。
+export async function prepareUpdateDependencies() {
+  const runtime = path.resolve('D:/tools/wenyun-desktop-update-runtime');
+  await fs.mkdir(runtime, { recursive: true });
+  for (const name of ['package.json', 'package-lock.json']) await fs.copyFile(path.join(root, name), path.join(runtime, name));
+  await npm(['ci', '--prefix', runtime, '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund']);
+  return runtime;
+}

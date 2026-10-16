@@ -280,8 +280,8 @@ export async function requestGeneration(
             prompt: withSystemPrompt(config, prompt),
             params: buildNormalizedTaskParams(config, settings),
             inputImageDataUrls: [],
-            imageTask,
-            onImageTaskCreated: onTaskCreated,
+            imageTask: taskReference ? { ...taskReference, recoverOnly: true } : imageTask,
+            onImageTaskCreated: async task => { await onTaskCreated?.(task); await flushCanvasStorePersistence(); },
         });
         refreshRemoteUser(config);
         return toCanvasImages(result.images);
@@ -314,7 +314,7 @@ export async function requestEdit(
             await flushCanvasStorePersistence();
         }
         // 续查只需要任务凭据，不重新解析已经删除的本地图片和遮罩。
-        const resumingTask = hasImageTaskCredentials(imageTask);
+        const resumingTask = Boolean(taskReference);
         const inputImageDataUrls = resumingTask ? [] : (
             await Promise.all(
                 references.map(async (image) => {
@@ -333,8 +333,8 @@ export async function requestEdit(
             params: buildNormalizedTaskParams(config, settings, inputImageDataUrls.length > 0),
             inputImageDataUrls,
             maskDataUrl,
-            imageTask,
-            onImageTaskCreated: onTaskCreated,
+            imageTask: taskReference ? { ...taskReference, recoverOnly: true } : imageTask,
+            onImageTaskCreated: async task => { await onTaskCreated?.(task); await flushCanvasStorePersistence(); },
         });
         refreshRemoteUser(config);
         return toCanvasImages(result.images);

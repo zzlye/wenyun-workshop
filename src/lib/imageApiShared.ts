@@ -1,4 +1,5 @@
 import type { AppSettings, TaskParams } from '../types'
+import type { ImageTaskReference } from './imageTasks'
 import { getLockedAssetProxyUrl } from './devProxy'
 import { normalizeImageSize } from './size'
 import { fetchResultResponse, isTransientResultError } from './resultRequest'
@@ -28,13 +29,9 @@ export interface CallApiOptions {
   onFalRequestEnqueued?: (request: { requestId: string; endpoint: string }) => void
   onCustomTaskEnqueued?: (task: { taskId: string }) => void
   /** 文运站异步图片任务凭据，用于刷新恢复和幂等续查 */
-  imageTask?: {
-    taskId: string
-    accessToken: string
-    idempotencyKey: string
-  }
+  imageTask?: ImageTaskReference
   /** 服务端创建文运站异步图片任务后立即回传凭据 */
-  onImageTaskCreated?: (task: { taskId: string; accessToken: string; idempotencyKey: string }) => void
+  onImageTaskCreated?: (task: ImageTaskReference) => void | Promise<void>
   onPartialImage?: (partial: { image: string; partialImageIndex?: number; requestIndex?: number }) => void
 }
 

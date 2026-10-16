@@ -21,6 +21,12 @@ beforeEach(() => {
 });
 
 describe("统一视频请求协议", () => {
+    it.each([401, 403, 404, 410])("已受理视频查询永久错误 %s 不无限转圈、不重新生成", async status => {
+        (axios.get as Mock).mockRejectedValueOnce({ isAxiosError: true, response: { status, data: { error: { message: "任务无法读取" } } } });
+        await expect(requestVideoGeneration(config, "", [], [], [], { taskId: "async_gone" })).rejects.toThrow("任务无法读取");
+        expect(axios.post).not.toHaveBeenCalled();
+        expect(axios.get).toHaveBeenCalledTimes(1);
+    });
     it("后台任务先返回编号，暂时查询失败后继续查询并下载已保存视频", async () => {
         const onCreated = vi.fn();
         (axios.post as Mock).mockResolvedValueOnce({ data: { id: "async_saved", status: "pending", poll_url: "/v1/tasks/async_saved" } });

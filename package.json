@@ -24,7 +24,7 @@
     "test": "vitest run --exclude canvas-agent/** --exclude desktop/**",
     "test:watch": "vitest --exclude canvas-agent/** --exclude desktop/**",
     "bench:canvas": "vitest bench --run",
-    "test:tasks": "node --test server/image-tasks.node-test.mjs"
+    "test:tasks": "node --test server/*.node-test.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.2.5",

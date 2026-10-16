@@ -9,6 +9,7 @@ import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceAudio, ReferenceImage, ReferenceVideo } from "@/types/image";
 import { buildApiUrl as buildDevApiUrl, getLockedAssetProxyUrl, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from "../../../lib/devProxy";
 import { sanitizeApiErrorMessage } from "../../../lib/imageApiShared";
+import { flushCanvasStorePersistence } from "../../app/(user)/canvas/stores/use-canvas-store";
 import {
     CANVAS_VIDEO_BASE_URL,
     CANVAS_VIDEO_TIMEOUT,
@@ -70,14 +71,18 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
         // 恢复已有任务只查询编号，不重新读取可能已经移除的本地素材。
         const created = taskReference?.taskId ? { id: taskReference.taskId, status: "processing" } : unwrapVideoTask(await createVideoTask(source, await buildCanvasVideoPayload(config, prompt, references, audioReferences, videoReferences)));
         activeTaskId = created.id;
-        if (!taskReference?.taskId && created.id) onTaskCreated?.({ taskId: created.id });
+        if (!taskReference?.taskId && created.id) {
+            onTaskCreated?.({ taskId: created.id });
+            await flushCanvasStorePersistence();
+        }
         const result = await waitForVideoResult(source, created, () => onTaskCreated?.({ taskId: created.id, phase: "downloading" }));
         onTaskCreated?.({ taskId: created.id, phase: "saving" });
         refreshRemoteUser(config);
         return result;
     } catch (error) {
         if (error instanceof VideoTaskPendingError) throw error;
-        if (activeTaskId && !(error instanceof VideoTaskFailedError)) throw new VideoTaskPendingError(activeTaskId, `任务已保存，等待继续查询：${readAxiosError(error, "查询暂时中断")}`);
+        const permanentHttpError = axios.isAxiosError(error) && [400, 401, 403, 404, 410, 422].includes(error.response?.status);
+        if (activeTaskId && !(error instanceof VideoTaskFailedError) && !permanentHttpError) throw new VideoTaskPendingError(activeTaskId, `任务已保存，等待继续查询：${readAxiosError(error, "查询暂时中断")}`);
         throw new Error(readAxiosError(error, "视频生成失败"));
     }
 }

@@ -1,9 +1,11 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import { pathToFileURL } from 'node:url'
-import { pollMidjourneyTask } from './midjourney.mjs'
+import { finishGatewayTask, gatewayEndpoint, readGatewayTask } from './gateway-task.mjs'
+import { createTaskJournal } from './task-journal.mjs'
 
-const ALLOWED_ENDPOINTS = new Set(['/images/generations', '/images/edits', '/midjourney/generations'])
+const ALLOWED_ENDPOINTS = new Set(['/images/generations', '/images/edits', '/midjourney/generations', '/responses'])
+const isAllowedEndpoint = value => ALLOWED_ENDPOINTS.has(value) || /^\/v1beta\/models\/[a-zA-Z0-9._%-]+:generateContent$/.test(value)
 const BLOCKED_REQUEST_HEADERS = new Set([
   'accept-encoding',
   'connection',
@@ -221,7 +223,9 @@ export function createImageTaskServer(options = {}) {
   const timeoutMs = options.timeoutMs ?? Number(process.env.IMAGE_TASK_TIMEOUT_MS || DEFAULT_TIMEOUT_MS)
   const cleanupIntervalMs = options.cleanupIntervalMs ?? Number(process.env.IMAGE_TASK_CLEANUP_INTERVAL_MS || DEFAULT_CLEANUP_INTERVAL_MS)
   const logger = options.logger ?? defaultLogger
-  const midjourneyPollIntervalMs = options.midjourneyPollIntervalMs ?? 3_000
+  const pollIntervalMs = options.pollIntervalMs ?? options.midjourneyPollIntervalMs ?? 5_000
+  const journal = createTaskJournal(options.storageDirectory ?? process.env.IMAGE_TASK_STORAGE_DIR, options.journalCodec)
+  let stopping = false
   const tasks = new Map()
   const idempotencyTasks = new Map()
   const activeControllers = new Set()
@@ -229,8 +233,9 @@ export function createImageTaskServer(options = {}) {
   const cleanupExpiredTasks = () => {
     const now = Date.now()
     for (const [taskId, task] of tasks) {
-      if (task.endpoint === '/midjourney/generations' && (task.status === 'pending' || task.status === 'running')) continue
+      if (task.status === 'pending' || task.status === 'running') continue
       if (task.expiresAt > now) continue
+      try { journal?.remove(task) } catch { logger({ taskId, status: 'storage_cleanup_failed' }); continue }
       tasks.delete(taskId)
       if (task.idempotencyScope && idempotencyTasks.get(task.idempotencyScope)?.taskId === taskId) {
         idempotencyTasks.delete(task.idempotencyScope)
@@ -238,8 +243,7 @@ export function createImageTaskServer(options = {}) {
     }
     for (const [key, entry] of idempotencyTasks) {
       const task = tasks.get(entry.taskId)
-      const polling = task?.endpoint === '/midjourney/generations' && (task.status === 'pending' || task.status === 'running')
-      if (!task || (!polling && entry.expiresAt <= now)) idempotencyTasks.delete(key)
+      if (!task) idempotencyTasks.delete(key)
     }
   }
 
@@ -264,23 +268,30 @@ export function createImageTaskServer(options = {}) {
 
     try {
       log('upstream_started')
-      let upstreamResponse = await fetch(`${upstreamBaseUrl}${task.endpoint}`, {
-        method: 'POST',
-        headers: task.headers,
-        body: task.requestBody,
-        cache: 'no-store',
-        signal: abortController.signal,
-      })
-      upstreamStatus = upstreamResponse.status
-      upstreamContentLength = upstreamResponse.headers.get('content-length') || undefined
-      upstreamContentEncoding = upstreamResponse.headers.get('content-encoding') || 'identity'
-      let responseBody = await readResponseBody(upstreamResponse, maxResponseBodyBytes)
-      // 提交已完成，长时间轮询期间不继续占用参考图请求体。
-      task.requestBody = null
-      if (task.endpoint === '/midjourney/generations' && upstreamResponse.ok) {
-        const result = await pollMidjourneyTask({ response: upstreamResponse, body: responseBody, baseUrl: upstreamBaseUrl, headers: task.headers, signal: abortController.signal, readBody: response => readResponseBody(response, maxResponseBodyBytes), pollIntervalMs: midjourneyPollIntervalMs,
-          // 上游受理后生成时长由任务终态决定，不再把长时间排队判为失败。
-          onAccepted: () => clearTimeout(timeoutTimer),
+      let upstreamResponse
+      let responseBody
+      if (!task.gateway) {
+        // 即使浏览器关闭，生成也由网关异步处理；这里只提交一次。
+        const headers = new Headers(task.headers)
+        headers.set('Prefer', 'respond-async')
+        upstreamResponse = await fetch(gatewayEndpoint(upstreamBaseUrl, task.endpoint), {
+          method: 'POST', headers, body: task.requestBody, cache: 'no-store', signal: abortController.signal,
+        })
+        upstreamStatus = upstreamResponse.status
+        upstreamContentLength = upstreamResponse.headers.get('content-length') || undefined
+        upstreamContentEncoding = upstreamResponse.headers.get('content-encoding') || 'identity'
+        responseBody = await readResponseBody(upstreamResponse, maxResponseBodyBytes)
+        task.requestBody = null
+      }
+      const accepted = task.gateway || (upstreamResponse.ok && readGatewayTask(responseBody, upstreamResponse))
+      if (!accepted && upstreamResponse.status === 202) throw new Error('上游受理响应缺少任务编号')
+      if (accepted) {
+        // 已受理任务不受浏览器生成超时影响；每次查询有独立超时。
+        clearTimeout(timeoutTimer)
+        const result = await finishGatewayTask({ task, response: upstreamResponse, body: responseBody,
+          baseUrl: upstreamBaseUrl, headers: task.headers, signal: abortController.signal,
+          readBody: response => readResponseBody(response, maxResponseBodyBytes),
+          checkpoint: async () => { await journal?.save(task) }, pollIntervalMs,
         })
         upstreamResponse = result.response
         responseBody = result.body
@@ -295,6 +306,7 @@ export function createImageTaskServer(options = {}) {
       // 请求数据在上游接收后不再需要，及时释放参考图和提示词占用的内存。
       task.requestBody = null
       task.headers = null
+      await journal?.save(task)
       log('upstream_completed', {
         upstreamStatus,
         upstreamContentLength,
@@ -302,6 +314,8 @@ export function createImageTaskServer(options = {}) {
         bytes: responseBody.byteLength,
       })
     } catch (error) {
+      // 停机只停止本机查询，保留已受理编号供下次启动续查。
+      if (stopping && task.gateway) return
       const timedOut = abortController.signal.aborted
       const message = timedOut
         ? '图片生成超过总时间限制'
@@ -317,6 +331,7 @@ export function createImageTaskServer(options = {}) {
       task.expiresAt = task.finishedAt + taskTtlMs
       task.requestBody = null
       task.headers = null
+      try { await journal?.save(task) } catch { log('storage_failed') }
       log(timedOut ? 'upstream_timeout' : 'upstream_failed', {
         error: message.slice(0, 160),
         upstreamStatus,
@@ -326,12 +341,30 @@ export function createImageTaskServer(options = {}) {
       })
     } finally {
       // 长任务完成后仍保留完整认领窗口，防止旧幂等键立即过期而重复收费。
-      if (task.endpoint === '/midjourney/generations') {
+      if (task.finishedAt) {
         const entry = idempotencyTasks.get(task.idempotencyScope)
         if (entry?.taskId === task.id) entry.expiresAt = task.finishedAt + idempotencyTtlMs
       }
       clearTimeout(timeoutTimer)
       activeControllers.delete(abortController)
+    }
+  }
+
+  // 启动时恢复任务，不读取或重发历史请求体。
+  for (const task of journal?.load() || []) {
+    tasks.set(task.id, task)
+    idempotencyTasks.set(task.idempotencyScope, { taskId: task.id, expiresAt: task.expiresAt })
+    if (task.status === 'pending' || task.status === 'running') {
+      if (task.gateway && task.headers) {
+        void runTask(task).catch(() => { logger({ taskId: task.id, status: 'recovery_failed' }) })
+      } else {
+        task.status = 'failed'
+        task.error = { kind: 'submission_unknown', message: '提交结果未确认，请先核对任务记录，不能自动重新生成' }
+        task.finishedAt = Date.now()
+        task.expiresAt = task.finishedAt + taskTtlMs
+        task.headers = null
+        void journal.save(task).catch(() => { logger({ taskId: task.id, status: 'storage_failed' }) })
+      }
     }
   }
 
@@ -349,6 +382,14 @@ export function createImageTaskServer(options = {}) {
       return
     }
 
+    if (request.method === 'GET' && requestUrl.pathname === '/image-tasks/recover') {
+      const key = normalizeIdempotencyKey(request.headers['x-wenyun-idempotency-key'])
+      const task = key ? [...tasks.values()].find(item => item.idempotencyScope === createIdempotencyScope(request, item.endpoint, key)) : null
+      if (!task) { sendJson(response, 404, { error: { message: '未找到已受理任务，不能自动重新生成，请先核对任务记录' } }); return }
+      sendJson(response, 200, { ...createTaskSnapshot(task), accessToken: task.accessToken, reused: true })
+      return
+    }
+
     if (request.method === 'POST' && requestUrl.pathname === '/image-tasks') {
       if (request.headers['x-wenyun-task-client-version'] !== REQUIRED_CLIENT_VERSION) {
         request.resume()
@@ -358,7 +399,7 @@ export function createImageTaskServer(options = {}) {
       }
 
       const endpoint = requestUrl.searchParams.get('endpoint') || ''
-      if (!ALLOWED_ENDPOINTS.has(endpoint)) {
+      if (!isAllowedEndpoint(endpoint)) {
         sendJson(response, 400, { error: { message: '图片任务接口不支持该上游路径' } })
         return
       }
@@ -372,8 +413,8 @@ export function createImageTaskServer(options = {}) {
       const idempotencyScope = createIdempotencyScope(request, endpoint, idempotencyKey)
       const existingEntry = idempotencyTasks.get(idempotencyScope)
       const candidate = existingEntry ? tasks.get(existingEntry.taskId) : null
-      const activeMidjourney = candidate?.endpoint === '/midjourney/generations' && (candidate.status === 'pending' || candidate.status === 'running')
-      const existingTask = existingEntry && (existingEntry.expiresAt > Date.now() || activeMidjourney) ? candidate : null
+      // 结果仍在保留期内就复用记录，不因较短的幂等期限重新收费。
+      const existingTask = candidate
       if (existingTask) {
         request.resume()
         sendJson(response, 202, {
@@ -411,7 +452,8 @@ export function createImageTaskServer(options = {}) {
       try {
         task.requestBody = await readBody(request, maxRequestBodyBytes)
         task.headers = createUpstreamHeaders(request.headers)
-        void runTask(task)
+        await journal?.save(task)
+        void runTask(task).catch(() => { /* 落盘故障保留已占用幂等键，不再次提交。 */ })
         sendJson(response, 202, {
           ...createTaskSnapshot(task),
           accessToken,
@@ -426,6 +468,7 @@ export function createImageTaskServer(options = {}) {
         task.expiresAt = task.finishedAt + taskTtlMs
         task.requestBody = null
         task.headers = null
+        try { await journal?.save(task) } catch { logger({ taskId, status: 'storage_failed' }) }
         sendJson(response, statusCode, { error: { message } })
       }
       return
@@ -466,8 +509,10 @@ export function createImageTaskServer(options = {}) {
         'X-Wenyun-Upstream-Status': String(metadata?.status || 200),
         'X-Wenyun-Upstream-Status-Text': encodeURIComponent(metadata?.statusText || ''),
       }
+      let body
+      try { body = task.responseBody ?? await journal?.read(task) } catch { sendJson(response, 410, { error: { message: '任务结果文件已不可用' } }); return }
       response.writeHead(200, headers)
-      response.end(task.responseBody, () => {
+      response.end(body, () => {
         // 记录完整读取时间，但继续遵循任务原有保留期，给刷新恢复留足窗口。
         task.resultReadAt = Date.now()
       })
@@ -480,6 +525,7 @@ export function createImageTaskServer(options = {}) {
         sendJson(response, 409, { error: { message: '图片任务正在处理中，当前只停止前端查询' } })
         return
       }
+      try { journal?.remove(task) } catch { sendJson(response, 503, { error: { message: '暂时无法清理任务记录' } }); return }
       tasks.delete(task.id)
       if (idempotencyTasks.get(task.idempotencyScope)?.taskId === task.id) idempotencyTasks.delete(task.idempotencyScope)
       sendEmpty(response, 204)
@@ -489,7 +535,9 @@ export function createImageTaskServer(options = {}) {
     sendJson(response, 405, { error: { message: 'Method Not Allowed' } }, { Allow: 'GET, DELETE, OPTIONS' })
   })
 
+  server.stopTasks = () => { stopping = true; for (const controller of activeControllers) controller.abort() }
   server.once('close', () => {
+    server.stopTasks()
     clearInterval(cleanupTimer)
     for (const controller of activeControllers) controller.abort()
   })
@@ -504,6 +552,7 @@ if (isDirectRun()) {
   const port = Number(process.env.IMAGE_TASK_PORT || 8787)
   const host = process.env.IMAGE_TASK_HOST || '127.0.0.1'
   const server = createImageTaskServer()
+  for (const name of ['SIGTERM', 'SIGINT']) process.once(name, () => { server.stopTasks(); server.close(); server.closeAllConnections() })
   server.listen(port, host, () => {
     process.stdout.write(`[image-tasks] listening on ${host}:${port}\n`)
   })

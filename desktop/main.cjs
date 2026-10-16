@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, protocol, net, ipcMain, shell, dialog, safeStorage } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { createDesktopUpdater } = require('./updates.cjs');
 const { DiskStore } = require('./storage.cjs');
 const { DataDirectoryManager } = require('./data-directory.cjs');
 const { AgentRuntime } = require('./agent-runtime.cjs');
@@ -19,6 +20,7 @@ let closing = false;
 let allowClose = false;
 let closeRequest = null;
 let changingDirectory = false;
+let updater;
 
 function checkSender(event) {
   if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !isAppDocumentUrl(event.senderFrame.url)) throw new Error('不允许的桌面操作来源');
@@ -64,7 +66,7 @@ async function openPayment(order) {
   }
 }
 
-async function prepareClose() {
+async function prepareClose(installUpdate) {
   if (closing) return;
   closing = true;
   const result = await new Promise((resolve) => {
@@ -75,6 +77,12 @@ async function prepareClose() {
   });
   let error = result?.error;
   try { await store.flush(); } catch (cause) { error = cause.message; }
+  // 更新不得通过“仍然退出”强行中断正在生成或尚未保存的工作。
+  if (installUpdate && (error || result?.busy)) {
+    await dialog.showMessageBox(window, { type: 'info', title: '暂不能安装更新', message: error || '请等待当前任务完成后再安装更新。', buttons: ['确定'] });
+    closing = false;
+    return;
+  }
   if (error || result?.busy) {
     const answer = await dialog.showMessageBox(window, {
       type: 'warning', title: '退出西米露',
@@ -86,8 +94,11 @@ async function prepareClose() {
   }
   allowClose = true;
   await agent.stop();
+  taskServer?.stopTasks();
   taskServer?.closeAllConnections();
   taskServer?.close();
+  updater?.dispose();
+  if (installUpdate) { installUpdate(); return; }
   window.destroy();
   app.quit();
 }
@@ -120,7 +131,16 @@ async function start() {
   agent = new AgentRuntime({ home: path.join(profileRoot, 'canvas-agent'), runtimeRoot });
   const serverFile = app.isPackaged ? path.join(process.resourcesPath, 'server/image-tasks.mjs') : path.join(__dirname, '../server/image-tasks.mjs');
   const { createImageTaskServer } = await import(pathToFileURL(serverFile).href);
-  taskServer = createImageTaskServer({ upstreamBaseUrl: 'https://api.zzlye.xyz/v1' });
+  taskServer = createImageTaskServer({
+    upstreamBaseUrl: 'https://api.zzlye.xyz/v1',
+    storageDirectory: path.join(profileRoot, 'image-tasks'),
+    // 本机保存续查凭据时使用系统加密，安装升级不会抹掉未完成任务。
+    journalCodec: {
+      encode: value => safeStorage.encryptString(value.toString()),
+      decode: value => Buffer.from(safeStorage.decryptString(value)),
+    },
+    taskTtlMs: 24 * 60 * 60 * 1000,
+  });
   await new Promise((resolve, reject) => { taskServer.once('error', reject); taskServer.listen(0, '127.0.0.1', resolve); });
   protocol.handle('wenyun', createProtocolHandler({
     webRoot: app.isPackaged ? path.join(__dirname, 'web') : (process.env.WENYUN_DESKTOP_WEB_ROOT || path.join(__dirname, 'web')),
@@ -128,6 +148,7 @@ async function start() {
     fetch: (url, options) => net.fetch(url, options),
   }));
 
+  handle('desktop:check-updates', () => updater?.check(true));
   handle('desktop:info', () => ({ version: app.getVersion(), dataDirectory: store.root }));
   handle('desktop:open-data', async () => { const error = await shell.openPath(store.root); if (error) throw new Error('数据目录无法打开'); });
   handle('desktop:change-data', async () => {
@@ -167,9 +188,13 @@ async function start() {
     show: false, backgroundColor: '#ffffff', autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true },
   });
+  updater = app.isPackaged
+    ? createDesktopUpdater({ autoUpdater: require('electron-updater').autoUpdater, enabled: true, dialog, getWindow: () => window, install: prepareClose })
+    : { check: () => dialog.showMessageBox(window, { message: '请使用安装版检查更新', buttons: ['确定'] }), dispose() {} };
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: '文件', submenu: [{ label: '打开数据目录', click: () => { void shell.openPath(store.root); } }, { type: 'separator' }, { label: '退出', accelerator: 'Alt+F4', click: () => window.close() }] },
     { label: '编辑', submenu: [{ role: 'undo', label: '撤销' }, { role: 'redo', label: '重做' }, { type: 'separator' }, { role: 'cut', label: '剪切' }, { role: 'copy', label: '复制' }, { role: 'paste', label: '粘贴' }, { role: 'selectAll', label: '全选' }] },
+    { label: '帮助', submenu: [{ label: '检查更新', click: () => { void updater.check(true); } }] },
     { label: '视图', submenu: [{ role: 'resetZoom', label: '实际大小' }, { role: 'zoomIn', label: '放大' }, { role: 'zoomOut', label: '缩小' }, { type: 'separator' }, { role: 'togglefullscreen', label: '全屏' }] },
   ]));
   window.webContents.setWindowOpenHandler(({ url }) => { void openExternal(url); return { action: 'deny' }; });
@@ -201,6 +226,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => app.quit());
   app.whenReady().then(start).catch(async (error) => {
     await agent?.stop();
+    taskServer?.stopTasks();
     taskServer?.closeAllConnections();
     taskServer?.close();
     dialog.showErrorBox('西米露启动失败', error.message);

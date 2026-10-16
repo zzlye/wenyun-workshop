@@ -13,7 +13,7 @@ export async function callMidjourneyImageApi(opts: CallApiOptions, profile: ApiP
   const proxy = readClientDevProxyConfig()
   const useProxy = shouldUseApiProxyForBaseUrl(profile.apiProxy, profile.baseUrl, proxy)
   const headers = { Authorization: `Bearer ${profile.apiKey}`, 'Content-Type': 'application/json' }
-  const resuming = hasImageTaskCredentials(opts.imageTask)
+  const resuming = hasImageTaskCredentials(opts.imageTask) || Boolean(opts.imageTask?.recoverOnly)
   // 续查不再读取或校验原图，也不重建付费请求；最终结果仍使用 Midjourney 解析器。
   const body = resuming ? undefined : JSON.stringify(buildMidjourneyRequest(profile.model, opts.prompt, opts.params, opts.inputImageDataUrls, opts.maskDataUrl))
   if (body) assertImageInputPayloadSize(new TextEncoder().encode(body).byteLength)

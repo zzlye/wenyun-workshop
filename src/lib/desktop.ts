@@ -4,6 +4,7 @@ export type DesktopScope = 'tasks' | 'images' | 'thumbnails' | 'agentConversatio
 
 export interface DesktopBridge {
   version: number
+  checkForUpdates?(): Promise<void>
   info(): Promise<{ version: string; dataDirectory: string }>
   openDataDirectory(): Promise<void>
   changeDataDirectory(): Promise<{ dataDirectory: string } | null>

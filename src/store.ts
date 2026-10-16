@@ -1623,7 +1623,7 @@ function isRunningOpenAITask(task: TaskRecord) {
 }
 
 function getStoredImageTaskReference(task: TaskRecord): ImageTaskReference | null {
-  // 只要幂等键已经落盘，就可以用同一个键重新认领任务；服务端会复用已创建的任务，避免刷新窗口造成重复生成。
+  // 幂等键只能用于只读认领；不存在的任务必须停止恢复，不能再 POST。
   const idempotencyKey = task.imageTaskIdempotencyKey?.trim()
   if (!idempotencyKey) return null
   return {
@@ -1634,7 +1634,7 @@ function getStoredImageTaskReference(task: TaskRecord): ImageTaskReference | nul
 }
 
 export function shouldRecoverImageTask(task: TaskRecord): boolean {
-  // 失败和完成任务都是终态；运行任务即使只有幂等键，也能通过创建接口重新认领。
+  // 失败和完成任务都是终态；只有幂等键的运行任务通过 GET 认领。
   return task.status === 'running' && getStoredImageTaskReference(task) !== null
 }
 
@@ -1955,27 +1955,16 @@ async function recoverImageTask(taskId: string) {
   try {
     const activeProfile = getEffectiveImageApiProfile(settings, taskProfile)
     const requestSettings = createSettingsForApiProfile(settings, activeProfile)
+    // 恢复只读任务，不依赖本地参考图、遮罩或原始提示词。
     const inputDataUrls: string[] = []
-    for (const imageId of hasImageTaskCredentials(reference) ? [] : task.inputImageIds) {
-      const dataUrl = await ensureImageCached(imageId)
-      if (!dataUrl) throw new Error('输入图片已不存在')
-      inputDataUrls.push(dataUrl)
-    }
-    let maskDataUrl: string | undefined
-    if (!hasImageTaskCredentials(reference) && task.maskImageId) {
-      maskDataUrl = await ensureImageCached(task.maskImageId)
-      if (!maskDataUrl) throw new Error('遮罩图片已不存在')
-    }
-
     const result = await callImageApi({
       settings: requestSettings,
       prompt: replaceImageMentionsForApi(task.prompt, inputDataUrls.length),
       params: task.params,
       inputImageDataUrls: inputDataUrls,
-      maskDataUrl,
-      imageTask: reference,
-      onImageTaskCreated: (request) => {
-        updateTaskInStore(taskId, {
+      imageTask: { ...reference, recoverOnly: true },
+      onImageTaskCreated: async (request) => {
+        await updateTaskInStore(taskId, {
           imageTaskId: request.taskId,
           imageTaskAccessToken: request.accessToken,
           imageTaskIdempotencyKey: request.idempotencyKey,
@@ -4048,8 +4037,8 @@ async function executeTask(taskId: string) {
       imageTask: storedImageTask ?? undefined,
       // 生成已返回后，由结果读取层管理超时；并发子请求仍各自保留生成超时。
       onResultReceived: () => clearOpenAIWatchdogTimer(taskId),
-      onImageTaskCreated: (request) => {
-        updateTaskInStore(taskId, {
+      onImageTaskCreated: async (request) => {
+        await updateTaskInStore(taskId, {
           imageTaskId: request.taskId,
           imageTaskAccessToken: request.accessToken,
           imageTaskIdempotencyKey: request.idempotencyKey,

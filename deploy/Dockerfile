@@ -31,7 +31,9 @@ ENV IMAGE_TASK_HOST=127.0.0.1
 ENV IMAGE_TASK_PORT=8787
 ENV IMAGE_TASK_UPSTREAM=http://new-api:3000/v1
 ENV IMAGE_TASK_TIMEOUT_MS=900000
-ENV IMAGE_TASK_TTL_MS=1800000
+ENV IMAGE_TASK_TTL_MS=86400000
+ENV IMAGE_TASK_STORAGE_DIR=/var/lib/wenyun/tasks
+VOLUME /var/lib/wenyun/tasks
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY deploy/nginx.conf /etc/nginx/templates/default.conf.template
@@ -40,6 +42,7 @@ COPY --chmod=755 deploy/inject-api-url.sh /docker-entrypoint.d/40-inject-api-url
 # 图片任务服务依赖轮询模块，构建时验证运行镜像可加载完整服务。
 COPY server/image-tasks.mjs /opt/wenyun/image-tasks.mjs
 COPY server/midjourney.mjs /opt/wenyun/midjourney.mjs
+COPY server/gateway-task.mjs server/task-journal.mjs /opt/wenyun/
 RUN node --input-type=module -e "import('/opt/wenyun/image-tasks.mjs')"
 COPY --chmod=755 deploy/start-services.sh /opt/wenyun/start-services.sh
 

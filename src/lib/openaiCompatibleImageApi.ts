@@ -321,13 +321,17 @@ async function callGeminiImageApiSingle(opts: CallApiOptions, profile: ApiProfil
   const timeoutId = setTimeout(() => controller.abort(), timeoutSeconds * 1000)
 
   try {
-    const response = await fetch(buildGeminiGenerateContentUrl(profile, proxyConfig, useApiProxy), {
+    const init: RequestInit = {
       method: 'POST',
       headers: createGeminiRequestHeaders(profile),
       cache: 'no-store',
       body: JSON.stringify(createGeminiRequestBody(opts, profile)),
       signal: controller.signal,
-    })
+    }
+    const useTasks = hasImageTaskCredentials(opts.imageTask) || opts.imageTask?.recoverOnly || shouldUseImageTasks(profile.baseUrl)
+    const response = useTasks
+      ? await fetchImageTask(`v1beta/models/${encodeURIComponent(getFixedImageRequestModel(profile.model))}:generateContent`, init, { timeoutMs: timeoutSeconds * 1000, reference: opts.imageTask, onCreated: opts.onImageTaskCreated })
+      : await fetch(buildGeminiGenerateContentUrl(profile, proxyConfig, useApiProxy), init)
 
     if (!response.ok) {
       const error = new Error(await getApiErrorMessage(response))
@@ -836,10 +840,12 @@ async function parseResponsesApiStreamResponse(
 
 export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile: ApiProfile, customProvider?: CustomProviderDefinition | null): Promise<CallApiResult> {
   if (isMidjourneyModel(profile.model)) return callMidjourneyImageApi(opts, profile)
-  // 已保存的任务只查询原任务，不再次发起生成。
-  if (hasImageTaskCredentials(opts.imageTask)) return callImagesApi(opts, profile)
   // 香蕉模型固定使用 Gemini，旧配置中的协议选择不影响主页和画布请求。
   if (isBananaImageModel(profile.model)) return callGeminiImageApi(opts, profile)
+  // 恢复时保留原协议解析器，不能把 Gemini 或 Responses 的结果误当成 data 数组。
+  if (hasImageTaskCredentials(opts.imageTask) || opts.imageTask?.recoverOnly) {
+    return callOpenAIImageApi(opts, profile)
+  }
   if (customProvider) {
     return callCustomHttpImageApi(opts, profile, customProvider)
   }
@@ -929,7 +935,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
   const proxyConfig = readClientDevProxyConfig()
   const isLockedImageApi = isLockedApiProxyTarget(profile.baseUrl)
   const usesOfficialImageParams = supportsTransparentImageBackground(profile.model)
-  const useImageTasks = hasImageTaskCredentials(opts.imageTask) || (Boolean(opts.imageTask) && shouldUseImageTasks(profile.baseUrl))
+  const useImageTasks = hasImageTaskCredentials(opts.imageTask) || Boolean(opts.imageTask?.recoverOnly) || shouldUseImageTasks(profile.baseUrl)
   // 文运站使用短轮询异步任务；其他内置站点和自定义接口继续保持原路径。
   const useApiProxy = shouldUseApiProxyForBaseUrl(profile.apiProxy, profile.baseUrl, proxyConfig) && !isLockedImageApi
   const requestHeaders = createRequestHeaders(profile)
@@ -1466,7 +1472,7 @@ async function callResponsesImageApiSingle(opts: CallApiOptions, profile: ApiPro
       body.stream = true
     }
 
-    const response = await fetch(buildApiUrl(profile.baseUrl, 'responses', proxyConfig, useApiProxy), {
+    const init: RequestInit = {
       method: 'POST',
       headers: {
         ...requestHeaders,
@@ -1475,11 +1481,16 @@ async function callResponsesImageApiSingle(opts: CallApiOptions, profile: ApiPro
       cache: 'no-store',
       body: JSON.stringify(body),
       signal: controller.signal,
-    })
+    }
+    const response = hasImageTaskCredentials(opts.imageTask) || opts.imageTask?.recoverOnly || shouldUseImageTasks(profile.baseUrl)
+      ? await fetchImageTask('responses', init, { timeoutMs: timeoutSeconds * 1000, reference: opts.imageTask, onCreated: opts.onImageTaskCreated })
+      : await fetch(buildApiUrl(profile.baseUrl, 'responses', proxyConfig, useApiProxy), init)
 
     if (!response.ok) {
       throw new Error(await getApiErrorMessage(response))
     }
+    clearTimeout(timeoutId)
+    opts.onResultReceived?.()
 
     if (isEventStreamResponse(response)) {
       return await parseResponsesApiStreamResponse(response, mime, opts.onPartialImage)

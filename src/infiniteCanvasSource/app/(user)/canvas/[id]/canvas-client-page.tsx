@@ -593,7 +593,7 @@ function InfiniteCanvasPage() {
                 };
                 const requestPrompt = (metadata.generationPrompt || metadata.prompt || "").trim();
                 // 服务端收到请求后，提示词及参考图只属于历史记录，不再作为续查前置条件。
-                const resumingTask = hasImageTaskCredentials(taskReference);
+                const resumingTask = Boolean(taskReference);
                 if (!resumingTask && !requestPrompt) throw new Error("恢复图片任务时找不到提示词");
                 const references = !resumingTask && metadata.generationType === "edit" ? await resolveMetadataReferences(metadata) : [];
                 if (!resumingTask && metadata.generationType === "edit" && !references) throw new Error("恢复图片任务时参考图片已不存在");

@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 // 只暴露固定操作，不把 ipcRenderer、文件路径读写或命令执行能力交给页面。
 contextBridge.exposeInMainWorld('wenyunDesktop', {
   version: 1,
+  checkForUpdates: () => ipcRenderer.invoke('desktop:check-updates'),
   info: () => ipcRenderer.invoke('desktop:info'),
   openDataDirectory: () => ipcRenderer.invoke('desktop:open-data'),
   changeDataDirectory: () => ipcRenderer.invoke('desktop:change-data'),

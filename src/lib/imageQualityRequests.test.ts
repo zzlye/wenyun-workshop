@@ -20,7 +20,7 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
 
 describe('图片品质从界面参数到出站请求保持一致', () => {
   it.each(cases)('$model $quality $profileId edit=$edit task=$asyncTask', async ({ model, quality, profileId, edit, asyncTask }) => {
-    vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'enabled')
+    vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', asyncTask ? 'enabled' : 'disabled')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
       if (url.startsWith('data:')) return originalFetch(input, init)

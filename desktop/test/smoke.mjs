@@ -18,7 +18,22 @@ if (sourceMode) env.WENYUN_DESKTOP_WEB_ROOT = 'D:/tmp/wenyun-desktop/web-qa';
 const errors = [];
 let app;
 let page;
+let imageTask;
+let imagePosts = 0;
 const server = http.createServer(async (request, response) => {
+  if (request.url === '/v1/images/generations') {
+    for await (const _chunk of request) { /* 本机模拟生成，不发送付费请求。 */ }
+    imagePosts++;
+    assert.equal(request.headers.prefer, 'respond-async');
+    response.writeHead(202, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ task_id: 'async_desktop_smoke', status: 'pending' }));
+    return;
+  }
+  if (request.url === '/v1/tasks/async_desktop_smoke') {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ task_id: 'async_desktop_smoke', status: 'succeeded', response_status_code: 200, result: { data: [{ b64_json: 'b2s=' }] } }));
+    return;
+  }
   if (request.url === '/range') {
     response.writeHead(206, { 'content-type': 'video/mp4', 'content-range': 'bytes 0-2/6' });
     response.end(Buffer.from([1, 2, 3]));
@@ -56,6 +71,37 @@ try {
   console.log('首次启动：通过');
   assert.equal(await page.evaluate(() => typeof window.require), 'undefined');
   assert.equal((await page.evaluate(() => window.wenyunDesktop.info())).version, '0.4.13');
+  assert.equal(await page.evaluate(() => typeof window.wenyunDesktop.checkForUpdates), 'function');
+  // 仅在测试进程拦截任务上游，验证安装包内真实任务服务与桌面协议桥。
+  await app.evaluate((_electron, port) => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (input, init) => {
+      const url = new URL(String(input));
+      if (url.hostname === 'api.zzlye.xyz' && (url.pathname === '/v1/images/generations' || url.pathname === '/v1/tasks/async_desktop_smoke')) {
+        return original(`http://127.0.0.1:${port}${url.pathname}`, init);
+      }
+      return original(input, init);
+    };
+  }, server.address().port);
+  imageTask = await page.evaluate(async () => {
+    const response = await fetch('/image-tasks?endpoint=/images/generations', {
+      method: 'POST', headers: { Authorization: 'Bearer smoke-task-secret', 'content-type': 'application/json', 'X-Wenyun-Task-Client-Version': '2', 'X-Wenyun-Idempotency-Key': 'desktop-smoke-once' }, body: '{}',
+    });
+    if (response.status !== 202) throw new Error(`任务受理失败：${response.status}`);
+    const reference = await response.json();
+    for (let index = 0; index < 100; index++) {
+      const state = await (await fetch(`/image-tasks/${reference.taskId}`, { headers: { Authorization: `Bearer ${reference.accessToken}` } })).json();
+      if (state.status === 'succeeded') return reference;
+      if (state.status === 'failed') throw new Error(state.error.message);
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw new Error('模拟桌面任务未完成');
+  });
+  assert.equal(imagePosts, 1);
+  const journalBytes = await fs.readFile(path.join(testRoot, 'profile/image-tasks', `${imageTask.taskId}.json`));
+  assert.equal(journalBytes.includes(Buffer.from(imageTask.accessToken)), false);
+  assert.equal(journalBytes.includes(Buffer.from('smoke-task-secret')), false);
+  console.log('安装包统一异步任务与本机加密保存：通过（仅本机模拟生成）');
   const echo = await page.evaluate(async (port) => {
     const response = await fetch(`/desktop-api/http/127.0.0.1:${port}/v1/images/generations`, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer smoke-test-only' }, body: JSON.stringify({ model: 'mock-image', quality: 'high', background: 'transparent', size: '4096x4096', response_format: 'url' }) });
     return response.json();
@@ -171,6 +217,13 @@ try {
   console.log('正常退出时保存画布并停止内置 Agent：通过');
 
   await launch();
+  const taskResult = await page.evaluate(async reference => {
+    const response = await fetch(`/image-tasks/${reference.taskId}/result`, { headers: { Authorization: `Bearer ${reference.accessToken}` } });
+    return response.json();
+  }, imageTask);
+  assert.deepEqual(taskResult, { data: [{ b64_json: 'b2s=' }] });
+  assert.equal(imagePosts, 1);
+  console.log('安装包重启后原任务结果可读取且不重复生成：通过');
   assert.equal((await page.evaluate(() => window.wenyunDesktop.info())).dataDirectory, movedDirectory);
   await page.goto(canvasUrl);
   await page.waitForFunction(() => [...document.images].some((image) => image.naturalWidth === 384));

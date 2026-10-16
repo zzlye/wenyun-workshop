@@ -15,11 +15,11 @@ export async function callImageApi(opts: CallApiOptions): Promise<CallApiResult>
   try {
     const profile = getEffectiveImageApiProfile(opts.settings, getActiveApiProfile(opts.settings))
     // 素材预处理前先拒绝超限及遮罩，避免无效请求耗时或丢失参考图。
-    if (isMidjourneyModel(profile.model) && !hasImageTaskCredentials(opts.imageTask)) {
+    if (isMidjourneyModel(profile.model) && !hasImageTaskCredentials(opts.imageTask) && !opts.imageTask?.recoverOnly) {
       buildMidjourneyRequest(profile.model, opts.prompt, opts.params, opts.inputImageDataUrls, opts.maskDataUrl)
     }
     // 服务端已有完整请求，恢复时不能再读取可能失效的本地原图或遮罩。
-    const optimizedOpts = hasImageTaskCredentials(opts.imageTask)
+    const optimizedOpts = hasImageTaskCredentials(opts.imageTask) || opts.imageTask?.recoverOnly
       ? { ...opts, inputImageDataUrls: [], maskDataUrl: undefined }
       : await prepareImageInputsForApi(opts)
     if (profile.provider === 'fal') return callFalAiImageApi(optimizedOpts, profile)

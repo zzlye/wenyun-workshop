@@ -91,13 +91,15 @@ describe('image task client', () => {
   it('创建请求网络失败时不自动补发', async () => {
     vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'enabled')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(Response.json({ error: { message: '未找到原任务' } }, { status: 404 }))
 
     await expect(fetchImageTask('images/generations', { method: 'POST', body: '{}' }, {
       timeoutMs: 900_000,
       reference: { taskId: '', accessToken: '', idempotencyKey: 'single-submit-task' },
-    })).rejects.toThrow('Failed to fetch')
+    })).rejects.toThrow('未找到原任务')
 
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+    expect(fetchMock.mock.calls[1][0]).toBe('/image-tasks/recover')
   })
 
   it('并发任务生成不同幂等键', () => {
@@ -124,7 +126,7 @@ describe('图片任务恢复', () => {
     const promise = fetchImageTask('images/generations', { method: 'POST', body: '{}' }, { timeoutMs: 10 })
     // 立即绑定断言，异步异常会作为本用例失败报告，不泄漏为未处理拒绝。
     const assertion = expect(promise.then((result) => result.json())).resolves.toEqual({ data: [{ b64_json: 'b2s=' }] })
-    await vi.advanceTimersByTimeAsync(5_000)
+    await vi.advanceTimersByTimeAsync(8_000)
     await assertion
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
     expect(fetchMock.mock.calls.slice(1).map(([url]) => url)).toEqual([
@@ -206,8 +208,23 @@ describe('图片任务故障边界回归', () => {
   })
 
   it('创建任务遇到网关错误不自动再次提交', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 503 }))
-    await expect(fetchImageTask('images/generations', { method: 'POST' }, { timeoutMs: 100 })).rejects.toThrow('创建图片任务失败')
-    expect(fetchMock).toHaveBeenCalledOnce()
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ error: { message: '未找到原任务' } }, { status: 404 }))
+    await expect(fetchImageTask('images/generations', { method: 'POST' }, { timeoutMs: 100 })).rejects.toThrow('未找到原任务')
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
   })
+})
+
+it('创建响应丢失后只读认领，刷新后也不能重新 POST', async () => {
+  const fetchMock = vi.spyOn(globalThis, 'fetch')
+    .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    .mockResolvedValueOnce(Response.json({ taskId: 'accepted', accessToken: 'token' }))
+    .mockResolvedValueOnce(Response.json({ status: 'succeeded' }))
+    .mockResolvedValueOnce(Response.json({ data: [{ b64_json: 'b2s=' }] }))
+  try {
+    const result = await fetchImageTask('images/generations', { method: 'POST', body: '{}' }, { timeoutMs: 1000 })
+    expect(await result.json()).toEqual({ data: [{ b64_json: 'b2s=' }] })
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/image-tasks?endpoint=%2Fimages%2Fgenerations', '/image-tasks/recover', '/image-tasks/accepted', '/image-tasks/accepted/result'])
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+  } finally { vi.restoreAllMocks() }
 })

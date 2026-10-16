@@ -13,6 +13,9 @@ export function DesktopDataDirectory() {
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h4 className="text-sm font-semibold">本地数据</h4>
       <div className="flex flex-wrap gap-2">
+        {getDesktopBridge()?.checkForUpdates && <button type="button" onClick={() => {
+          void getDesktopBridge()?.checkForUpdates?.().catch(() => setError('暂时无法检查更新'))
+        }} className="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-white/10 dark:text-gray-200">检查更新</button>}
         <button type="button" disabled={changing} onClick={() => {
           setError('')
           void getDesktopBridge()?.openDataDirectory().catch(() => setError('数据目录无法打开'))

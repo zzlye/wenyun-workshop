@@ -10,6 +10,8 @@ export interface ImageTaskReference {
   accessToken: string
   idempotencyKey: string
   apiProfileId?: string
+  /** 恢复占位记录只能查询认领，绝不能补发生成请求。 */
+  recoverOnly?: boolean
 }
 
 /** 已提交任务凭据齐全时只允许续查，不能再次进入生成或协议转换。 */
@@ -39,7 +41,7 @@ interface CreateImageTaskPayload extends ImageTaskSnapshot {
   reused?: boolean
 }
 
-const TASK_POLL_INTERVAL_MS = 2_000
+const TASK_POLL_INTERVAL_MS = 5_000
 const RECOVERABLE_POLL_RETRY_MS = 3_000
 const IMAGE_TASK_CLIENT_VERSION = '2'
 
@@ -89,6 +91,24 @@ export function createImageTaskIdempotencyKey(scope = 'image'): string {
   return createRandomKey(scope.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 48) || 'image')
 }
 
+async function claimImageTask(reference: ImageTaskReference, init: RequestInit): Promise<ImageTaskReference> {
+  for (;;) {
+    try {
+      const response = await fetchResultResponse('/image-tasks/recover', {
+        headers: { Authorization: new Headers(init.headers).get('authorization') || '', 'X-Wenyun-Idempotency-Key': reference.idempotencyKey },
+        cache: 'no-store',
+      }, { timeoutMs: 30_000 })
+      if (!response.ok) throw await readTaskError(response, `认领原任务失败（HTTP ${response.status}）`, true)
+      const payload = await response.json() as CreateImageTaskPayload
+      if (!payload.taskId || !payload.accessToken) throw new ImageTaskError('原任务凭据无效，不能重新生成', false)
+      return { ...reference, taskId: payload.taskId, accessToken: payload.accessToken }
+    } catch (error) {
+      if (!isRecoverableImageTaskError(error)) throw error
+      await wait(RECOVERABLE_POLL_RETRY_MS)
+    }
+  }
+}
+
 export async function createImageTask(
   endpoint: string,
   init: RequestInit,
@@ -97,21 +117,34 @@ export async function createImageTask(
 ): Promise<ImageTaskReference> {
   if (reference && hasImageTaskCredentials(reference)) return reference
 
+  if (reference?.recoverOnly) {
+    return claimImageTask(reference, init)
+  }
+
   const idempotencyKey = reference?.idempotencyKey || createImageTaskIdempotencyKey()
-  // 创建请求只发送一次；响应丢失时保留失败记录，由用户确认后手动重试，避免后台重复扣费。
-  const response = await fetch(`/image-tasks?endpoint=${encodeURIComponent(`/${endpoint.replace(/^\/+/, '')}`)}`, {
-    ...init,
-    headers: {
-      ...Object.fromEntries(new Headers(init.headers).entries()),
-      'X-Wenyun-Idempotency-Key': idempotencyKey,
-      'X-Wenyun-Task-Timeout-Ms': String(timeoutMs),
-      'X-Wenyun-Task-Client-Version': IMAGE_TASK_CLIENT_VERSION,
-    },
-    cache: 'no-store',
-  })
+  // 创建请求只发送一次；响应丢失后通过只读认领恢复，不再次上传生成请求。
+  let response: Response
+  try {
+    response = await fetchResultResponse(`/image-tasks?endpoint=${encodeURIComponent(`/${endpoint.replace(/^\/+/, '')}`)}`, {
+      ...init,
+      headers: {
+        ...Object.fromEntries(new Headers(init.headers).entries()),
+        'X-Wenyun-Idempotency-Key': idempotencyKey,
+        'X-Wenyun-Task-Timeout-Ms': String(timeoutMs),
+        'X-Wenyun-Task-Client-Version': IMAGE_TASK_CLIENT_VERSION,
+      },
+      cache: 'no-store',
+    }, { timeoutMs })
+  } catch (error) {
+    if (!isRecoverableImageTaskError(error) && !(error instanceof DOMException && error.name === 'AbortError')) throw error
+    return claimImageTask({ ...reference, taskId: '', accessToken: '', idempotencyKey }, init)
+  }
+
+  if ([408, 500, 502, 503, 504].includes(response.status)) return claimImageTask({ ...reference, taskId: '', accessToken: '', idempotencyKey }, init)
 
   if (!response.ok) throw await readTaskError(response, `创建图片任务失败（HTTP ${response.status}）`)
-  const payload = await response.json() as CreateImageTaskPayload
+  let payload: CreateImageTaskPayload
+  try { payload = await response.json() as CreateImageTaskPayload } catch { return claimImageTask({ ...reference, taskId: '', accessToken: '', idempotencyKey }, init) }
   if (!payload.taskId || !payload.accessToken) throw new Error('图片任务服务没有返回有效任务凭据')
   return {
     taskId: payload.taskId,
@@ -145,6 +178,7 @@ export async function waitForImageTask(reference: ImageTaskReference): Promise<I
     if (snapshot.status === 'failed') {
       throw new ImageTaskError(snapshot.error?.message?.trim() || '图片生成任务失败', false)
     }
+    if (!['pending', 'running'].includes(snapshot.status)) throw new ImageTaskError('任务服务返回了无法识别的状态，请保留任务记录', false)
     await wait(TASK_POLL_INTERVAL_MS)
   }
 }
@@ -191,11 +225,11 @@ export async function fetchImageTask(
   options: {
     timeoutMs: number
     reference?: ImageTaskReference
-    onCreated?: (reference: ImageTaskReference) => void
+    onCreated?: (reference: ImageTaskReference) => void | Promise<void>
   },
 ): Promise<Response> {
   const reference = await createImageTask(endpoint, init, options.timeoutMs, options.reference)
-  options.onCreated?.(reference)
+  await options.onCreated?.(reference)
   await waitForImageTask(reference)
   return getImageTaskResult(reference)
 }
