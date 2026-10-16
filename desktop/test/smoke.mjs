@@ -21,7 +21,7 @@ let page;
 let imageTask;
 let imagePosts = 0;
 const server = http.createServer(async (request, response) => {
-  if (request.url === '/v1/images/generations') {
+  if (request.url === '/v1/images/generations' && request.headers.authorization === 'Bearer smoke-task-secret') {
     for await (const _chunk of request) { /* 本机模拟生成，不发送付费请求。 */ }
     imagePosts++;
     assert.equal(request.headers.prefer, 'respond-async');
