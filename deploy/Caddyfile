@@ -8,7 +8,18 @@ zzlye.xyz, xn--v5z30ywuk.com {
 
     encode zstd gzip
 
-    reverse_proxy 127.0.0.1:8080
+    # 桌面更新独立于网页镜像，重建网站不会删除安装包；缺失文件不能回退成网页。
+    handle_path /desktop-updates/* {
+        root * /data/wenyun-desktop-updates
+        @manifest path /latest.yml
+        header @manifest Cache-Control "no-store"
+        header X-Content-Type-Options "nosniff"
+        file_server
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:8080
+    }
 }
 
 api.zzlye.xyz, api.zzlye.site {

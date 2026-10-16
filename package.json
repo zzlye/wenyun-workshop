@@ -17,6 +17,7 @@
     "desktop:build": "node desktop/scripts/build.mjs",
     "desktop:test": "node --test desktop/test/*.test.cjs",
     "desktop:smoke": "node desktop/test/smoke.mjs",
+    "desktop:update-smoke": "node desktop/test/update-feed-smoke.mjs",
     "mock:api": "node scripts/mock-image-api.mjs",
     "build": "tsc -b && vite build",
     "deploy:cf": "npm run build && wrangler deploy",
