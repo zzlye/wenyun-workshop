@@ -29,9 +29,10 @@ export function readGatewayTask(body, response) {
 export function safeGatewayPollUrl(baseUrl, id, supplied) {
   const expected = new URL(`${baseUrl}/tasks/${encodeURIComponent(id)}`)
   const resolved = supplied ? new URL(supplied, `${baseUrl.replace(/\/v1$/, '')}/`) : expected
-  // 查询地址只能指向本次任务；不能将客户 Key 转发给响应注入的任意地址。
-  if (resolved.origin !== expected.origin || resolved.pathname !== expected.pathname || resolved.username || resolved.password || resolved.search || resolved.hash) throw new Error('上游返回了不可信的任务查询地址')
-  return resolved.href
+  // 公网域名可能与内网网关不同；只校验本次任务路径，实际请求始终回到配置的网关。
+  // 不使用响应中的域名发请求，避免将客户 Key 转发给任意外部地址。
+  if (!['http:', 'https:'].includes(resolved.protocol) || resolved.pathname !== expected.pathname || resolved.username || resolved.password || resolved.search || resolved.hash) throw new Error('上游返回了不可信的任务查询地址')
+  return expected.href
 }
 
 function retryDelay(response, fallback) {
@@ -65,7 +66,7 @@ export async function finishGatewayTask({ task, response, body, baseUrl, headers
     }
     await delay(pause, undefined, { signal })
     try {
-      response = await fetch(pollUrl, { headers: { Authorization: headers.get('authorization') || '', 'accept-encoding': 'identity' }, cache: 'no-store', signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) })
+      response = await fetch(pollUrl, { headers: { Authorization: headers.get('authorization') || '', 'accept-encoding': 'identity' }, redirect: 'error', cache: 'no-store', signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) })
       body = await readBody(response)
     } catch (error) {
       if (signal.aborted || error?.message === '图片任务响应体过大') throw error
