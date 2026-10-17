@@ -70,14 +70,14 @@ try {
   await launch();
   console.log('首次启动：通过');
   assert.equal(await page.evaluate(() => typeof window.require), 'undefined');
-  assert.equal((await page.evaluate(() => window.wenyunDesktop.info())).version, '0.4.13');
+  assert.equal((await page.evaluate(() => window.wenyunDesktop.info())).version, build.version);
   assert.equal(await page.evaluate(() => typeof window.wenyunDesktop.checkForUpdates), 'function');
   // 仅在测试进程拦截任务上游，验证安装包内真实任务服务与桌面协议桥。
   await app.evaluate((_electron, port) => {
     const original = globalThis.fetch;
     globalThis.fetch = (input, init) => {
       const url = new URL(String(input));
-      if (url.hostname === 'api.zzlye.xyz' && (url.pathname === '/v1/images/generations' || url.pathname === '/v1/tasks/async_desktop_smoke')) {
+      if (url.hostname === 'api.xn--v5z30ywuk.com' && (url.pathname === '/v1/images/generations' || url.pathname === '/v1/tasks/async_desktop_smoke')) {
         return original(`http://127.0.0.1:${port}${url.pathname}`, init);
       }
       return original(input, init);

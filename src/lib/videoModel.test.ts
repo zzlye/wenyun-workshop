@@ -4,7 +4,7 @@ import { CANVAS_VIDEO_BASE_URL, CANVAS_VIDEO_MODEL, normalizeCanvasVideoDuration
 
 describe("画布视频模型列表", () => {
     it("固定使用站点 NewAPI 地址", () => {
-        expect(CANVAS_VIDEO_BASE_URL).toBe("https://api.zzlye.xyz/v1");
+        expect(CANVAS_VIDEO_BASE_URL).toBe("https://api.xn--v5z30ywuk.com/v1");
     });
 
     it("保留 API 返回的新模型与历史节点模型，不再按白名单替换", () => {

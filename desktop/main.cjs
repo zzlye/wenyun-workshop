@@ -132,7 +132,7 @@ async function start() {
   const serverFile = app.isPackaged ? path.join(process.resourcesPath, 'server/image-tasks.mjs') : path.join(__dirname, '../server/image-tasks.mjs');
   const { createImageTaskServer } = await import(pathToFileURL(serverFile).href);
   taskServer = createImageTaskServer({
-    upstreamBaseUrl: 'https://api.zzlye.xyz/v1',
+    upstreamBaseUrl: 'https://api.xn--v5z30ywuk.com/v1',
     storageDirectory: path.join(profileRoot, 'image-tasks'),
     // 本机保存续查凭据时使用系统加密，安装升级不会抹掉未完成任务。
     journalCodec: {

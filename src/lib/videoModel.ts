@@ -1,5 +1,5 @@
 // 画布视频统一经过站点自己的 NewAPI，避免浏览器绕过计费和渠道配置直连上游。
-export const CANVAS_VIDEO_BASE_URL = "https://api.zzlye.xyz/v1";
+export const CANVAS_VIDEO_BASE_URL = "https://api.xn--v5z30ywuk.com/v1";
 // 设置显示、历史配置归一化和视频请求共用秒数，避免只修改界面而实际提前超时。
 export const CANVAS_VIDEO_TIMEOUT = 1800;
 

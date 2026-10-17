@@ -6,6 +6,15 @@ afterEach(() => {
 })
 
 describe('站点改名兼容历史数据', () => {
+  it('升级旧域名配置时保留密钥和账户会话，图像与视频改用新地址', () => {
+    const profile = { ...createDefaultOpenAIProfile(), baseUrl: 'https://api.zzlye.xyz/v1', apiKey: 'saved-key' }
+    const session = { userId: 7, username: 'saved-user', accessToken: 'saved-access', authSessionId: 'saved-session' }
+    const saved = normalizeSettings({ profiles: [profile], activeProfileId: LOCKED_WENYUN_PROFILE_ID, newApiAccountSessions: { [LOCKED_WENYUN_PROFILE_ID]: session }, videoBaseUrl: 'https://api.zzlye.xyz/v1', videoApiKey: 'saved-video-key' })
+    expect(getActiveApiProfile(saved)).toMatchObject({ id: profile.id, baseUrl: 'https://api.xn--v5z30ywuk.com/v1', apiKey: 'saved-key' })
+    expect(saved.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]).toMatchObject(session)
+    expect(saved.videoBaseUrl).toBe('https://api.xn--v5z30ywuk.com/v1')
+    expect(saved.videoApiKey).toBe('saved-video-key')
+  })
   it('旧配置改用新显示名，保留站点标识、密钥及公益站名称', () => {
     const oldProfile = { ...createDefaultOpenAIProfile(), name: '文运站', apiKey: 'saved-test-key' }
     const saved = normalizeSettings({ profiles: [oldProfile], activeProfileId: LOCKED_WENYUN_PROFILE_ID })
@@ -228,7 +237,7 @@ describe('固定站点约束', () => {
   it('配置归一后只保留文运站和公益站', () => {
     const settings = normalizeSettings({ profiles: [{ id: 'custom', provider: 'custom', baseUrl: 'https://other.example/v1' }] })
     expect(settings.profiles.map((p) => p.id)).toEqual([LOCKED_WENYUN_PROFILE_ID, LOCKED_PUBLIC_PROFILE_ID])
-    expect(settings.profiles.map((p) => p.baseUrl)).toEqual(['https://api.zzlye.xyz/v1', 'https://1520635.xyz:3901/v1'])
+    expect(settings.profiles.map((p) => p.baseUrl)).toEqual(['https://api.xn--v5z30ywuk.com/v1', 'https://1520635.xyz:3901/v1'])
   })
 
   it('两个站点分别保存密钥和模型，切换时不混用', () => {

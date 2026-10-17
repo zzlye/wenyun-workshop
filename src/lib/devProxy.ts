@@ -12,6 +12,15 @@ export interface DevProxyConfig {
 const DEFAULT_PROXY_PREFIX = '/api-proxy'
 export const ASSET_PROXY_PREFIX = '/asset-proxy'
 const LOCKED_PROXY_TARGETS = [
+  // 新域名和历史域名共用站点代理，旧任务链接及账号配置可以继续使用。
+  {
+    baseUrl: 'https://api.xn--v5z30ywuk.com/v1',
+    origin: 'https://api.xn--v5z30ywuk.com',
+    apiPrefix: '/api-proxy/wenyun',
+    newApiPrefix: '/newapi-proxy/wenyun',
+    performancePrefix: '/model-performance-proxy/wenyun',
+    pricingPrefix: '/model-pricing-proxy/wenyun',
+  },
   {
     baseUrl: 'https://api.zzlye.xyz/v1',
     origin: 'https://api.zzlye.xyz',

@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { buildApiUrl, getLockedAssetProxyUrl, getLockedNewApiPerformanceProxyUrl, getLockedNewApiPricingProxyUrl, getLockedNewApiProxyUrl, shouldUseApiProxyForBaseUrl } from './devProxy'
 
 describe('buildApiUrl', () => {
+  it('新域名的生图、支付、刷新登录和素材都使用同一站点代理', () => {
+    const origin = 'https://api.xn--v5z30ywuk.com'
+    expect(shouldUseApiProxyForBaseUrl(false, `${origin}/v1`, null)).toBe(true)
+    expect(buildApiUrl(`${origin}/v1`, 'images/edits', null, true)).toBe('/api-proxy/wenyun/images/edits')
+    expect(getLockedNewApiProxyUrl(`${origin}/api/user/alipay-receipt/pay`)).toBe('/newapi-proxy/wenyun/api/user/alipay-receipt/pay')
+    expect(getLockedNewApiProxyUrl(`${origin}/api/user/auth/refresh`)).toBe('/api/user/auth/refresh')
+    expect(getLockedAssetProxyUrl(`${origin}/task-media/async_test/media/0?signature=test`)).toBe('/newapi-proxy/wenyun/task-media/async_test/media/0?signature=test')
+    expect(getLockedNewApiPricingProxyUrl(`${origin}/api/pricing`)).toBe('/model-pricing-proxy/wenyun/api/pricing')
+  })
   it('uses the same-origin proxy prefix when API proxy is enabled', () => {
     expect(buildApiUrl('http://api.example.com/v1', 'images/edits', null, true)).toBe(
       '/api-proxy/images/edits',

@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 
 const APP_ORIGIN = 'wenyun://app';
-const DEFAULT_UPSTREAMS = { wenyun: 'https://api.zzlye.xyz', public: 'https://1520635.xyz:3901' };
+const DEFAULT_UPSTREAMS = { wenyun: 'https://api.xn--v5z30ywuk.com', public: 'https://1520635.xyz:3901' };
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; media-src 'self' data: blob: http: https:; connect-src 'self' http: https:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'";
 
 function httpUrl(value) {

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { createProtocolHandler, resolveProxy, isAppUrl, isAppDocumentUrl } = require('../protocol.cjs');
 
 test('固定代理及本机异步任务不依赖网站部署', () => {
-  assert.equal(resolveProxy(new URL('wenyun://app/api-proxy/wenyun/images/edits?q=1')).url.href, 'https://api.zzlye.xyz/v1/images/edits?q=1');
+  assert.equal(resolveProxy(new URL('wenyun://app/api-proxy/wenyun/images/edits?q=1')).url.href, 'https://api.xn--v5z30ywuk.com/v1/images/edits?q=1');
   assert.equal(resolveProxy(new URL('wenyun://app/newapi-proxy/public/api/user/self')).url.href, 'https://1520635.xyz:3901/api/user/self');
   assert.equal(resolveProxy(new URL('wenyun://app/image-tasks/one'), 'http://127.0.0.1:2345').url.href, 'http://127.0.0.1:2345/image-tasks/one');
 });
@@ -12,6 +12,14 @@ test('自定义接口只允许 HTTP(S)，禁止 URL 中夹带账号', () => {
   assert.equal(resolveProxy(new URL('wenyun://app/desktop-api/https/custom.example/v1/images/generations')).url.href, 'https://custom.example/v1/images/generations');
   assert.throws(() => resolveProxy(new URL('wenyun://app/desktop-api/https/user:password@custom.example/v1')));
   assert.equal(resolveProxy(new URL('wenyun://app/desktop-api/file/C:/secret')), null);
+});
+
+test('账户登录、支付和刷新会话均连接西米露新域名', () => {
+  for (const path of ['/newapi-proxy/wenyun/api/user/login', '/newapi-proxy/wenyun/api/user/alipay-receipt/pay', '/api/user/auth/refresh']) {
+    const route = resolveProxy(new URL(`wenyun://app${path}`));
+    assert.equal(route.url.origin, 'https://api.xn--v5z30ywuk.com');
+    assert.equal(route.cookies, true);
+  }
 });
 
 test('接口代理及外部网页不能成为拥有桌面权限的页面', () => {
@@ -35,7 +43,7 @@ test('请求体与图像参数完整保留，响应流不被重复编码', async
   assert.deepEqual(JSON.parse(Buffer.from(observed.options.body).toString()), payload);
   assert.equal(observed.options.headers.get('authorization'), 'Bearer test-key');
   assert.equal(observed.options.headers.get('cookie'), null);
-  assert.equal(observed.options.headers.get('origin'), 'https://api.zzlye.xyz');
+  assert.equal(observed.options.headers.get('origin'), 'https://api.xn--v5z30ywuk.com');
   assert.equal(response.headers.get('content-encoding'), null);
   assert.equal(await response.text(), 'data: chunk\n\n');
 });
