@@ -9,6 +9,8 @@ export const GPT_IMAGE_2_5_SUNBURST_MODEL = 'gpt-image-2.5-sunburst-4k'
 export const GPT_IMAGE_2_5_FLARE_MODEL = 'gpt-image-2.5-flare-4k'
 export const GPT_IMAGE_2_5_FLARE_FULL_MODEL = 'gpt-image-2.5-flare-满血'
 export const GPT_IMAGE_2_5_SUNBURST_FULL_MODEL = 'gpt-image-2.5-sunburst-满血'
+export const GPT_IMAGE_2_5_FLARE_DEDICATED_MODEL = 'gpt-image-2.5-flare-专线'
+export const GPT_IMAGE_2_5_SUNBURST_DEDICATED_MODEL = 'gpt-image-2.5-sunburst-专线'
 export const GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL = 'gpt-image-2.5-sunburst'
 export const GPT_IMAGE_2_5_FLARE_LEGACY_MODEL = 'gpt-image-2.5-flare'
 export const GPT_IMAGE_2_VIP_MODEL = GPT_IMAGE_2_4K_MODEL
@@ -41,6 +43,9 @@ export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
   // 保留渠道的完整路由名，避免去掉“满血”后被中转分配到其他渠道；价格由实际渠道查询。
   { model: GPT_IMAGE_2_5_FLARE_FULL_MODEL, label: GPT_IMAGE_2_5_FLARE_FULL_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_FULL_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   { model: GPT_IMAGE_2_5_SUNBURST_FULL_MODEL, label: GPT_IMAGE_2_5_SUNBURST_FULL_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_FULL_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
+  // 专线保留独立路由名，使用全参数能力，价格仍从站点获取。
+  { model: GPT_IMAGE_2_5_FLARE_DEDICATED_MODEL, label: GPT_IMAGE_2_5_FLARE_DEDICATED_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_DEDICATED_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
+  { model: GPT_IMAGE_2_5_SUNBURST_DEDICATED_MODEL, label: GPT_IMAGE_2_5_SUNBURST_DEDICATED_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_DEDICATED_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   { model: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, label: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K' },
   { model: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, label: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K' },
   { model: 'Nano-Banana-2', label: 'Nano Banana 2', requestModel: 'nano-banana-2', unitCostText: 'HUHN 0.09', resolutionText: '1K、2K、4K' },
@@ -59,10 +64,11 @@ export function supportsExtendedImageQuality(model: string): boolean {
   return normalized === GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL || normalized === GPT_IMAGE_2_5_FLARE_LEGACY_MODEL
 }
 
-// 仅这两个官方渠道开放背景选项，旧版和四 K 别名维持原来的参数能力。
+// 满血和专线渠道开放背景选项，旧版和四 K 别名维持原来的参数能力。
 export function supportsTransparentImageBackground(model: string): boolean {
   const normalized = model.trim().toLowerCase()
-  return normalized === GPT_IMAGE_2_5_FLARE_FULL_MODEL || normalized === GPT_IMAGE_2_5_SUNBURST_FULL_MODEL
+  return [GPT_IMAGE_2_5_FLARE_FULL_MODEL, GPT_IMAGE_2_5_SUNBURST_FULL_MODEL,
+    GPT_IMAGE_2_5_FLARE_DEDICATED_MODEL, GPT_IMAGE_2_5_SUNBURST_DEDICATED_MODEL].includes(normalized)
 }
 
 export function normalizeImageBackground(model: string, value?: string): 'auto' | 'opaque' | 'transparent' | undefined {
