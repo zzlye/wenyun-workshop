@@ -13,6 +13,42 @@ const completed = () => new Response(JSON.stringify({ status: 'succeeded' }))
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.useRealTimers() })
 
+it('参考图上传超过一分钟但未超过提交时限时，不提前中止上传', async () => {
+  let uploadSignal: AbortSignal | null | undefined
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementationOnce((_url, init) => {
+    uploadSignal = init?.signal
+    return new Promise(resolve => setTimeout(() => resolve(Response.json({ taskId: 'slow-upload', accessToken: 'token' }, { status: 202 })), 90000))
+  }).mockResolvedValueOnce(completed()).mockResolvedValueOnce(result())
+  const pending = fetchImageTask('images/edits', { method: 'POST', body: 'reference-image' }, { timeoutMs: 180000 }).then(r => r.json())
+  const outcome = pending.then(value => ({ value }), error => ({ error }))
+  await vi.advanceTimersByTimeAsync(61000)
+  expect(uploadSignal?.aborted).toBe(false)
+  await vi.advanceTimersByTimeAsync(30000)
+  expect(await outcome).toEqual({ value: { data: [{ b64_json: 'b2s=' }] } })
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+  expect(fetchMock.mock.calls.map(([url]) => url)).not.toContain('/image-tasks/recover')
+})
+
+it('后台完成后结果流被网络中止，继续取原结果而不是报生成失败', async () => {
+  const broken = new Response(new ReadableStream({ start(c) { c.error(new DOMException('aborted', 'AbortError')) } }))
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(completed()).mockResolvedValueOnce(broken).mockResolvedValueOnce(result())
+  const outcome = fetchImageTask('images/edits', { method: 'POST' }, { timeoutMs: 180000, reference }).then(r => r.json()).then(value => ({ value }), error => ({ error }))
+  await vi.advanceTimersByTimeAsync(4000)
+  expect(await outcome).toEqual({ value: { data: [{ b64_json: 'b2s=' }] } })
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/image-tasks/existing', '/image-tasks/existing/result', '/image-tasks/existing/result'])
+  expect(fetchMock.mock.calls.every(([, init]) => init?.method !== 'POST')).toBe(true)
+})
+
+it('结果读取遇到服务重启后的恢复中状态，只续取原任务', async () => {
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(completed())
+    .mockResolvedValueOnce(Response.json({ status: 'running', error: { message: '图片任务仍在处理中' } }, { status: 409 }))
+    .mockResolvedValueOnce(result())
+  const outcome = fetchImageTask('images/edits', { method: 'POST' }, { timeoutMs: 180000, reference }).then(r => r.json()).then(value => ({ value }), error => ({ error }))
+  await vi.advanceTimersByTimeAsync(4000)
+  expect(await outcome).toEqual({ value: { data: [{ b64_json: 'b2s=' }] } })
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/image-tasks/existing', '/image-tasks/existing/result', '/image-tasks/existing/result'])
+})
+
 it('图片状态请求不返回时自动取消并续查，生图工坊与画布共用任务不重建', async () => {
   const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementationOnce(() => new Promise(() => undefined))
     .mockResolvedValueOnce(completed()).mockResolvedValueOnce(result())
@@ -46,6 +82,31 @@ it('图片链接下载卡住时只重新下载，不要求重新生成', async (
   expect(output).toBe('data:image/png;base64,' + btoa('original-image'))
   await pending
   expect(fetchMock).toHaveBeenCalledTimes(2)
+})
+
+it('图片链接响应体自行中止时重新下载原链接', async () => {
+  const broken = new Response(new ReadableStream({ start(c) { c.error(new DOMException('aborted', 'AbortError')) } }))
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(broken)
+    .mockResolvedValueOnce(new Response(new Blob(['original'], { type: 'image/png' })))
+  const outcome = fetchImageUrlAsDataUrl('https://cdn.example/result.png', 'image/png').then(value => ({ value }), error => ({ error }))
+  await vi.advanceTimersByTimeAsync(4000)
+  expect(await outcome).toEqual({ value: 'data:image/png;base64,' + btoa('original') })
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+})
+
+it('用户主动取消结果流时不当作网络中断重试', async () => {
+  const controller = new AbortController()
+  const cancel = vi.fn()
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new ReadableStream({
+    start(c) { c.enqueue(new Uint8Array([1])) }, cancel,
+  })))
+  const outcome = fetchImageUrlAsDataUrl('https://cdn.example/result.png', 'image/png', controller.signal).catch(error => error)
+  await vi.advanceTimersByTimeAsync(1)
+  controller.abort()
+  expect(await outcome).toBe(controller.signal.reason)
+  expect(cancel).toHaveBeenCalledOnce()
+  expect(fetchMock).toHaveBeenCalledOnce()
+  expect(vi.getTimerCount()).toBe(0)
 })
 
 it('图片下载持续有字节进展时允许超过一分钟，内容不压缩', async () => {

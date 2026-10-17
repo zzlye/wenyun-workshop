@@ -84,6 +84,8 @@ test('服务重启后从落盘编号继续查询，结果可再取且始终只�
     assert.equal((await completed(url, ref)).status, 'succeeded')
     await close(server)
     server = createImageTaskServer(options); url = await listen(server)
+    // 停机时终态可能尚在落盘，重启应先完成原编号的只读恢复。
+    assert.equal((await completed(url, ref)).status, 'succeeded')
     const result = await fetch(`${url}/image-tasks/${ref.taskId}/result`, { headers: { Authorization: `Bearer ${ref.accessToken}` } })
     assert.deepEqual(await result.json(), { data: [{ b64_json: 'b2s=' }] })
     assert.equal(posts, 1)

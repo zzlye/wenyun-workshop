@@ -30,12 +30,14 @@ export async function fetchResultResponse(url: string, init: RequestInit = {}, o
   })
   init.signal?.addEventListener('abort', cancel, { once: true })
   if (init.signal?.aborted) cancel()
-  touch()
+  // 上传时浏览器不提供字节进度，不能套用下载的空闲计时；总时限仍覆盖上传。
+  if (init.body == null) touch()
   try {
     return await Promise.race([interrupted, (async () => {
       controller.signal.throwIfAborted()
       const response = await fetch(desktopRequestUrl(url), { ...init, signal: controller.signal })
       controller.signal.throwIfAborted()
+      touch()
       if (!response.body) return response
       reader = response.body.getReader()
       const chunks: ArrayBuffer[] = []
@@ -57,6 +59,13 @@ export async function fetchResultResponse(url: string, init: RequestInit = {}, o
         status: response.status, statusText: response.statusText, headers: response.headers,
       })
     })()])
+  } catch (error) {
+    // 用户取消或本地超时保留原原因；底层连接自行中止才允许调用方恢复读取。
+    if (controller.signal.aborted) throw controller.signal.reason
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new TypeError('网络连接中断，请继续读取原结果', { cause: error })
+    }
+    throw error
   } finally {
     clearTimeout(totalTimer)
     clearTimeout(idleTimer)

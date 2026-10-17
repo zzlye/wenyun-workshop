@@ -460,10 +460,12 @@ export function createImageTaskServer(options = {}) {
           reused: false,
         })
       } catch (error) {
-        const statusCode = Number(error?.statusCode) || 500
-        const message = error instanceof Error ? error.message : String(error)
+        // 只在请求体尚未完整收到且连接中止时归类上传失败，不能覆盖大小限制或落盘错误。
+        const uploadInterrupted = !request.complete && !error?.statusCode && (error?.code === 'ECONNRESET' || error?.name === 'AbortError')
+        const statusCode = Number(error?.statusCode) || (uploadInterrupted ? 400 : 500)
+        const message = uploadInterrupted ? '请求上传中断，尚未提交生成，请检查网络后重新上传' : error instanceof Error ? error.message : String(error)
         task.status = 'failed'
-        task.error = { kind: 'invalid_request', message }
+        task.error = { kind: uploadInterrupted ? 'upload_interrupted' : 'invalid_request', message }
         task.finishedAt = Date.now()
         task.expiresAt = task.finishedAt + taskTtlMs
         task.requestBody = null

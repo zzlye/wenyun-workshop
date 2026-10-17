@@ -192,6 +192,8 @@ export async function getImageTaskResult(reference: ImageTaskReference): Promise
         headers: taskHeaders(reference),
         cache: 'no-store',
       })
+      // 服务重启后原任务可能正在恢复，结果接口的 409 只需稍后续取。
+      if (response.status === 409) throw new ImageTaskError('原任务仍在处理中', true)
       if (!response.ok) throw await readTaskError(response, `读取图片任务结果失败（HTTP ${response.status}）`, true)
       const upstreamStatus = Number(response.headers.get('x-wenyun-upstream-status') || 200)
       const upstreamStatusText = decodeURIComponent(response.headers.get('x-wenyun-upstream-status-text') || '')

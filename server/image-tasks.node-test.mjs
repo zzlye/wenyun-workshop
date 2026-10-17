@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
-import { createServer } from 'node:http'
+import { createServer, request as httpRequest } from 'node:http'
 import { afterEach, test } from 'node:test'
 import { gzipSync } from 'node:zlib'
 import { createImageTaskServer } from './image-tasks.mjs'
@@ -35,6 +35,39 @@ async function createTask(baseUrl, key, prompt) {
   assert.equal(response.status, 202)
   return response.json()
 }
+
+test('上传中途断开时记录上传失败且不提交上游，认领不会重复生成', async () => {
+  let posts = 0
+  const upstreamUrl = await listen(createServer((_request, response) => { posts++; response.end('{}') }))
+  const baseUrl = await listen(createImageTaskServer({ upstreamBaseUrl: `${upstreamUrl}/v1` }))
+  const headers = { Authorization: 'Bearer upload-test', 'X-Wenyun-Idempotency-Key': 'interrupted-upload', 'X-Wenyun-Task-Client-Version': '2' }
+  const upload = httpRequest(`${baseUrl}/image-tasks?endpoint=/images/edits`, {
+    method: 'POST', headers: { ...headers, 'Content-Length': '100000', 'Content-Type': 'application/json' },
+  })
+  upload.on('error', () => {})
+  upload.write('{"image":"')
+  try {
+    // 等任务服务确认已登记上传，再断开连接，不依赖任意等待时间。
+    let pending = false
+    for (let i = 0; i < 100; i++) {
+      const response = await fetch(`${baseUrl}/image-tasks/recover`, { headers })
+      const payload = await response.json()
+      if (payload.status === 'pending') { pending = true; break }
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    assert.equal(pending, true)
+    upload.destroy()
+    let recovered
+    for (let i = 0; i < 100; i++) {
+      recovered = await (await fetch(`${baseUrl}/image-tasks/recover`, { headers })).json()
+      if (recovered.status === 'failed') break
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    assert.equal(recovered.status, 'failed')
+    assert.deepEqual(recovered.error, { kind: 'upload_interrupted', message: '请求上传中断，尚未提交生成，请检查网络后重新上传' })
+    assert.equal(posts, 0)
+  } finally { upload.destroy() }
+})
 
 async function waitForCompletion(baseUrl, task) {
   const deadline = Date.now() + 2_000
