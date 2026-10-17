@@ -51,8 +51,10 @@ describe('图片品质从界面参数到出站请求保持一致', () => {
       expect(form.get('model')).toBe(model)
       expect(form.get('size')).toBe(expectedSize)
       expect(form.getAll('image[]')).toHaveLength(3)
+      if (profileId === 'wenyun-site') expect(form.get('response_format')).toBe('url')
     } else {
       expect(JSON.parse(String(body))).toMatchObject({ model, quality, size: expectedSize })
+      if (profileId === 'wenyun-site') expect(JSON.parse(String(body)).response_format).toBe('url')
     }
   })
 })

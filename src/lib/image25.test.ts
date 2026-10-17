@@ -28,12 +28,12 @@ describe('GPT Image 2.5 满血渠道官方参数', () => {
     const result = await callImageApi({ settings: settingsFor(model), prompt: '透明贴纸', params: { ...DEFAULT_PARAMS, quality: 'max', size: '3840x2160', background: background as TaskParams['background'] }, inputImageDataUrls: [] })
     const [url, init] = mock.mock.calls[0]
     expect(String(url)).toContain('/images/generations')
-    expect(JSON.parse(String(init?.body))).toEqual({ model, prompt: '透明贴纸', size: '3840x2160', quality: 'max', background, output_format: 'png', moderation: 'auto' })
+    expect(JSON.parse(String(init?.body))).toEqual({ model, prompt: '透明贴纸', size: '3840x2160', quality: 'max', background, output_format: 'png', moderation: 'auto', response_format: 'url' })
     expect(result.images[0]).toMatch(/^data:image\/png;base64,/)
     expect(result.actualParams?.background).toBe('transparent')
   })
 
-  it.each(models)('%s 图生图保留背景、极高品质和 PNG，省略旧 response_format', async model => {
+  it.each(models)('%s 图生图保留背景、极高品质和 PNG，使用 URL 返回', async model => {
     const mock = mockImages()
     await callImageApi({ settings: settingsFor(model), prompt: '去除背景', params: { ...DEFAULT_PARAMS, quality: 'xhigh', background: 'transparent' }, inputImageDataUrls: [png] })
     const [url, init] = mock.mock.calls.find(([url]) => String(url).includes('/images/edits'))!
@@ -43,7 +43,7 @@ describe('GPT Image 2.5 满血渠道官方参数', () => {
     expect(form.get('background')).toBe('transparent')
     expect(form.get('output_format')).toBe('png')
     expect(form.get('quality')).toBe('xhigh')
-    expect(form.get('response_format')).toBeNull()
+    expect(form.get('response_format')).toBe('url')
     expect(form.get('image')).toBeInstanceOf(Blob)
   })
 

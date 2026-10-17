@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import axios from "axios";
 
-import { DEFAULT_SETTINGS, LOCKED_PUBLIC_PROFILE_ID } from "../../../lib/apiProfiles";
+import { DEFAULT_SETTINGS, LOCKED_PUBLIC_PROFILE_ID, LOCKED_WENYUN_BASE_URL } from "../../../lib/apiProfiles";
 import { getSafeImageDisplayUrl } from "../../../lib/imageApiShared";
 import { useStore } from "../../../store";
 import { defaultConfig } from "../../stores/use-config-store";
@@ -66,14 +66,14 @@ describe("canvas image api", () => {
         );
 
         expect(fetchMock).toHaveBeenCalledWith(
-            "https://api.zzlye.xyz/v1/images/generations",
+            `${LOCKED_WENYUN_BASE_URL}/images/generations`,
             expect.objectContaining({ method: "POST" }),
         );
         const [, init] = fetchMock.mock.calls[0];
         const body = JSON.parse(String((init as RequestInit).body));
         expect(body.quality).toBe("auto");
         expect(body.size).toBe("1024x1024");
-        expect(body.response_format).toBe("b64_json");
+        expect(body.response_format).toBe("url");
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZmluYWw=" }]);
     });
 
@@ -140,7 +140,7 @@ describe("canvas image api", () => {
 
         const [url, init] = fetchMock.mock.calls[0];
         const body = JSON.parse(String((init as RequestInit).body));
-        expect(String(url)).toBe("https://api.zzlye.xyz/v1/images/generations");
+        expect(String(url)).toBe(`${LOCKED_WENYUN_BASE_URL}/images/generations`);
         expect(body.model).toBe("seedream-5-pro");
         expect(body.size).toBe("2560x1440");
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,c2VlZHJlYW0=" }]);
@@ -417,7 +417,7 @@ describe("canvas image api", () => {
             expect(body.generationConfig.imageConfig).toEqual({ aspectRatio: "16:9", imageSize: "2K" });
         } else {
             const formData = (init as RequestInit).body as FormData;
-            expect(String(url)).toBe("https://api.zzlye.xyz/v1/images/edits");
+            expect(String(url)).toBe(`${LOCKED_WENYUN_BASE_URL}/images/edits`);
             expect(formData.get("model")).toBe(requestModel);
             expect(formData.get("prompt")).toBe("帮我美化封面");
             expect(formData.get("response_format")).toBe("b64_json");

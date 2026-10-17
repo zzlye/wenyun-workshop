@@ -39,6 +39,12 @@ function shouldRequestImageStream(): boolean {
   return false
 }
 
+function shouldRequestImageUrl(profile: ApiProfile): boolean {
+  // 西米露网关支持图片链接；自定义直连仍遵循各自协议，避免发送官方不接受的扩展字段。
+  return getLockedNewApiProxyPrefix(profile.baseUrl) === '/newapi-proxy/wenyun'
+    && (/^gpt-image-/i.test(profile.model) || isBananaImageModel(profile.model))
+}
+
 function getBananaImageSize(size: string, model: string): '512' | '1K' | '2K' | '4K' {
   const preset = resolveBananaSizePreset(model, size)
   // 界面显示 512px，官方 generateContent 接口要求的字面值是字符串 "512"。
@@ -126,6 +132,7 @@ function createGeminiRequestBody(opts: CallApiOptions, profile: ApiProfile): Rec
   }
 
   return {
+    ...(shouldRequestImageUrl(profile) ? { response_format: 'url' } : {}),
     contents: [{ role: 'user', parts }],
     generationConfig: {
       responseModalities: ['IMAGE'],
@@ -363,7 +370,8 @@ async function callGeminiImageApi(opts: CallApiOptions, profile: ApiProfile): Pr
   const actualParamsList = results.flatMap((result) => result.actualParamsList ?? result.images.map(() => result.actualParams))
   const revisedPrompts = results.flatMap((result) => result.revisedPrompts ?? result.images.map(() => undefined))
   const actualParams = mergeActualParams(results[0]?.actualParams, { n: images.length })
-  return { images, actualParams, actualParamsList, revisedPrompts }
+  const rawImageUrls = results.flatMap((result) => result.rawImageUrls ?? [])
+  return { images, actualParams, actualParamsList, revisedPrompts, ...(rawImageUrls.length ? { rawImageUrls } : {}) }
 }
 
 function appendQuery(path: string, query?: Record<string, string>): string {
@@ -935,6 +943,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
   const proxyConfig = readClientDevProxyConfig()
   const isLockedImageApi = isLockedApiProxyTarget(profile.baseUrl)
   const usesOfficialImageParams = supportsTransparentImageBackground(profile.model)
+  const responseFormat = shouldRequestImageUrl(profile) ? 'url' : usesOfficialImageParams ? undefined : 'b64_json'
   const useImageTasks = hasImageTaskCredentials(opts.imageTask) || Boolean(opts.imageTask?.recoverOnly) || shouldUseImageTasks(profile.baseUrl)
   // 文运站使用短轮询异步任务；其他内置站点和自定义接口继续保持原路径。
   const useApiProxy = shouldUseApiProxyForBaseUrl(profile.apiProxy, profile.baseUrl, proxyConfig) && !isLockedImageApi
@@ -967,9 +976,8 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       if (params.n > 1) {
         formData.append('n', String(params.n))
       }
-      // 网站生图统一要求返回 Base64，避免结果 URL 再经过客户网络二次下载。
-      // GPT Image 官方接口默认返回 Base64，不接受旧模型的 response_format 参数。
-      if (!usesOfficialImageParams) formData.append('response_format', 'b64_json')
+      // 内置网关返回链接，再以原图二进制下载并保存，避免大段 Base64 随任务结果传输。
+      if (responseFormat) formData.append('response_format', responseFormat)
 
       // 品质是图生图与文生图共用的请求参数，不能被旧站点的输出格式过滤规则丢弃。
       if (!profile.codexCli) formData.append('quality', params.quality)
@@ -1050,8 +1058,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       if (params.n > 1) {
         body.n = params.n
       }
-      // 网站生图统一要求返回 Base64，生成结果随接口响应直接交给浏览器保存。
-      if (!usesOfficialImageParams) body.response_format = 'b64_json'
+      if (responseFormat) body.response_format = responseFormat
       if (shouldStreamImages) {
         body.stream = true
         body.partial_images = getStreamPartialImages(profile)

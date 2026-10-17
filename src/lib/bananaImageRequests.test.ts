@@ -45,6 +45,7 @@ describe('文运香蕉官方尺寸请求', () => {
       const [, request] = fetchMock.mock.calls.find(([input]) => !String(input).startsWith('data:'))!
       const body = request!.body
       const json = JSON.parse(String(body))
+      expect(json.response_format).toBe('url')
       expect(json.generationConfig.imageConfig).toMatchObject({ aspectRatio, imageSize })
       expect(json.contents[0].parts[1]).toMatchObject({ inlineData: { mimeType: 'image/png', data: 'cmVm' } })
       expect(fetchMock.mock.calls.filter(([input]) => !String(input).startsWith('data:'))).toHaveLength(1)
