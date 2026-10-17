@@ -1,13 +1,14 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { AppProviders } from './infiniteCanvasSource/components/layout/app-providers'
 import { useThemeStore } from './infiniteCanvasSource/stores/use-theme-store'
-import { getActiveApiProfile, LOCKED_WENYUN_BASE_URL, normalizeSettings, setApiPriceSnapshot } from './lib/apiProfiles'
+import { getActiveApiProfile, normalizeSettings, setApiPriceSnapshot } from './lib/apiProfiles'
 import { getEffectiveImageApiProfile } from './lib/accountApiKey'
 import { flushSync } from 'react-dom'
 import { initStore } from './store'
 import { useStore } from './store'
 import { clearUrlSettingParams, hasUrlSettingParams } from './lib/urlSettings'
-import { fetchNewApiNotice, queryNewApiPriceTable, type NewApiNoticeItem } from './lib/newApi'
+import { queryNewApiPriceTable } from './lib/newApi'
+import { useAnnouncement } from './hooks/useAnnouncement'
 import { requestPersistentStorage } from './lib/persistentStorage'
 import { useDockerApiUrlMigrationNotice } from './hooks/useDockerApiUrlMigrationNotice'
 import ConfirmDialog from './components/ConfirmDialog'
@@ -26,14 +27,6 @@ const Lightbox = lazy(() => import('./components/Lightbox'))
 const MaskEditorModal = lazy(() => import('./components/MaskEditorModal'))
 const DataSyncManager = lazy(() => import('./components/DataSyncManager'))
 
-
-function getAnnouncementHash(content: string) {
-  let hash = 0
-  for (let index = 0; index < content.length; index += 1) {
-    hash = ((hash << 5) - hash + content.charCodeAt(index)) | 0
-  }
-  return String(hash)
-}
 
 function getInitialLocation() {
   const pathname = window.location.pathname.replace(/\/+$/, '') || '/'
@@ -58,7 +51,6 @@ export default function App() {
   const appearanceBackgroundOpacity = useStore((s) => s.settings.appearanceBackgroundOpacity)
   const appearanceBackgroundBlur = useStore((s) => s.settings.appearanceBackgroundBlur)
   const appearanceNightMode = useStore((s) => s.settings.appearanceNightMode)
-  const hasRunningGeneration = useStore((s) => s.tasks.some((task) => task.status === 'running'))
   const initialLocation = getInitialLocation()
   const [workspaceMode, setWorkspaceMode] = useState<'gallery' | 'canvas'>(initialLocation.workspaceMode)
   const [showHome, setShowHome] = useState(initialLocation.showHome)
@@ -97,12 +89,11 @@ export default function App() {
     useThemeStore.getState().setTheme(appearanceTheme)
     syncInfiniteCanvasConfigFromSettings(normalizedSettings)
   }, [settings, workspaceMode])
-  const [announcementOpen, setAnnouncementOpen] = useState(false)
-  const [announcementContent, setAnnouncementContent] = useState('')
-  const [announcementPublishedAt, setAnnouncementPublishedAt] = useState<string | undefined>(undefined)
-  const [announcementItems, setAnnouncementItems] = useState<NewApiNoticeItem[]>([])
-  const [announcementLoading, setAnnouncementLoading] = useState(false)
-  const announcementAutoOpenAttemptedRef = useRef(false)
+  const {
+    open: announcementOpen, setOpen: setAnnouncementOpen,
+    notice: announcement, loading: announcementLoading,
+    openManually: openAnnouncement, dismissToday: dismissAnnouncementToday,
+  } = useAnnouncement(!showHome && storeReady)
   const automaticPriceSyncAttemptedRef = useRef(new Set<string>())
   useDockerApiUrlMigrationNotice()
   useGlobalClickSuppression()
@@ -137,30 +128,6 @@ export default function App() {
     })
   }, [settings, showHome, showSettings])
 
-  const loadAnnouncement = useCallback(async (autoOpen = false) => {
-    setAnnouncementLoading(true)
-    try {
-      const notice = await fetchNewApiNotice(LOCKED_WENYUN_BASE_URL)
-      setAnnouncementContent(notice.content)
-      setAnnouncementPublishedAt(notice.publishedAt)
-      setAnnouncementItems(notice.items)
-
-      if (autoOpen) {
-        const latestSettings = useStore.getState().settings
-        const today = new Date().toISOString().slice(0, 10)
-        const noticeHash = getAnnouncementHash(notice.content)
-        const dismissedToday = latestSettings.announcementDismissedDate === today && latestSettings.announcementDismissedHash === noticeHash
-        const shouldAutoOpen = !latestSettings.announcementDismissedForever && !dismissedToday && Boolean(notice.content.trim())
-        if (shouldAutoOpen) setAnnouncementOpen(true)
-      }
-    } catch (error) {
-      console.warn('Failed to load announcement:', error)
-      // 公告刷新失败时保留上一次内容，避免用户打开公告时看到空白弹窗。
-    } finally {
-      setAnnouncementLoading(false)
-    }
-  }, [])
-
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search)
     // 固定站点不再接受链接导入接口配置；清理旧链接中的密钥，保留页面路由。
@@ -186,14 +153,6 @@ export default function App() {
     document.addEventListener('dragstart', preventPageImageDrag)
     return () => document.removeEventListener('dragstart', preventPageImageDrag)
   }, [])
-
-  useEffect(() => {
-    if (announcementAutoOpenAttemptedRef.current) return
-    if (showHome || !storeReady) return
-    if (hasRunningGeneration) return
-    announcementAutoOpenAttemptedRef.current = true
-    void loadAnnouncement(true)
-  }, [hasRunningGeneration, loadAnnouncement, showHome, storeReady])
 
   useEffect(() => {
     if (workspaceMode !== 'gallery') return
@@ -240,24 +199,11 @@ export default function App() {
     }
   }, [])
 
-  const dismissAnnouncementToday = () => {
-    setSettings({
-      announcementDismissedDate: new Date().toISOString().slice(0, 10),
-      announcementDismissedHash: getAnnouncementHash(announcementContent),
-    })
-    setAnnouncementOpen(false)
-  }
-
   const toggleAnnouncementForever = (checked: boolean) => {
     setSettings({
       announcementDismissedForever: checked,
       ...(checked ? { announcementDismissedDate: undefined, announcementDismissedHash: undefined } : {}),
     })
-  }
-
-  const openAnnouncement = () => {
-    setAnnouncementOpen(true)
-    if (!hasRunningGeneration) void loadAnnouncement(false)
   }
 
   const renderStoreLoading = () => (
@@ -341,11 +287,11 @@ export default function App() {
         </button>}
         {!showHome && announcementOpen && (
           <AnnouncementModal
-            content={announcementContent}
+            content={announcement.content}
             dismissForever={settings.announcementDismissedForever}
-            items={announcementItems}
+            items={announcement.items}
             loading={announcementLoading}
-            publishedAt={announcementPublishedAt}
+            publishedAt={announcement.publishedAt}
             onClose={() => setAnnouncementOpen(false)}
             onDismissToday={dismissAnnouncementToday}
             onToggleDismissForever={toggleAnnouncementForever}
