@@ -16,7 +16,7 @@ interface Props {
 
 export default function ReceiptPaymentDialog({ profile, session, initialOrder, onSessionUpdated, onPaid, onClose }: Props) {
   const client = useQueryClient()
-  const [now, setNow] = useState(Date.now)
+  const [now, setNow] = useState(() => performance.now())
   const [confirmClose, setConfirmClose] = useState(false)
   const notified = useRef(false)
   const onPaidRef = useRef(onPaid)
@@ -37,11 +37,14 @@ export default function ReceiptPaymentDialog({ profile, session, initialOrder, o
     onSuccess: (order) => { client.setQueryData(queryKey, order); setConfirmClose(false) },
   })
   const order = query.data
-  const secondsLeft = Math.max(0, Math.ceil((order.receipt.expires_at * 1000 - Math.max(now, Date.now())) / 1000))
-  const payable = order.status === 'pending' && order.paid_time === 0 && secondsLeft > 0
+  const clock = order.serverClock
+  // 使用服务端时间加单调计时，不受客户电脑时间或运行中调整系统时间影响。
+  const serverNow = clock ? clock.timestamp + Math.max(0, Math.max(now, performance.now()) - clock.receivedAt) : undefined
+  const secondsLeft = serverNow === undefined ? 0 : Math.max(0, Math.ceil((order.receipt.expires_at * 1000 - serverNow) / 1000))
+  const payable = !!clock && order.status === 'pending' && order.paid_time === 0 && secondsLeft > 0
   useEffect(() => {
-    // 使用服务端绝对截止时间；网络故障或切回页面不能延长付款时间。
-    const update = () => setNow(Date.now())
+    // 查询失败仍按上次的服务器时钟继续倒计时，不重新发放付款时间。
+    const update = () => setNow(performance.now())
     const timer = window.setInterval(update, 1000)
     window.addEventListener('focus', update)
     document.addEventListener('visibilitychange', update)
@@ -73,7 +76,8 @@ export default function ReceiptPaymentDialog({ profile, session, initialOrder, o
           {order.status === 'closed' && <p>订单已关闭</p>}
           {order.status === 'expired' && <p>订单已过期</p>}
           {order.status === 'pending' && order.paid_time > 0 && <p>已收到付款，正在入账</p>}
-          {order.status === 'pending' && !order.paid_time && !payable && <p>付款时间已结束，请勿继续付款。</p>}
+          {order.status === 'pending' && !order.paid_time && !clock && <p>暂时无法校验付款时间，请刷新状态。</p>}
+          {order.status === 'pending' && !order.paid_time && clock && !payable && <p>付款时间已结束，请勿继续付款。</p>}
           {payable && <>
             <p className="text-sm">请按显示金额付款，包括小数部分。</p>
             <p role="timer" className="tabular-nums">剩余付款时间 {String(Math.floor(secondsLeft / 60)).padStart(2, '0')}:{String(secondsLeft % 60).padStart(2, '0')}</p>

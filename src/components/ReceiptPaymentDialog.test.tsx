@@ -36,6 +36,7 @@ beforeEach(() => {
   request.mockReset()
   paid = vi.fn()
   order = { trade_no: 'AR-fixture', status: 'pending', paid_time: 0,
+    serverClock: { timestamp: Date.now(), receivedAt: performance.now() },
     receipt: { amount_cents: 1001, qr_code: '', confirmed_at: 0, expires_at: Math.floor(Date.now() / 1000) + 180 } }
   request.mockImplementation(async (_p, _s, _t, action) => {
     if (action === 'confirm') return { ...order, receipt: { ...order.receipt, confirmed_at: 1, qr_code: 'https://qr.alipay.com/fixture' } }
@@ -48,6 +49,39 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount());client.clear();host.remove();vi.restoreAllMocks() })
 
 describe('收款码付款窗口', () => {
+  it('电脑时间落后也不能展示服务器已经过期的付款码', async () => {
+    order.receipt.expires_at = Math.floor(Date.now() / 1000) - 1
+    order.receipt.confirmed_at = 1
+    order.receipt.qr_code = 'https://qr.alipay.com/fixture'
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 600_000)
+    await render()
+    expect(host.textContent).toContain('付款时间已结束')
+    expect(host.querySelector('[data-testid="payment-qr"]')).toBeNull()
+  })
+  it('缺失服务器时间时不误报过期，也不展示未经校验的付款码', async () => {
+    delete order.serverClock
+    await render()
+    expect(host.textContent).toContain('请刷新状态')
+    expect(host.textContent).not.toContain('付款时间已结束')
+    expect(host.querySelector('[data-testid="payment-qr"]')).toBeNull()
+  })
+  it('运行中修改电脑日期不改变有效订单的倒计时', async () => {
+    await render()
+    const timer = host.querySelector('[role="timer"]')?.textContent
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 86400_000)
+    await act(async () => window.dispatchEvent(new Event('focus')))
+    expect(host.querySelector('[role="timer"]')?.textContent).toBe(timer)
+  })
+  it('客户电脑快十分钟时，服务器仍有效的订单可以确认付款', async () => {
+    // 保持订单和服务器时间不变，仅改变客户电脑的系统时间。
+    Object.assign(order, { serverClock: { timestamp: Date.now(), receivedAt: performance.now() } })
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 600_000)
+    await render()
+    expect(host.textContent).not.toContain('付款时间已结束')
+    expect(host.textContent).toContain('确认金额并显示收款码')
+    await click('确认金额并显示收款码')
+    expect(host.querySelector('[data-testid="payment-qr"]')).not.toBeNull()
+  })
   it('先显示服务器精确金额，用户确认后才显示二维码且不提前报到账', async () => {
     await render()
     expect(host.textContent).toContain('¥10.01')
@@ -62,7 +96,7 @@ describe('收款码付款窗口', () => {
     await render()
     expect(host.querySelector('[data-testid="payment-qr"]')).not.toBeNull()
     request.mockRejectedValue(new Error('网络失败'))
-    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 3000)
+    vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 3000)
     await act(async () => window.dispatchEvent(new Event('focus')))
     expect(host.querySelector('[data-testid="payment-qr"]')).toBeNull()
     expect(host.textContent).toContain('付款时间已结束')

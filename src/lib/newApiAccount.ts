@@ -148,6 +148,7 @@ async function newApiRequest<T>(
     authSessionId?: string
     returnEnvelope?: boolean
     signal?: AbortSignal
+    onServerClock?: (clock: { timestamp: number; receivedAt: number } | undefined) => void
   } = {},
 ): Promise<T> {
   const headers: Record<string, string> = {}
@@ -156,6 +157,7 @@ async function newApiRequest<T>(
   if (options.userId !== undefined && options.userId !== '') headers['New-Api-User'] = String(options.userId)
   if (options.authSessionId) headers['X-Auth-Session'] = options.authSessionId
 
+  const requestStartedAt = performance.now()
   const response = await fetch(proxiedNewApiUrl(profile, path), {
     method: options.method ?? 'GET',
     cache: 'no-store',
@@ -173,6 +175,15 @@ async function newApiRequest<T>(
 
   if (!response.ok || code !== undefined && code !== 0 || success === false || businessError) {
     throw new NewApiAccountRequestError(readErrorMessage(payload) || `请求失败：${response.status}`, response.status)
+  }
+
+  if (options.onServerClock) {
+    const receivedAt = performance.now()
+    const serverTime = Date.parse(response.headers.get('Date') || '')
+    // HTTP 时间精度为秒；保守计入一秒及请求耗时，避免慢请求延长付款窗口。
+    options.onServerClock(Number.isFinite(serverTime)
+      ? { timestamp: serverTime + 1000 + Math.max(0, receivedAt - requestStartedAt), receivedAt }
+      : undefined)
   }
 
   return (options.returnEnvelope ? payload : getPayloadData(payload)) as T
@@ -898,6 +909,8 @@ function requireSafePaymentUrl(value: unknown): string {
 }
 
 export interface NewApiReceiptOrder {
+  // 仅供当前页面倒计时使用，不发送给服务端，也不持久化到本地。
+  serverClock?: { timestamp: number; receivedAt: number }
   trade_no: string
   status: string
   paid_time: number
@@ -937,10 +950,13 @@ function readReceiptOrder(payload: unknown): NewApiReceiptOrder {
 export async function createNewApiReceiptOrder(
   profile: ApiProfile, session: NewApiAccountSession, amount: number, onSessionUpdated?: NewApiSessionUpdated,
 ): Promise<NewApiReceiptOrder> {
-  return readReceiptOrder(await requestWithNewApiSession(profile, session, (active) =>
+  let serverClock: NewApiReceiptOrder['serverClock']
+  const order = readReceiptOrder(await requestWithNewApiSession(profile, session, (active) =>
     newApiRequest(profile, '/api/user/alipay-receipt/pay', {
       method: 'POST', accessToken: active.accessToken, userId: active.userId, body: { amount: Math.floor(amount) },
+      onServerClock: (clock) => { serverClock = clock },
     }), onSessionUpdated))
+  return { ...order, ...(serverClock ? { serverClock } : {}) }
 }
 
 export async function requestNewApiReceiptOrder(
@@ -948,12 +964,14 @@ export async function requestNewApiReceiptOrder(
   action?: 'confirm' | 'close', onSessionUpdated?: NewApiSessionUpdated,
 ): Promise<NewApiReceiptOrder> {
   const path = `/api/user/alipay-receipt/order/${encodeURIComponent(tradeNo)}${action ? `/${action}` : ''}`
+  let serverClock: NewApiReceiptOrder['serverClock']
   const order = readReceiptOrder(await requestWithNewApiSession(profile, session, (active) =>
     newApiRequest(profile, path, {
       method: action ? 'POST' : 'GET', accessToken: active.accessToken, userId: active.userId,
+      onServerClock: (clock) => { serverClock = clock },
     }), onSessionUpdated))
   if (order.trade_no !== tradeNo) throw new Error('收款码订单编号不匹配')
-  return order
+  return { ...order, ...(serverClock ? { serverClock } : {}) }
 }
 
 function readPaymentFormFields(value: unknown): Record<string, string> {

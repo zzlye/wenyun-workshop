@@ -676,6 +676,23 @@ describe('NewAPI 在线支付', () => {
     }))
   })
 
+  it('创建和查询收款订单均读取服务器时钟，不采用客户系统时间', async () => {
+    const serverTime = Date.parse('2026-10-17T13:55:51Z')
+    vi.spyOn(Date, 'now').mockReturnValue(serverTime + 600_000)
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ success: true, data: receiptOrder }), {
+      headers: { Date: new Date(serverTime).toUTCString() },
+    }))
+    for (const result of [
+      await createNewApiReceiptOrder(DEFAULT_SETTINGS.profiles[0], session, 10),
+      await requestNewApiReceiptOrder(DEFAULT_SETTINGS.profiles[0], session, 'AR-test'),
+      await requestNewApiReceiptOrder(DEFAULT_SETTINGS.profiles[0], session, 'AR-test', 'confirm'),
+    ]) {
+      expect(result.serverClock?.timestamp).toBeGreaterThanOrEqual(serverTime + 1000)
+      expect(result.serverClock?.timestamp).toBeLessThan(serverTime + 10_000)
+      expect(result.serverClock?.receivedAt).toBeLessThanOrEqual(performance.now())
+    }
+  })
+
   it('查询、确认和关闭订单均携带当前账号会话，不传付款成功标志', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ success: true, data: receiptOrder })))
     for (const action of [undefined, 'confirm', 'close'] as const) {
