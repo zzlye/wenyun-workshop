@@ -9,7 +9,7 @@ const runtime = await prepareAgentDependencies();
 const output = path.join(buildRoot, 'release');
 const updateRuntime = await prepareUpdateDependencies();
 await fs.cp(path.join(updateRuntime, 'node_modules'), path.join(appRoot, 'node_modules'), { recursive: true });
-for (const name of ['main.cjs', 'preload.cjs', 'storage.cjs', 'data-directory.cjs', 'protocol.cjs', 'agent-runtime.cjs', 'updates.cjs', 'README.md']) {
+for (const name of ['main.cjs', 'preload.cjs', 'storage.cjs', 'data-directory.cjs', 'protocol.cjs', 'diagnostics.cjs', 'agent-runtime.cjs', 'updates.cjs', 'README.md']) {
   await fs.copyFile(path.join(root, name), path.join(appRoot, name));
 }
 await fs.copyFile(path.join(repo, 'LICENSE'), path.join(appRoot, 'LICENSE'));

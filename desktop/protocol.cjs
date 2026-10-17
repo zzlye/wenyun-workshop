@@ -24,7 +24,7 @@ function resolveProxy(url, taskOrigin, upstreams = DEFAULT_UPSTREAMS) {
     return { url: httpUrl(target), readOnly, cookies: true };
   }
   if (url.pathname === '/api/user/auth/refresh') return { url: httpUrl(`${upstreams.wenyun}${url.pathname}${url.search}`), cookies: true };
-  if (/^\/image-tasks(?:\/|$)/.test(url.pathname)) return { url: httpUrl(`${taskOrigin}${url.pathname}${url.search}`), cookies: false };
+  if (/^\/image-tasks(?:\/|$)/.test(url.pathname)) return { url: httpUrl(`${taskOrigin}${url.pathname}${url.search}`), cookies: false, localTask: true };
   const generic = url.pathname.match(/^\/(desktop-api|asset-proxy)\/(https?)\/(.+)$/);
   if (generic) return { url: httpUrl(`${generic[2]}://${generic[3]}${url.search}`), readOnly: generic[1] === 'asset-proxy', cookies: false };
   if (url.pathname.startsWith('/wy-public/mukyu/')) return { url: httpUrl(`https://i.mukyu.ru${url.pathname.slice('/wy-public/mukyu'.length)}${url.search}`), readOnly: true, cookies: false };
@@ -44,7 +44,7 @@ function isAppDocumentUrl(value) {
   return !/^\/(?:api|api-proxy|newapi-proxy|model-pricing-proxy|model-performance-proxy|desktop-api|asset-proxy|image-tasks|wy-public|downloads)(?:\/|$)/.test(pathname);
 }
 
-function createProtocolHandler({ webRoot, taskOrigin, fetch, upstreams }) {
+function createProtocolHandler({ webRoot, taskOrigin, fetch, fetchLocal = fetch, upstreams, onTaskDiagnostic }) {
   const root = path.resolve(webRoot);
   // 只放行安装包入口已有的内联脚本，远程接口返回的内容始终禁止作为页面执行。
   const policy = fs.readFile(path.join(root, 'index.html'), 'utf8').then((html) => {
@@ -54,6 +54,14 @@ function createProtocolHandler({ webRoot, taskOrigin, fetch, upstreams }) {
   return async (request) => {
     if (!isAppUrl(request.url)) return new Response('Forbidden', { status: 403 });
     const url = new URL(request.url);
+    const localTask = /^\/image-tasks(?:\/|$)/.test(url.pathname);
+    const operation = request.method === 'POST' ? 'submit' : url.pathname === '/image-tasks/recover' ? 'recover' : 'read';
+    let stage = 'read_body';
+    const diagnostic = (code, status) => {
+      const id = crypto.randomUUID();
+      try { onTaskDiagnostic?.({ id, operation, stage, code, status }); } catch { /* 诊断回调不能阻断正常返回。 */ }
+      return id;
+    };
     try {
       const route = resolveProxy(url, taskOrigin, upstreams);
       if (route) {
@@ -70,15 +78,21 @@ function createProtocolHandler({ webRoot, taskOrigin, fetch, upstreams }) {
           headers.set('Referer', `${route.url.origin}/`);
         }
         const hasBody = !['GET', 'HEAD'].includes(request.method);
-        const response = await fetch(route.url.href, {
+        const body = hasBody ? await request.arrayBuffer() : undefined;
+        stage = 'connect_local';
+        // 只对固定的本机任务路由使用直连，外部账户、素材及接口继续沿用原网络会话。
+        const requestFetch = route.localTask ? fetchLocal : fetch;
+        const response = await requestFetch(route.url.href, {
           method: request.method,
           headers,
           credentials: route.cookies ? 'include' : 'omit',
           redirect: 'follow',
           signal: request.signal,
-          ...(hasBody ? { body: await request.arrayBuffer() } : {}),
+          ...(hasBody ? { body } : {}),
         });
+        stage = 'response';
         const responseHeaders = new Headers(response.headers);
+        if (localTask && response.status >= 400) responseHeaders.set('X-Wenyun-Diagnostic-Id', diagnostic(`HTTP_${response.status}`, response.status));
         // 网络层已解压响应，重新保留压缩长度会造成长响应被截断。
         for (const name of ['content-encoding', 'content-length', 'transfer-encoding', 'set-cookie']) responseHeaders.delete(name);
         responseHeaders.set('Cache-Control', 'no-store');
@@ -103,7 +117,15 @@ function createProtocolHandler({ webRoot, taskOrigin, fetch, upstreams }) {
       headers.set('Content-Security-Policy', await policy);
       headers.set('X-Content-Type-Options', 'nosniff');
       return new Response(request.method === 'HEAD' ? null : response.body, { status: response.status, headers });
-    } catch {
+    } catch (error) {
+      if (localTask) {
+        // 只提取结构化错误码，原始异常可能包含地址和认证参数，不能直接写入日志或界面。
+        const candidate = error?.cause?.code || error?.code || String(error?.message || '').match(/\bnet::(ERR_[A-Z0-9_]+)\b/)?.[1] || (error?.name === 'AbortError' ? 'ABORTED' : 'UNKNOWN');
+        const code = typeof candidate === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(candidate) ? candidate : 'UNKNOWN';
+        const id = diagnostic(code, 502);
+        const message = stage === 'read_body' ? '本机读取提交内容失败' : '本机任务连接失败';
+        return Response.json({ error: { message: `${message}（${code}，诊断号 ${id}）` } }, { status: 502, headers: { 'X-Wenyun-Diagnostic-Id': id, 'Cache-Control': 'no-store' } });
+      }
       return Response.json({ error: { message: '本机请求失败，请检查接口地址和网络连接' } }, { status: 502 });
     }
   };

@@ -1,4 +1,5 @@
 import { assertUsableMaskCoverage, classifyMaskAlpha, type MaskCoverage } from './mask'
+import { getImageSourceBlob } from './imageTransfer'
 
 export interface ImageDimensions {
   width: number
@@ -20,6 +21,8 @@ export async function getImageDimensions(dataUrl: string): Promise<ImageDimensio
 }
 
 export async function dataUrlToBlob(dataUrl: string, fallbackType = 'image/png'): Promise<Blob> {
+  // 参考图和遮罩的 Base64 在本机解码，避免桌面安全策略拦截 fetch(data:) 导致尚未提交就进入任务恢复。
+  if (dataUrl.trim().startsWith('data:')) return getImageSourceBlob(dataUrl)
   const response = await fetch(dataUrl)
   const blob = await response.blob()
   return blob.type ? blob : new Blob([await blob.arrayBuffer()], { type: fallbackType })

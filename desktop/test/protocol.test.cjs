@@ -8,6 +8,58 @@ test('固定代理及本机异步任务不依赖网站部署', () => {
   assert.equal(resolveProxy(new URL('wenyun://app/image-tasks/one'), 'http://127.0.0.1:2345').url.href, 'http://127.0.0.1:2345/image-tasks/one');
 });
 
+test('本机任务提交和认领使用独立直连，系统代理只处理远端接口', async () => {
+  const localCalls = [];
+  const remoteCalls = [];
+  const handler = createProtocolHandler({
+    webRoot: 'D:/tmp/unused-web', taskOrigin: 'http://127.0.0.1:2345',
+    fetch: async (url) => { remoteCalls.push(url); return new Response('remote'); },
+    fetchLocal: async (url, init) => { localCalls.push({ url, method: init.method, body: init.body }); return new Response('{}'); },
+  });
+  await handler(new Request('wenyun://app/image-tasks?endpoint=/images/edits', { method: 'POST', body: 'reference' }));
+  await handler(new Request('wenyun://app/image-tasks/recover'));
+  assert.equal(localCalls.length, 2);
+  assert.equal(Buffer.from(localCalls[0].body).toString(), 'reference');
+  assert.equal(localCalls[1].url, 'http://127.0.0.1:2345/image-tasks/recover');
+  assert.deepEqual(remoteCalls, []);
+  await handler(new Request('wenyun://app/newapi-proxy/wenyun/api/user/self'));
+  assert.deepEqual(remoteCalls, ['https://api.xn--v5z30ywuk.com/api/user/self']);
+});
+
+test('本机连接失败保留安全错误码和诊断号，不泄露异常中的密钥', async () => {
+  const events = [];
+  const handler = createProtocolHandler({
+    webRoot: 'D:/tmp/unused-web', taskOrigin: 'http://127.0.0.1:2345',
+    fetch: async () => { throw Error('不应请求远端'); },
+    fetchLocal: async () => { throw Error('net::ERR_CONNECTION_RESET https://secret.invalid/?key=private-token'); },
+    onTaskDiagnostic: event => events.push(event),
+  });
+  const response = await handler(new Request('wenyun://app/image-tasks', { method: 'POST', body: 'private-prompt' }));
+  const payload = await response.json();
+  assert.equal(response.status, 502);
+  assert.match(payload.error.message, /ERR_CONNECTION_RESET/);
+  assert.equal(events[0].stage, 'connect_local');
+  assert.equal(events[0].operation, 'submit');
+  assert.equal(events[0].id, response.headers.get('X-Wenyun-Diagnostic-Id'));
+  assert.doesNotMatch(JSON.stringify({ events, payload }), /private-|secret.invalid/);
+});
+
+test('提交内容读取失败时不会调用本机任务服务，并记录发生阶段', async () => {
+  let requests = 0;
+  const events = [];
+  const handler = createProtocolHandler({
+    webRoot: 'D:/tmp/unused-web', taskOrigin: 'http://127.0.0.1:2345',
+    fetch: async () => { requests++; return new Response('{}'); },
+    onTaskDiagnostic: event => events.push(event),
+  });
+  const request = new Request('wenyun://app/image-tasks', { method: 'POST', body: 'fixture' });
+  request.arrayBuffer = async () => { throw Error('net::ERR_UPLOAD_FILE_CHANGED'); };
+  const response = await handler(request);
+  assert.match((await response.json()).error.message, /ERR_UPLOAD_FILE_CHANGED/);
+  assert.equal(requests, 0);
+  assert.equal(events[0].stage, 'read_body');
+});
+
 test('自定义接口只允许 HTTP(S)，禁止 URL 中夹带账号', () => {
   assert.equal(resolveProxy(new URL('wenyun://app/desktop-api/https/custom.example/v1/images/generations')).url.href, 'https://custom.example/v1/images/generations');
   assert.throws(() => resolveProxy(new URL('wenyun://app/desktop-api/https/user:password@custom.example/v1')));

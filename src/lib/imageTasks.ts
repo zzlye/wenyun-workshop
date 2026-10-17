@@ -91,14 +91,19 @@ export function createImageTaskIdempotencyKey(scope = 'image'): string {
   return createRandomKey(scope.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 48) || 'image')
 }
 
-async function claimImageTask(reference: ImageTaskReference, init: RequestInit): Promise<ImageTaskReference> {
+async function claimImageTask(reference: ImageTaskReference, init: RequestInit, submissionError?: string): Promise<ImageTaskReference> {
   for (;;) {
     try {
       const response = await fetchResultResponse('/image-tasks/recover', {
         headers: { Authorization: new Headers(init.headers).get('authorization') || '', 'X-Wenyun-Idempotency-Key': reference.idempotencyKey },
         cache: 'no-store',
       }, { timeoutMs: 30_000 })
-      if (!response.ok) throw await readTaskError(response, `认领原任务失败（HTTP ${response.status}）`, true)
+      if (!response.ok) {
+        const error = await readTaskError(response, `认领原任务失败（HTTP ${response.status}）`, true)
+        // 认领失败不能遮住首次提交的原因，也不能据此重发可能已收费的生成请求。
+        if (response.status === 404 && submissionError) throw new ImageTaskError(`${submissionError}；${error.message}`, false)
+        throw error
+      }
       const payload = await response.json() as CreateImageTaskPayload
       if (!payload.taskId || !payload.accessToken) throw new ImageTaskError('原任务凭据无效，不能重新生成', false)
       return { ...reference, taskId: payload.taskId, accessToken: payload.accessToken }
@@ -137,14 +142,18 @@ export async function createImageTask(
     }, { timeoutMs })
   } catch (error) {
     if (!isRecoverableImageTaskError(error) && !(error instanceof DOMException && error.name === 'AbortError')) throw error
-    return claimImageTask({ ...reference, taskId: '', accessToken: '', idempotencyKey }, init)
+    const reason = error instanceof ResultReadTimeoutError ? '首次提交超时，受理状态未确认' : '首次提交连接中断，受理状态未确认'
+    return claimImageTask({ ...reference, taskId: '', accessToken: '', idempotencyKey }, init, reason)
   }
 
-  if ([408, 500, 502, 503, 504].includes(response.status)) return claimImageTask({ ...reference, taskId: '', accessToken: '', idempotencyKey }, init)
+  if ([408, 500, 502, 503, 504].includes(response.status)) {
+    const error = await readTaskError(response, '未收到有效提交回执')
+    return claimImageTask({ ...reference, taskId: '', accessToken: '', idempotencyKey }, init, `首次提交失败（HTTP ${response.status}）：${error.message}`)
+  }
 
   if (!response.ok) throw await readTaskError(response, `创建图片任务失败（HTTP ${response.status}）`)
   let payload: CreateImageTaskPayload
-  try { payload = await response.json() as CreateImageTaskPayload } catch { return claimImageTask({ ...reference, taskId: '', accessToken: '', idempotencyKey }, init) }
+  try { payload = await response.json() as CreateImageTaskPayload } catch { return claimImageTask({ ...reference, taskId: '', accessToken: '', idempotencyKey }, init, '首次提交回执无法读取，受理状态未确认') }
   if (!payload.taskId || !payload.accessToken) throw new Error('图片任务服务没有返回有效任务凭据')
   return {
     taskId: payload.taskId,

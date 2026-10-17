@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, protocol, net, ipcMain, shell, dialog, safeStorage } = require('electron');
+const { app, BrowserWindow, Menu, protocol, net, session, ipcMain, shell, dialog, safeStorage } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { createDesktopUpdater } = require('./updates.cjs');
@@ -6,6 +6,7 @@ const { DiskStore } = require('./storage.cjs');
 const { DataDirectoryManager } = require('./data-directory.cjs');
 const { AgentRuntime } = require('./agent-runtime.cjs');
 const { APP_ORIGIN, isAppUrl, isAppDocumentUrl, createProtocolHandler } = require('./protocol.cjs');
+const { createTaskDiagnostics } = require('./diagnostics.cjs');
 
 app.setName('西米露桌面版');
 const profileRoot = path.resolve(process.env.WENYUN_DESKTOP_PROFILE || path.join(app.getPath('appData'), 'WenyunDesktop'));
@@ -142,10 +143,16 @@ async function start() {
     taskTtlMs: 24 * 60 * 60 * 1000,
   });
   await new Promise((resolve, reject) => { taskServer.once('error', reject); taskServer.listen(0, '127.0.0.1', resolve); });
+  // 本机任务通信使用独立直连会话，防止系统代理把提交转发到远端或拦截。
+  const localTaskSession = session.fromPartition('wenyun-local-tasks', { cache: false });
+  await localTaskSession.setProxy({ mode: 'direct' });
+  const taskDiagnostics = createTaskDiagnostics(path.join(profileRoot, 'logs'));
   protocol.handle('wenyun', createProtocolHandler({
     webRoot: app.isPackaged ? path.join(__dirname, 'web') : (process.env.WENYUN_DESKTOP_WEB_ROOT || path.join(__dirname, 'web')),
     taskOrigin: `http://127.0.0.1:${taskServer.address().port}`,
     fetch: (url, options) => net.fetch(url, options),
+    fetchLocal: (url, options) => localTaskSession.fetch(url, options),
+    onTaskDiagnostic: taskDiagnostics.report,
   }));
 
   handle('desktop:check-updates', () => updater?.check(true));

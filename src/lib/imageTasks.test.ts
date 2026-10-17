@@ -13,6 +13,15 @@ describe('image task client', () => {
     vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'disabled')
   })
 
+  it('本机首次提交失败后认领404仍保留首次错误，不重复提交', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(Response.json({ error: { message: '本机任务连接失败（ERR_CONNECTION_RESET）' } }, { status: 502 }))
+      .mockResolvedValueOnce(Response.json({ error: { message: '未找到已受理任务' } }, { status: 404 }))
+    await expect(fetchImageTask('images/edits', { method: 'POST', body: 'reference' }, { timeoutMs: 180000 }))
+      .rejects.toThrow('首次提交失败（HTTP 502）：本机任务连接失败（ERR_CONNECTION_RESET）')
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+  })
+
   it('只对文运站内置地址启用异步任务', () => {
     vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'enabled')
     expect(shouldUseImageTasks('https://api.zzlye.xyz/v1')).toBe(true)
