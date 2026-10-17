@@ -5,6 +5,7 @@ import {
   ACCOUNT_KEY_REFRESH_COOLDOWN_MS,
   calculateNewApiTopupAmount,
   createNewApiTopupOrder,
+  createNewApiReceiptOrder,
   fetchNewApiAccountBalance,
   fetchNewApiTopupInfo,
   loginNewApiAccount,
@@ -14,12 +15,14 @@ import {
   registerNewApiAccount,
   type NewApiPaymentOrder,
   type NewApiTopupInfo,
+  type NewApiReceiptOrder,
 } from '../lib/newApiAccount'
 import { copyTextToClipboard, getClipboardFailureMessage } from '../lib/clipboard'
 import { useStore } from '../store'
 import type { AppSettings, NewApiAccountSession } from '../types'
 import { CloseIcon } from './icons'
 import { getDesktopBridge } from '../lib/desktop'
+import ReceiptPaymentDialog from './ReceiptPaymentDialog'
 
 function EyeIcon({ hidden, className }: { hidden: boolean; className?: string }) {
   return (
@@ -124,6 +127,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
   const [isCreatingTopupOrder, setIsCreatingTopupOrder] = useState(false)
   const [topupError, setTopupError] = useState('')
   const [topupReloadKey, setTopupReloadKey] = useState(0)
+  const [receiptPayment, setReceiptPayment] = useState<{ userId: number | string | undefined; order: NewApiReceiptOrder } | null>(null)
   const normalizedSettings = normalizeSettings(settings)
   const wenyunProfile = normalizedSettings.profiles.find((profile) => profile.id === LOCKED_WENYUN_PROFILE_ID) ?? getActiveApiProfile(normalizedSettings)
   const accountSession = normalizedSettings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] ?? null
@@ -356,14 +360,22 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
     }
 
     const desktop = getDesktopBridge()
-    const popup = desktop ? null : window.open('about:blank', '_blank')
-    if (!desktop && !popup) {
+    const isReceipt = method.type === 'alipay_receipt'
+    const popup = desktop || isReceipt ? null : window.open('about:blank', '_blank')
+    if (!desktop && !isReceipt && !popup) {
       showToast('浏览器拦截了支付页面，请允许弹窗后重试', 'error')
       return
     }
 
     setIsCreatingTopupOrder(true)
     try {
+      if (isReceipt) {
+        const order = await createNewApiReceiptOrder(wenyunProfile, accountSession, amount, persistRefreshedSession)
+        // 创建订单期间可能退出或切换账号，旧账号订单不展示到新会话中。
+        const currentSession = normalizeSettings(useStore.getState().settings).newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]
+        if (currentSession?.userId === accountSession.userId) setReceiptPayment({ userId: accountSession.userId, order })
+        return
+      }
       const order = await createNewApiTopupOrder(wenyunProfile, accountSession, amount, method.type, persistRefreshedSession)
       if (desktop) await desktop.openPayment(order)
       else submitPaymentOrder(order, popup!)
@@ -397,6 +409,25 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
 
   return createPortal(
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 px-4 py-8 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      {receiptPayment && accountSession && receiptPayment.userId === accountSession.userId && (
+        <ReceiptPaymentDialog
+          key={`${accountSession.userId}:${receiptPayment.order.trade_no}`}
+          profile={wenyunProfile}
+          session={accountSession}
+          initialOrder={receiptPayment.order}
+          onSessionUpdated={persistRefreshedSession}
+          onPaid={async () => {
+            try {
+              const refreshed = await fetchNewApiAccountBalance(wenyunProfile, accountSession, persistRefreshedSession)
+              updateAccountSession(refreshed)
+              showToast('充值已到账', 'success')
+            } catch {
+              showToast('充值已到账，余额刷新失败，请稍后查询', 'error')
+            }
+          }}
+          onClose={() => setReceiptPayment(null)}
+        />
+      )}
       <div className="max-h-[calc(100vh-4rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-white/60 bg-white/95 p-5 shadow-2xl backdrop-blur-xl dark:border-white/[0.08] dark:bg-gray-950/95">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>

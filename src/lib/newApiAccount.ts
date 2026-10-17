@@ -843,6 +843,7 @@ export async function fetchNewApiTopupInfo(
 
   const paymentMethods = readTopupPaymentMethods(record.pay_methods)
   const enabled = readBoolean(record, 'enable_online_topup')
+    || readBoolean(record, 'enable_alipay_receipt_topup')
     || readBoolean(record, 'enable_stripe_topup')
     || readBoolean(record, 'enable_waffo_topup')
     || readBoolean(record, 'enable_waffo_pancake_topup')
@@ -894,6 +895,65 @@ function requireSafePaymentUrl(value: unknown): string {
     // 支付地址由 NewAPI 返回，格式异常时禁止继续跳转。
   }
   throw new Error('支付地址无效')
+}
+
+export interface NewApiReceiptOrder {
+  trade_no: string
+  status: string
+  paid_time: number
+  receipt: {
+    amount_cents: number
+    qr_code: string
+    confirmed_at: number
+    expires_at: number
+  }
+}
+
+function readReceiptOrder(payload: unknown): NewApiReceiptOrder {
+  const order = getRecord(payload)
+  const receipt = getRecord(order?.receipt)
+  const amount = Number(receipt?.amount_cents)
+  const expires = Number(receipt?.expires_at)
+  if (!order || !receipt || !getString(order.trade_no) || !getString(order.status)
+    || !Number.isSafeInteger(amount) || amount <= 0 || !Number.isSafeInteger(expires) || expires <= 0) {
+    throw new Error('收款码订单数据无效')
+  }
+  const qrCode = getString(receipt.qr_code)
+  // 收款码只允许后台已验证的支付宝地址，不把任意链接编码成付款码。
+  if (qrCode) {
+    let url: URL
+    try { url = new URL(qrCode) } catch { throw new Error('收款码地址无效') }
+    if (url.protocol !== 'https:' || url.hostname !== 'qr.alipay.com' || url.port || url.username || url.password) {
+      throw new Error('收款码地址无效')
+    }
+  }
+  return {
+    trade_no: getString(order.trade_no), status: getString(order.status),
+    paid_time: Number(order.paid_time) || 0,
+    receipt: { amount_cents: amount, expires_at: expires, qr_code: qrCode, confirmed_at: Number(receipt.confirmed_at) || 0 },
+  }
+}
+
+export async function createNewApiReceiptOrder(
+  profile: ApiProfile, session: NewApiAccountSession, amount: number, onSessionUpdated?: NewApiSessionUpdated,
+): Promise<NewApiReceiptOrder> {
+  return readReceiptOrder(await requestWithNewApiSession(profile, session, (active) =>
+    newApiRequest(profile, '/api/user/alipay-receipt/pay', {
+      method: 'POST', accessToken: active.accessToken, userId: active.userId, body: { amount: Math.floor(amount) },
+    }), onSessionUpdated))
+}
+
+export async function requestNewApiReceiptOrder(
+  profile: ApiProfile, session: NewApiAccountSession, tradeNo: string,
+  action?: 'confirm' | 'close', onSessionUpdated?: NewApiSessionUpdated,
+): Promise<NewApiReceiptOrder> {
+  const path = `/api/user/alipay-receipt/order/${encodeURIComponent(tradeNo)}${action ? `/${action}` : ''}`
+  const order = readReceiptOrder(await requestWithNewApiSession(profile, session, (active) =>
+    newApiRequest(profile, path, {
+      method: action ? 'POST' : 'GET', accessToken: active.accessToken, userId: active.userId,
+    }), onSessionUpdated))
+  if (order.trade_no !== tradeNo) throw new Error('收款码订单编号不匹配')
+  return order
 }
 
 function readPaymentFormFields(value: unknown): Record<string, string> {

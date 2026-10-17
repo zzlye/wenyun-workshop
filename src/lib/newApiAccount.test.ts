@@ -5,6 +5,8 @@ import {
   calculateNewApiTopupAmount,
   createNewApiBoundToken,
   createNewApiTopupOrder,
+  createNewApiReceiptOrder,
+  requestNewApiReceiptOrder,
   fetchNewApiAccountBalance,
   fetchNewApiTopupInfo,
   fetchNewApiAccountRole,
@@ -650,6 +652,51 @@ describe('NewAPI 在线支付', () => {
     accessToken: 'payment-access-token',
     userId: 42,
   }
+
+  const receiptOrder = {
+    trade_no: 'AR-test', status: 'pending', paid_time: 0,
+    receipt: { amount_cents: 1001, qr_code: '', confirmed_at: 0, expires_at: 1_900_000_000 },
+  }
+
+  it('仅开启收款码支付时仍展示后台配置的充值方式', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ success: true, data: {
+      enable_online_topup: false, enable_alipay_receipt_topup: true, min_topup: 10,
+      pay_methods: [{ name: '支付宝充值', type: 'alipay_receipt', min_topup: '10' }],
+    } })))
+    await expect(fetchNewApiTopupInfo(DEFAULT_SETTINGS.profiles[0], session)).resolves.toMatchObject({
+      enabled: true, paymentMethods: [{ name: '支付宝充值', type: 'alipay_receipt', minTopup: 10 }],
+    })
+  })
+
+  it('收款码创建使用独立接口并保留服务器分配的精确付款金额', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ success: true, data: receiptOrder })))
+    await expect(createNewApiReceiptOrder(DEFAULT_SETTINGS.profiles[0], session, 10)).resolves.toEqual(receiptOrder)
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/user/alipay-receipt/pay'), expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ amount: 10 }), headers: expect.objectContaining({ Authorization: 'Bearer payment-access-token', 'New-Api-User': '42' }),
+    }))
+  })
+
+  it('查询、确认和关闭订单均携带当前账号会话，不传付款成功标志', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ success: true, data: receiptOrder })))
+    for (const action of [undefined, 'confirm', 'close'] as const) {
+      await requestNewApiReceiptOrder(DEFAULT_SETTINGS.profiles[0], session, 'AR-test', action)
+      expect(fetchMock).toHaveBeenLastCalledWith(expect.stringContaining(`/api/user/alipay-receipt/order/AR-test${action ? `/${action}` : ''}`), expect.objectContaining({ method: action ? 'POST' : 'GET' }))
+    }
+  })
+
+  it('拒绝不匹配的订单和非支付宝收款地址', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { ...receiptOrder, trade_no: 'AR-other' } })))
+    await expect(requestNewApiReceiptOrder(DEFAULT_SETTINGS.profiles[0], session, 'AR-test')).rejects.toThrow('订单编号不匹配')
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { ...receiptOrder, receipt: { ...receiptOrder.receipt, qr_code: 'https://example.com/pay' } } })))
+    await expect(requestNewApiReceiptOrder(DEFAULT_SETTINGS.profiles[0], session, 'AR-test')).rejects.toThrow('收款码地址无效')
+  })
+
+  it('创建收款码订单网络失败不自动重试', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'))
+    await expect(createNewApiReceiptOrder(DEFAULT_SETTINGS.profiles[0], session, 10)).rejects.toThrow()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
 
   it('读取后台启用的支付方式和充值金额', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
