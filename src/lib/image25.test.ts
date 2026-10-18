@@ -5,7 +5,7 @@ import { callImageApi } from './api'
 import { normalizeParamsForSettings } from './paramCompatibility'
 import { FIXED_IMAGE_MODEL_OPTIONS, getFixedImageRequestModel, getImageSizeTiersForModel, normalizeFixedImageModel, supportsExtendedImageQuality, supportsTransparentImageBackground } from './modelPricing'
 
-const models = ['gpt-image-2.5-flare-满血', 'gpt-image-2.5-sunburst-满血']
+const models = ['gpt-image-2.5-flare-满血', 'gpt-image-2.5-sunburst-满血', 'gpt-image-2.5-flare-官渠', 'gpt-image-2.5-sunburst-官渠']
 const otherModels = ['gpt-image-2', 'gpt-image-2-4k', 'gpt-image-2.5-flare-4k', 'gpt-image-2.5-sunburst-4k', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'Nano-Banana-Pro', 'seedream-5-pro']
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='
 const settingsFor = (model: string) => normalizeSettings({ ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, model, apiKey: 'test-only' })) })
