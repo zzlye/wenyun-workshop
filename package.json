@@ -1,7 +1,7 @@
 {
   "name": "wenyun-workshop",
   "private": true,
-  "version": "0.4.16",
+  "version": "0.4.17",
   "type": "module",
   "scripts": {
     "predev": "node scripts/package-canvas-agent.mjs",
