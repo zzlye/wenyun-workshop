@@ -1010,7 +1010,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
         imageBlobs.push(blob)
       }
 
-      // 旧渠道不发送 mask；满血和专线渠道按官方图生图协议支持遮罩。
+      // 旧渠道不发送 mask；满血渠道按官方图生图协议支持遮罩。
       const maskBlob = (!isLockedImageApi || usesOfficialImageParams) && opts.maskDataUrl ? await maskDataUrlToPngBlob(opts.maskDataUrl) : null
       if (maskBlob) {
         assertMaskEditFileSize('遮罩主图文件', imageBlobs[0]?.size ?? 0)

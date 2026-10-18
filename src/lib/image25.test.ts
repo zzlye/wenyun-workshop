@@ -5,7 +5,7 @@ import { callImageApi } from './api'
 import { normalizeParamsForSettings } from './paramCompatibility'
 import { FIXED_IMAGE_MODEL_OPTIONS, getFixedImageRequestModel, getImageSizeTiersForModel, normalizeFixedImageModel, supportsExtendedImageQuality, supportsTransparentImageBackground } from './modelPricing'
 
-const models = ['gpt-image-2.5-flare-满血', 'gpt-image-2.5-sunburst-满血', 'gpt-image-2.5-flare-专线', 'gpt-image-2.5-sunburst-专线']
+const models = ['gpt-image-2.5-flare-满血', 'gpt-image-2.5-sunburst-满血']
 const otherModels = ['gpt-image-2', 'gpt-image-2-4k', 'gpt-image-2.5-flare-4k', 'gpt-image-2.5-sunburst-4k', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'Nano-Banana-Pro', 'seedream-5-pro']
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='
 const settingsFor = (model: string) => normalizeSettings({ ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, model, apiKey: 'test-only' })) })
@@ -80,7 +80,7 @@ describe('GPT Image 2.5 全参数渠道', () => {
     expect(mock).toHaveBeenCalledTimes(3)
   })
 
-  it.each(models.filter(model => model.endsWith('专线')).flatMap(model =>
+  it.each(models.flatMap(model =>
     ['1280x720', '2560x1440', '3840x2160'].flatMap(size => [false, true].map(edit => ({ model, size, edit }))),
   ))('$model $size edit=$edit 保留清晰度、品质、审核与多图数量', async ({ model, size, edit }) => {
     const mock = mockImages()
