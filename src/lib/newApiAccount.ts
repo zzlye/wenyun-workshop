@@ -17,7 +17,11 @@ export interface NewApiLoginPayload {
 }
 
 export interface NewApiRegisterPayload extends NewApiLoginPayload {
-  inviteCode: string
+  inviteCode?: string
+}
+
+export interface NewApiRegistrationSettings {
+  inviteCodeRequired: boolean
 }
 
 export interface NewApiBoundKeyResult {
@@ -511,8 +515,24 @@ export async function loginNewApiAccount(profile: ApiProfile, payload: NewApiLog
   }
 }
 
+export async function fetchNewApiRegistrationSettings(profile: Pick<ApiProfile, 'baseUrl'>): Promise<NewApiRegistrationSettings> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 5000)
+  try {
+    // 注册规则不落本地缓存，避免后台关闭必填后客户端仍使用旧设置。
+    const data = getRecord(await newApiRequest<unknown>(profile, `/api/status?_t=${Date.now()}`, { signal: controller.signal }))
+    if (!data) throw new Error('注册设置无效')
+    // 旧版 NewAPI 未返回开关时继续按必填处理，只有明确关闭才允许留空。
+    return { inviteCodeRequired: data.register_invite_code_required !== false }
+  } catch {
+    throw new Error('暂时无法获取注册设置，请稍后重试')
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export async function registerNewApiAccount(profile: ApiProfile, payload: NewApiRegisterPayload): Promise<NewApiAccountSession> {
-  const registrationInviteCode = payload.inviteCode.trim()
+  const registrationInviteCode = payload.inviteCode?.trim() || undefined
   await newApiRequest(profile, '/api/user/register', {
     method: 'POST',
     body: {
@@ -523,7 +543,8 @@ export async function registerNewApiAccount(profile: ApiProfile, payload: NewApi
   })
   const session = await loginNewApiAccountSession(profile, payload)
   const verifiedSession = await fetchNewApiAccountBalance(profile, session)
-  if (!hasConfirmedInviter(verifiedSession)) throw new Error('邀请码无效')
+  // 选填留空的账号没有邀请人；填写了邀请码仍核对关联，不能把邀请码丢失误报为注册成功。
+  if (registrationInviteCode && !hasConfirmedInviter(verifiedSession)) throw new Error('邀请码无效')
   return ensureNewApiBoundKey(profile, {
     ...verifiedSession,
     registrationInviteCode,

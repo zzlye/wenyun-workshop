@@ -7,6 +7,7 @@ import {
   createNewApiTopupOrder,
   createNewApiReceiptOrder,
   fetchNewApiAccountBalance,
+  fetchNewApiRegistrationSettings,
   fetchNewApiTopupInfo,
   loginNewApiAccount,
   maskApiKey,
@@ -113,6 +114,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
   const [passwordVisible, setPasswordVisible] = useState(false)
   const [accountKeyVisible, setAccountKeyVisible] = useState(false)
   const [accountInviteCode, setAccountInviteCode] = useState('')
+  const [inviteCodeRequired, setInviteCodeRequired] = useState(true)
   const [accountRedeemCode, setAccountRedeemCode] = useState('')
   const [isAccountBusy, setIsAccountBusy] = useState(false)
   const [isRedeemingCode, setIsRedeemingCode] = useState(false)
@@ -132,6 +134,17 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
   const wenyunProfile = normalizedSettings.profiles.find((profile) => profile.id === LOCKED_WENYUN_PROFILE_ID) ?? getActiveApiProfile(normalizedSettings)
   const accountSession = normalizedSettings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] ?? null
   const accountKeyCooldownRemainingMs = Math.max(0, ACCOUNT_KEY_REFRESH_COOLDOWN_MS - (Date.now() - (accountSession?.lastKeyRefreshAt ?? 0)))
+
+  useEffect(() => {
+    if (!open || accountSession || accountMode !== 'register') return
+    let cancelled = false
+    setInviteCodeRequired(true)
+    // 网页和桌面共用注册入口，每次打开注册页都读取 NewAPI 的当前规则。
+    void fetchNewApiRegistrationSettings({ baseUrl: wenyunProfile.baseUrl })
+      .then((registration) => { if (!cancelled) setInviteCodeRequired(registration.inviteCodeRequired) })
+      .catch(() => { if (!cancelled) setInviteCodeRequired(true) })
+    return () => { cancelled = true }
+  }, [open, accountMode, Boolean(accountSession), wenyunProfile.baseUrl])
 
   const updateAccountSession = useCallback((session: NewApiAccountSession | null, patch: Partial<AppSettings> = {}, preserveVideoKey = true) => {
     const current = normalizeSettings(useStore.getState().settings)
@@ -261,7 +274,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
   }
 
   const handleAccountRegister = async () => {
-    if (!accountUsername.trim() || !accountPassword || !accountInviteCode.trim()) {
+    if (!accountUsername.trim() || !accountPassword) {
       showToast('请完整填写注册信息', 'error')
       return
     }
@@ -271,6 +284,15 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
     }
     setIsAccountBusy(true)
     try {
+      if (!accountInviteCode.trim()) {
+        // 留空提交前再取一次规则，避免页面打开期间后台修改开关导致前端误拦截。
+        const registration = await fetchNewApiRegistrationSettings(wenyunProfile)
+        setInviteCodeRequired(registration.inviteCodeRequired)
+        if (registration.inviteCodeRequired) {
+          showToast('请填写邀请码', 'error')
+          return
+        }
+      }
       const session = await registerNewApiAccount(wenyunProfile, {
         username: accountUsername,
         password: accountPassword,
@@ -575,7 +597,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
             <input value={accountUsername} onChange={(event) => setAccountUsername(event.target.value)} placeholder="账号" className="w-full rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50" />
             <PasswordInput value={accountPassword} onChange={setAccountPassword} visible={passwordVisible} onToggleVisible={() => setPasswordVisible((value) => !value)} />
             {accountMode === 'register' && (
-              <input value={accountInviteCode} onChange={(event) => setAccountInviteCode(event.target.value)} placeholder="邀请码" className="w-full rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50" />
+              <input value={accountInviteCode} onChange={(event) => setAccountInviteCode(event.target.value)} aria-label="邀请码" required={inviteCodeRequired} placeholder={inviteCodeRequired ? '邀请码（必填）' : '邀请码（选填）'} className="w-full rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50" />
             )}
             <button type="button" onClick={accountMode === 'login' ? handleAccountLogin : handleAccountRegister} disabled={isAccountBusy} className="w-full rounded-xl bg-blue-500 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50">
               {isAccountBusy ? '处理中...' : accountMode === 'login' ? '登录' : '注册'}
