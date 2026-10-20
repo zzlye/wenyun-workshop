@@ -309,6 +309,26 @@ async function requestWithNewApiSession<T>(
   }
 }
 
+// 账号功能统一沿用登录会话和续期逻辑，绝不降级为生图 Key 执行写操作。
+export function requestNewApiAccountResource<T>(
+  profile: ApiProfile, session: NewApiAccountSession, path: string,
+  options: { method?: RequestMethod; body?: unknown; signal?: AbortSignal } = {},
+  onSessionUpdated?: NewApiSessionUpdated,
+): Promise<T> {
+  return requestWithNewApiSession(profile, session, active => newApiRequest<T>(profile, path, {
+    ...options, accessToken: active.accessToken, userId: active.userId,
+  }), onSessionUpdated)
+}
+
+export function isNewApiBusinessRejection(error: unknown): boolean {
+  return error instanceof NewApiAccountRequestError && error.status < 500 && ![408, 429].includes(error.status)
+}
+
+export function fetchNewApiSiteStatus(profile: ApiProfile, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  const timeout = AbortSignal.timeout(30000)
+  return newApiRequest(profile, '/api/status', { signal: signal ? AbortSignal.any([signal, timeout]) : timeout })
+}
+
 // 管理入口使用账号会话，绝不使用绑定的生成 Key 代替根用户登录状态。
 export async function fetchNewApiAccountRole(profile: ApiProfile, session: NewApiAccountSession): Promise<number> {
   return requestWithNewApiSession(profile, session, async current => {

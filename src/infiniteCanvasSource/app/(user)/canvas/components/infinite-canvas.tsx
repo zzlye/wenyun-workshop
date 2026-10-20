@@ -183,6 +183,7 @@ export function InfiniteCanvas({
                 initialY: viewportRef.current.y,
                 hasMoved: false,
             };
+            nextViewportRef.current = null;
             document.body.style.cursor = "grabbing";
             return;
         }
@@ -216,6 +217,14 @@ export function InfiniteCanvas({
         const handlePointerUp = () => {
             if (!panState.current.isPanning) return;
 
+            // 松开时最后一帧可能还没绘制，必须先落地再保存，防止下一次重绘回跳。
+            if (frameRef.current !== null) {
+                cancelAnimationFrame(frameRef.current);
+                frameRef.current = null;
+            }
+            if (nextViewportRef.current) previewViewport(nextViewportRef.current);
+            nextViewportRef.current = null;
+
             if (!panState.current.hasMoved) {
                 onCanvasDeselect?.();
             }
@@ -226,9 +235,13 @@ export function InfiniteCanvas({
 
         window.addEventListener("pointermove", handlePointerMove);
         window.addEventListener("pointerup", handlePointerUp);
+        window.addEventListener("pointercancel", handlePointerUp);
+        window.addEventListener("blur", handlePointerUp);
         return () => {
             window.removeEventListener("pointermove", handlePointerMove);
             window.removeEventListener("pointerup", handlePointerUp);
+            window.removeEventListener("pointercancel", handlePointerUp);
+            window.removeEventListener("blur", handlePointerUp);
         };
     }, [commitViewport, onCanvasDeselect, previewViewport]);
 

@@ -588,6 +588,7 @@ function InfiniteCanvasPage() {
                     imageModel: model,
                     quality: metadata.quality || effectiveConfig.quality,
                     mjRaw: metadata.mjRaw ?? effectiveConfig.mjRaw,
+                    mjParameters: metadata.mjParameters ?? effectiveConfig.mjParameters,
                     size: normalizeImageSizeForProfile(metadata.size || effectiveConfig.size, taskProfileId, model),
                     count: "1",
                 };
@@ -744,12 +745,14 @@ function InfiniteCanvasPage() {
         clearPersistenceError();
     }, [clearPersistenceError, message, persistenceError]);
 
+    const replaceCanvasRoute = router.replace;
     useEffect(() => {
         if (!hydrated) return;
+        let cancelled = false;
         setProjectLoaded(false);
         const project = openProject(projectId);
         if (!project) {
-            router.replace("/canvas");
+            replaceCanvasRoute("/canvas");
             return;
         }
 
@@ -757,6 +760,8 @@ function InfiniteCanvasPage() {
             const activeGenerationIds = getCanvasGenerationSessionIds(projectId);
             const restoredNodes = await hydrateCanvasImages(resetInterruptedCanvasGenerations(project.nodes, activeGenerationIds));
             const restoredSessions = await hydrateAssistantImages(project.chatSessions || []);
+            // 切换画布或退出后，旧图片加载结果不得覆盖当前画布。
+            if (cancelled) return;
             nodesRef.current = restoredNodes;
             connectionsRef.current = project.connections;
             setNodes(restoredNodes);
@@ -789,7 +794,8 @@ function InfiniteCanvasPage() {
             setProjectLoaded(true);
         };
         void restore();
-    }, [hydrated, openProject, projectId, router]);
+        return () => { cancelled = true; };
+    }, [hydrated, openProject, projectId, replaceCanvasRoute]);
 
     useEffect(() => {
         if (!projectLoaded) return;
@@ -3260,6 +3266,7 @@ function InfiniteCanvasPage() {
                           imageModel: savedImageModel,
                           quality: savedImageMetadata.quality || effectiveConfig.quality,
                           mjRaw: savedImageMetadata.mjRaw ?? effectiveConfig.mjRaw,
+                          mjParameters: savedImageMetadata.mjParameters ?? effectiveConfig.mjParameters,
                           size: normalizeImageSizeForProfile(savedImageMetadata.size || effectiveConfig.size, activeProfile.id, savedImageModel),
                           count: "1",
                     }
@@ -4375,6 +4382,7 @@ function buildImageGenerationMetadata(type: CanvasImageGenerationType, config: A
         quality: config.quality,
         imageBackground: config.imageBackground,
         mjRaw: config.mjRaw,
+        mjParameters: config.mjParameters,
         count,
         references: references.map(referenceUrl).filter((url): url is string => Boolean(url)),
     };
@@ -4520,6 +4528,7 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
         quality: node?.metadata?.quality || config.quality || defaultConfig.quality,
         imageBackground: node?.metadata?.imageBackground || config.imageBackground || defaultConfig.imageBackground,
         mjRaw: node?.metadata?.mjRaw ?? config.mjRaw,
+        mjParameters: node?.metadata?.mjParameters ?? config.mjParameters,
         size: mode === "video" ? (node?.metadata?.size || config.size) : normalizeImageSizeForProfile(node?.metadata?.size || config.size || defaultConfig.size, activeProfileId, resolvedModel),
         videoSeconds: node?.metadata?.seconds ?? config.videoSeconds ?? defaultConfig.videoSeconds,
         videoGenerateAudio: node?.metadata?.videoGenerateAudio !== undefined ? node.metadata.videoGenerateAudio : config.videoGenerateAudio,

@@ -51,6 +51,7 @@ test('公开任务域名与内网不同仍只向配置网关查询，恢复任�
 for (const snapshot of [
   { task_id: 'async_fixture', status: 'failed', error: { message: '模拟上游失败' } },
   { task_id: 'async_fixture', status: 'cancelled' },
+  { task_id: 'async_fixture', status: 'error', data: { error_message: '模拟失败' } },
   { task_id: 'async_fixture', status: 'succeeded', result_expired: true },
 ]) {
   test(`网关终态 ${snapshot.status} expired=${!!snapshot.result_expired} 明确结束`, async () => {
@@ -60,3 +61,14 @@ for (const snapshot of [
     }), /失败|过期/)
   })
 }
+
+test('MJ 混合包装保留顶层任务编号与状态，并识别 data 内的错误码', async () => {
+  const payload = { task_id: 'async_fixture', status: 'error', data: { error_code: 'MJ_REJECTED' } }
+  const response = new Response()
+  const accepted = readGatewayTask(Buffer.from(JSON.stringify(payload)), response)
+  assert.equal(accepted.id, 'async_fixture')
+  await assert.rejects(finishGatewayTask({ task: {}, response, body: Buffer.from(JSON.stringify(payload)),
+    baseUrl: 'https://gateway.example/v1', headers: new Headers(), signal: new AbortController().signal,
+    checkpoint: async () => {}, readBody: async () => { throw new Error('终态不应继续查询') },
+  }), /MJ_REJECTED/)
+})

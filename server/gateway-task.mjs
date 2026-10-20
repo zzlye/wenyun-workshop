@@ -4,6 +4,14 @@ const RETRYABLE = new Set([408, 429, 500, 502, 503, 504])
 const FINISHED = new Set(['succeeded', 'completed', 'success', 'done'])
 const FAILED = new Set(['failed', 'failure', 'cancelled', 'canceled', 'error'])
 
+// 兼容任务编号在顶层、结果在 data 的包装，避免已结束的任务被误判为仍在生成。
+function taskSnapshot(root) {
+  if (!root || typeof root !== 'object') return {}
+  const data = root.data && typeof root.data === 'object' && !Array.isArray(root.data) ? root.data : {}
+  return { ...root, ...data, task_id: root.task_id || data.task_id, status: data.status || root.status,
+    result_expired: data.result_expired === true || root.result_expired === true }
+}
+
 export function gatewayEndpoint(baseUrl, endpoint) {
   // Gemini 使用原生根路径，其他生成协议保持原来的 /v1 路径。
   return endpoint.startsWith('/v1beta/') ? `${baseUrl.replace(/\/v1$/, '')}${endpoint}` : `${baseUrl}${endpoint}`
@@ -17,7 +25,7 @@ export function readGatewayTask(body, response) {
     if (body.length) throw new Error('图片接口返回了无效响应')
     root = {}
   }
-  const value = root?.data && !Array.isArray(root.data) ? root.data : root
+  const value = taskSnapshot(root)
   const headerId = response?.headers.get('x-newapi-task-id')
   const id = value?.task_id || headerId || value?.id
   // Responses 本身也有 id/status，只有明确任务标记才进入网关轮询。
@@ -54,7 +62,7 @@ export async function finishGatewayTask({ task, response, body, baseUrl, headers
   let pause = retryDelay(response, pollIntervalMs)
   for (;;) {
     const status = String(snapshot.status || '').toLowerCase()
-    if (FAILED.has(status)) throw new Error(snapshot.error?.message || snapshot.error_message || '生成任务失败')
+    if (FAILED.has(status)) throw new Error(snapshot.error?.message || snapshot.error_message || String(snapshot.error_code || '生成任务失败'))
     if (snapshot.result_expired) throw new Error('生成结果已过期，不能重新提交原任务')
     if (FINISHED.has(status)) {
       // NewAPI result 保持原协议；旧 MJ 包装继续交给现有 MJ 解析器。
@@ -77,7 +85,7 @@ export async function finishGatewayTask({ task, response, body, baseUrl, headers
     if (!response.ok) throw new Error(`查询生成任务失败（HTTP ${response.status}）`)
     let parsed
     try { parsed = JSON.parse(body.toString('utf8')) } catch { throw new Error('任务查询返回了无效 JSON') }
-    snapshot = parsed?.data && !Array.isArray(parsed.data) ? parsed.data : parsed
+    snapshot = taskSnapshot(parsed)
     const responseId = snapshot.task_id || snapshot.id
     if (responseId && responseId !== accepted.id) throw new Error('查询返回的任务编号不一致')
     // 未知状态保留原任务并继续查询，不把 HTTP 200 当作生成成功。

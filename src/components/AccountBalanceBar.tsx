@@ -7,6 +7,7 @@ import { fetchNewApiAccountBalance } from '../lib/newApiAccount'
 import type { ApiProfile } from '../types'
 import AccountLoginModal from './AccountLoginModal'
 import PriceTableButton from './PriceTableButton'
+import { LotteryButton } from './LotteryModal'
 
 type AccountBalanceBarProps = {
   activeProfile?: ApiProfile
@@ -153,6 +154,7 @@ export default function AccountBalanceBar({
           buttonClassName={priceButtonClassName || actionClassName}
           buttonStyle={priceButtonStyle || actionButtonStyle}
         />
+        {isWenyunProfile && <LotteryButton className={actionClassName} style={actionButtonStyle} onRequireLogin={() => setShowAccountLogin(true)} />}
         {showLoginButton && isWenyunProfile && (
           <button
             type="button"

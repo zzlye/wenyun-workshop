@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, type ReactNode } from 'react'
+import { createContext, useContext, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 
 export type CanvasRoute = {
   pathname: string
@@ -33,22 +33,24 @@ function useCanvasNavigation() {
   return value
 }
 
-// 使用 useMemo 缓存 router 对象，避免每次渲染返回新引用导致依赖了 router 的 useEffect 无限循环
+// 导航动作保持稳定；公告、余额与主题重绘不能触发画布重新读盘。
 export function useRouter() {
   const navigation = useCanvasNavigation()
-  return useMemo(() => ({
-    push: navigation.navigate,
-    replace: navigation.navigate,
-    back: navigation.backToHome,
-    backToHome: navigation.backToHome,
-    openHome: navigation.openHome,
-    openWenyun: navigation.openWenyun,
-    openSettings: navigation.openSettings,
-    appearanceTheme: navigation.appearanceTheme,
-    setAppearanceTheme: navigation.setAppearanceTheme,
+  const current = useRef(navigation)
+  useLayoutEffect(() => { current.current = navigation }, [navigation])
+  const actions = useMemo(() => ({
+    push: (href: string) => current.current.navigate(href),
+    replace: (href: string) => current.current.navigate(href),
+    back: () => current.current.backToHome(),
+    backToHome: () => current.current.backToHome(),
+    openHome: () => current.current.openHome(),
+    openWenyun: () => current.current.openWenyun(),
+    openSettings: () => current.current.openSettings(),
+    setAppearanceTheme: (theme: 'light' | 'dark') => current.current.setAppearanceTheme(theme),
     refresh: () => undefined,
     prefetch: async () => undefined,
-  }), [navigation])
+  }), [])
+  return useMemo(() => ({ ...actions, appearanceTheme: navigation.appearanceTheme }), [actions, navigation.appearanceTheme])
 }
 
 export function useParams<T extends Record<string, string> = Record<string, string>>() {

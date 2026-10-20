@@ -26,7 +26,7 @@ describe('Midjourney 提交与恢复', () => {
     if (mode === '本站恢复') fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ status: 'succeeded' })))
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(payload)))
     const result = await callMidjourneyImageApi({ ...options, ...(mode === '本站恢复' ? { imageTask: { taskId: 'website-task', accessToken: 'token', idempotencyKey: 'once' } } : {}) }, profile)
-    const absoluteUrls = relativeUrls.map(url => `https://api.zzlye.xyz${url}`)
+    const absoluteUrls = relativeUrls.map(url => new URL(url, profile.baseUrl).toString())
     expect(result.rawImageUrls).toEqual(absoluteUrls)
     expect(result.images).toEqual(absoluteUrls.map(getSafeImageDisplayUrl))
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(mode === '直连' ? 1 : 0)

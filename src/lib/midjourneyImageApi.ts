@@ -7,7 +7,7 @@ import { fetchResultResponse, isTransientResultError } from './resultRequest'
 
 const ENDPOINT = 'midjourney/generations'
 const POLL_INTERVAL_MS = 3_000
-const TERMINAL_STATUSES = ['completed', 'succeeded', 'success', 'failed', 'failure', 'cancelled', 'canceled']
+const TERMINAL_STATUSES = ['completed', 'succeeded', 'success', 'failed', 'failure', 'cancelled', 'canceled', 'error']
 
 export async function callMidjourneyImageApi(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
   const proxy = readClientDevProxyConfig()
@@ -25,10 +25,10 @@ export async function callMidjourneyImageApi(opts: CallApiOptions, profile: ApiP
   let payload: unknown = await readMidjourneyResponse(response)
   let task = readMidjourneyTask(payload, response.headers.get('x-newapi-task-id') || '', profile.baseUrl)
   if (!response.ok) throw new Error(sanitizeApiErrorMessage(task.error || `图片请求失败（HTTP ${response.status}）`))
-  if (!useTasks && !task.images.length && !TERMINAL_STATUSES.includes(task.status)) {
+  if (!useTasks && !task.images.length && !task.resultExpired && !TERMINAL_STATUSES.includes(task.status)) {
     if (!task.taskId) throw new Error('接口没有返回有效的图片任务 ID')
     const taskId = task.taskId
-    while (!TERMINAL_STATUSES.includes(task.status)) {
+    while (!task.resultExpired && !TERMINAL_STATUSES.includes(task.status)) {
       await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS))
       try {
         // 受理后只能查询原任务，临时网络错误不能重新 POST。
@@ -43,7 +43,8 @@ export async function callMidjourneyImageApi(opts: CallApiOptions, profile: ApiP
       }
     }
   }
-  if (['failed', 'failure', 'cancelled', 'canceled'].includes(task.status)) throw new Error(sanitizeApiErrorMessage(task.error || '图片生成失败'))
+  if (task.resultExpired) throw new Error('任务已完成，但图片结果已过期')
+  if (['failed', 'failure', 'cancelled', 'canceled', 'error'].includes(task.status)) throw new Error(sanitizeApiErrorMessage(task.error || '图片生成失败'))
   if (!task.images.length) throw new Error(task.error || '接口没有返回图片')
   opts.onResultReceived?.()
   // 四宫格封面不作为第五张结果；返回链接后交给现有后台保存流程下载原图。

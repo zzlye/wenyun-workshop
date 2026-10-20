@@ -24,6 +24,7 @@ import type { AppSettings, NewApiAccountSession } from '../types'
 import { CloseIcon } from './icons'
 import { getDesktopBridge } from '../lib/desktop'
 import ReceiptPaymentDialog from './ReceiptPaymentDialog'
+import { LotteryButton } from './LotteryModal'
 
 function EyeIcon({ hidden, className }: { hidden: boolean; className?: string }) {
   return (
@@ -508,6 +509,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
+              <LotteryButton />
               <button type="button" onClick={handleRefreshAccountBalance} disabled={isQueryingBalance} className="rounded-xl border border-gray-200/70 bg-white/70 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:border-blue-400/30 dark:hover:bg-blue-500/15 dark:hover:text-blue-200">
                 {isQueryingBalance ? '查询中...' : '查询账号余额'}
               </button>

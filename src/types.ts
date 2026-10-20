@@ -290,9 +290,28 @@ export interface AppSettings {
 
 // ===== 任务参数 =====
 
+export interface MidjourneyParams {
+  raw?: boolean
+  hd?: boolean
+  tile?: boolean
+  quality?: 0.25 | 0.5 | 1 | 2
+  negative_prompt?: string
+  seed?: number
+  stylize?: number
+  chaos?: number
+  weird?: number
+  iw?: number
+  cref?: string
+  sref?: string
+  dref?: string
+  cw?: number
+  sw?: number
+  dw?: number
+}
+
 export interface TaskParams {
-  /** Midjourney 专属的 Raw 设置。 */
-  midjourney?: { raw?: boolean }
+  /** MJ 品质是数值，与 GPT Image 的字符串品质分别保存。 */
+  midjourney?: MidjourneyParams
   /** 仅支持背景参数的图片模型发送，旧任务未设置时由模型自动决定。 */
   background?: 'auto' | 'opaque' | 'transparent'
   size: string

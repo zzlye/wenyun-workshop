@@ -14,8 +14,8 @@ import { calculateImageSize, normalizeImageSize, parseRatio, type SizeTier } fro
 import { useStore } from "../../../../../store";
 import { normalizeImageBackground, supportsTransparentImageBackground } from "../../../../../lib/modelPricing";
 import { getBananaSizeConfig, resolveBananaSizePreset, type BananaSizeTier } from "../../../../../lib/bananaImageSize";
-import { isMidjourneyModel, normalizeMidjourneyRatio } from "../../../../../lib/midjourney";
-import { MidjourneyOptions, MidjourneyRatioOptions } from "../../../../../components/MidjourneyControls";
+import { isMidjourneyModel, normalizeMidjourneyRatio, readMidjourneyConfig } from "../../../../../lib/midjourney";
+import { MidjourneySettingsPanel, MidjourneyRatioOptions } from "../../../../../components/MidjourneyControls";
 
 const ALL_TIERS: SizeTier[] = ["1K", "2K", "4K"];
 const QUALITY_OPTIONS = [
@@ -176,7 +176,7 @@ export function CanvasImageSizePanel({ config, allowedTiers, qualityOptions, all
     if (isMidjourneyModel(config.imageModel || config.model)) return <div className="space-y-4" style={{ color: theme.node.text }}>
         <div className="text-lg font-semibold">图像设置</div>
         <SettingGroup title="图像比例" color={theme.node.muted}><MidjourneyRatioOptions value={normalizeMidjourneyRatio(config.size)} onChange={value => onConfigChange("size", value)} /></SettingGroup>
-        <div className="flex gap-3"><MidjourneyOptions value={{ raw: config.mjRaw === "true" }} onChange={value => onConfigChange("mjRaw", String(value.raw ?? false))} /></div>
+        <MidjourneySettingsPanel value={readMidjourneyConfig(config)} onChange={value => onConfigChange("mjParameters", JSON.stringify(value))} />
     </div>;
     return <PixelImageSizePanel config={config} allowedTiers={allowedTiers} qualityOptions={qualityOptions} allowCustomRatio={allowCustomRatio} onConfigChange={onConfigChange} theme={theme} />;
 }

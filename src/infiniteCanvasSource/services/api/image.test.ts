@@ -23,6 +23,16 @@ describe("canvas image api", () => {
         expect(result.map(image => image.dataUrl)).toEqual(urls.map(getSafeImageDisplayUrl));
     });
 
+    it("画布完整 MJ 配置直达请求正文，不串入 GPT 品质或漏掉零值", async () => {
+        const model = "mj-v8.2";
+        vi.stubEnv("VITE_IMAGE_TASKS_AVAILABLE", "disabled");
+        const options = { raw: true, hd: true, tile: false, quality: 0.5, seed: 0, stylize: 0, chaos: 0, weird: 500, negative_prompt: "文字", cref: "https://example.com/character.png", cw: 0, sref: "https://example.com/style.png", sw: 200, dref: "https://example.com/depth.png", dw: 80 };
+        const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ status: "completed", result: { data: { image_urls: ["https://example.com/result.png"] } } })));
+        useStore.setState({ settings: { ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, model, apiKey: "mj-test-key" })) } });
+        await requestGeneration({ ...defaultConfig, model, imageModel: model, size: "21:9", count: "4", quality: "high", mjParameters: JSON.stringify(options) }, "场景");
+        expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ model, prompt: "场景", size: "21:9", n: 1, ...options });
+    });
+
     afterEach(() => {
         useStore.setState({ settings: initialSettings });
         vi.restoreAllMocks();
