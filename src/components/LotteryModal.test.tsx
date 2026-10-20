@@ -158,6 +158,38 @@ it('充值不足不能抽奖，未上线的接口给出可重试状态而不伪�
   expect(document.body.textContent).toContain('抽奖活动暂未开放')
 })
 
+it('循环中奖栏保留超过六条的完整名单，后台更新不打断手动暂停，复制项不重复读屏', async () => {
+  const winners = Array.from({ length: 8 }, (_, index) => ({
+    id: index + 1,
+    username: `客***${index + 1}`,
+    quota: 250000,
+  }))
+  vi.mocked(fetchLotteryWinners).mockResolvedValue(winners)
+  await render()
+  const lists = document.querySelectorAll('.wenyun-lottery-ticker-list')
+  expect(lists).toHaveLength(2)
+  expect(lists[0].children).toHaveLength(8)
+  expect(lists[0].textContent).toContain('客***8')
+  expect(lists[0].getAttribute('aria-hidden')).toBeNull()
+  expect(lists[1].getAttribute('aria-hidden')).toBe('true')
+  const pause = document.querySelector<HTMLButtonElement>('[aria-label="暂停滚动"]')!
+  await act(async () => pause.click())
+  expect(document.querySelector('.wenyun-lottery-ticker')?.getAttribute('data-paused')).toBe('true')
+  expect(pause.getAttribute('aria-pressed')).toBe('true')
+  vi.mocked(fetchLotteryWinners).mockResolvedValue([
+    ...winners,
+    { id: 9, username: '新***客', quota: 500000 },
+  ])
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ['wenyun-lottery'] })
+  })
+  await settle()
+  expect(document.querySelector('.wenyun-lottery-ticker-list')?.children).toHaveLength(9)
+  expect(document.querySelector('.wenyun-lottery-ticker')?.getAttribute('data-paused')).toBe('true')
+  await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="继续滚动"]')!.click())
+  expect(document.querySelector('.wenyun-lottery-ticker')?.getAttribute('data-paused')).toBe('false')
+})
+
 it('响应丢失后的重试沿用同一编号，没有自动再次抽奖', async () => {
   vi.mocked(drawNewApiLottery).mockRejectedValueOnce(new TypeError('网络中断')).mockResolvedValueOnce(reward)
   await render()

@@ -41,6 +41,7 @@ import { useStore } from '../store'
 import type { ApiProfile, NewApiAccountSession } from '../types'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
 import { useCloseOnEscape } from '../hooks/useCloseOnEscape'
+import LotteryWinnersTicker from './LotteryWinnersTicker'
 
 const statusLabels = { active: '进行中', paused: '已暂停', ended: '已结束', exhausted: '奖池已领完' }
 const buttonClass =
@@ -506,17 +507,7 @@ export default function LotteryModal({
                 ) : !winners.data?.length ? (
                   <p className="text-xs text-slate-400">还没有中奖记录，期待第一份好运</p>
                 ) : (
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {winners.data.slice(0, 6).map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex min-w-0 items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-xs dark:bg-white/5"
-                      >
-                        <span className="truncate text-slate-400">{item.username}</span>
-                        <span className="shrink-0 font-medium text-blue-500">+{money(item.quota)}</span>
-                      </div>
-                    ))}
-                  </div>
+                  <LotteryWinnersTicker key={activity.id} winners={winners.data} formatQuota={money} />
                 )}
               </section>
               {showHistory && (

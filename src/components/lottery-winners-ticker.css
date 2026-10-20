@@ -1,0 +1,55 @@
+.wenyun-lottery-ticker {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.wenyun-lottery-ticker-track {
+  display: flex;
+  width: max-content;
+  min-width: 200%;
+  animation: wenyun-lottery-winner-scroll linear infinite;
+}
+
+.wenyun-lottery-ticker-list {
+  display: flex;
+  min-width: 50%;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2rem;
+  margin: 0;
+  padding: 0 2rem 0 0;
+  list-style: none;
+}
+
+.wenyun-lottery-ticker:hover .wenyun-lottery-ticker-track,
+.wenyun-lottery-ticker:focus-within .wenyun-lottery-ticker-track,
+.wenyun-lottery-ticker[data-paused='true'] .wenyun-lottery-ticker-track {
+  animation-play-state: paused;
+}
+
+@keyframes wenyun-lottery-winner-scroll {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* 减少动态效果时停用动画，保留完整名单供键盘或触摸横向浏览。 */
+@media (prefers-reduced-motion: reduce) {
+  .wenyun-lottery-ticker {
+    overflow-x: auto;
+  }
+
+  .wenyun-lottery-ticker-track {
+    min-width: 0;
+    animation: none;
+  }
+
+  .wenyun-lottery-ticker-list {
+    min-width: 0;
+  }
+
+  .wenyun-lottery-ticker-list[aria-hidden='true'] {
+    display: none;
+  }
+}
