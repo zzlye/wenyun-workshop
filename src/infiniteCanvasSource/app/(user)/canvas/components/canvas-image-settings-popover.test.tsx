@@ -36,6 +36,16 @@ async function renderModel(model: string, size = "1376x768") {
 }
 
 describe("画布香蕉尺寸选择", () => {
+    it("图片二四K展示背景选项并写回透明背景，普通模型隐藏该选项", async () => {
+        const { onConfigChange, render } = await renderModel("gpt-image-2-4k", "3840x2160");
+        const transparent = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "透明背景");
+        expect(transparent).toBeDefined();
+        await act(async () => transparent!.click());
+        expect(onConfigChange).toHaveBeenCalledWith("imageBackground", "transparent");
+        await render("gpt-image-2", "1024x1024");
+        expect(host.textContent).not.toContain("透明背景");
+    });
+
     it("mj-v8.2 提供文档比例与 Raw，移除像素档位和生成次数", async () => {
         const model = "mj-v8.2";
         const { onConfigChange } = await renderModel(model, "auto");

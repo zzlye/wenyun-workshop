@@ -5,8 +5,6 @@ export const DEFAULT_IMAGES_MODEL = 'gpt-image-2'
 export const GPT_IMAGE_2_4K_MODEL = 'gpt-image-2-4k'
 export const GPT_IMAGE_2_4K_REQUEST_MODEL = 'gpt-image-2-4k'
 export const SEEDREAM_5_PRO_MODEL = 'seedream-5-pro'
-export const GPT_IMAGE_2_5_SUNBURST_MODEL = 'gpt-image-2.5-sunburst-4k'
-export const GPT_IMAGE_2_5_FLARE_MODEL = 'gpt-image-2.5-flare-4k'
 export const GPT_IMAGE_2_5_FLARE_FULL_MODEL = 'gpt-image-2.5-flare-满血'
 export const GPT_IMAGE_2_5_SUNBURST_FULL_MODEL = 'gpt-image-2.5-sunburst-满血'
 export const GPT_IMAGE_2_5_FLARE_OFFICIAL_CHANNEL_MODEL = 'gpt-image-2.5-flare-官渠'
@@ -38,8 +36,6 @@ export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
   { model: DEFAULT_IMAGES_MODEL, label: DEFAULT_IMAGES_MODEL, requestModel: DEFAULT_IMAGES_MODEL, unitCostText: 'HUHN 0.06', resolutionText: '1K' },
   { model: GPT_IMAGE_2_4K_MODEL, label: GPT_IMAGE_2_4K_MODEL, requestModel: GPT_IMAGE_2_4K_REQUEST_MODEL, unitCostText: 'HUHN 0.09', resolutionText: '1K、2K、4K' },
   { model: SEEDREAM_5_PRO_MODEL, label: SEEDREAM_5_PRO_MODEL, requestModel: SEEDREAM_5_PRO_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K' },
-  { model: GPT_IMAGE_2_5_SUNBURST_MODEL, label: GPT_IMAGE_2_5_SUNBURST_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
-  { model: GPT_IMAGE_2_5_FLARE_MODEL, label: GPT_IMAGE_2_5_FLARE_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   // 保留渠道的完整路由名，避免去掉“满血”后被中转分配到其他渠道；价格由实际渠道查询。
   { model: GPT_IMAGE_2_5_FLARE_FULL_MODEL, label: GPT_IMAGE_2_5_FLARE_FULL_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_FULL_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   { model: GPT_IMAGE_2_5_SUNBURST_FULL_MODEL, label: GPT_IMAGE_2_5_SUNBURST_FULL_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_FULL_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
@@ -55,19 +51,19 @@ export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
   { model: 'mj-v8.2', label: 'mj-v8.2', requestModel: 'mj-v8.2', unitCostText: 'HUHN --', resolutionText: '自动' },
 ]
 
-// 旧版无后缀模型保留原来的扩展质量选项，新版四 K 模型只允许基础三档。
+// 全参数模型开放扩展品质，旧版无后缀模型保留原有选项。
 export function supportsExtendedImageQuality(model: string): boolean {
   if (supportsTransparentImageBackground(model)) return true
-  // 四 K 新模型只支持低、中、高，不能因请求模型映射或旧配置残留开放扩展档位。
+  // 未开放全参数的四 K 路由仍只支持基础档位，不能因旧配置残留误传扩展品质。
   if (/-4k$/i.test(model.trim())) return false
   const normalized = getFixedImageRequestModel(model).toLowerCase()
   return normalized === GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL || normalized === GPT_IMAGE_2_5_FLARE_LEGACY_MODEL
 }
 
-// 满血和官渠渠道开放背景选项，旧版和四 K 别名维持原来的参数能力。
+// 图片二四 K、满血和官渠统一开放全参数；旧别名按实际路由判断，界面和请求保持一致。
 export function supportsTransparentImageBackground(model: string): boolean {
-  const normalized = model.trim().toLowerCase()
-  return [GPT_IMAGE_2_5_FLARE_FULL_MODEL, GPT_IMAGE_2_5_SUNBURST_FULL_MODEL,
+  const normalized = getFixedImageRequestModel(model).toLowerCase()
+  return [GPT_IMAGE_2_4K_MODEL, GPT_IMAGE_2_5_FLARE_FULL_MODEL, GPT_IMAGE_2_5_SUNBURST_FULL_MODEL,
     GPT_IMAGE_2_5_FLARE_OFFICIAL_CHANNEL_MODEL, GPT_IMAGE_2_5_SUNBURST_OFFICIAL_CHANNEL_MODEL].includes(normalized)
 }
 

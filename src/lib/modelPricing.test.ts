@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildFixedModelPriceRows, FIXED_IMAGE_MODEL_OPTIONS, getFixedImageRequestModel, getImageSizeTiersForModel } from './modelPricing'
-import { normalizeImageSizeForProfile } from './apiProfiles'
+import { buildFixedModelPriceRows, DEFAULT_IMAGES_MODEL, FIXED_IMAGE_MODEL_OPTIONS, getFixedImageRequestModel, getImageSizeTiersForModel, normalizeFixedImageModel } from './modelPricing'
+import { DEFAULT_SETTINGS, normalizeImageSizeForProfile, normalizeSettings } from './apiProfiles'
 
 describe('fixed image model pricing', () => {
   it('maps legacy vip and super-resolution names to the 4K model', () => {
@@ -28,8 +28,10 @@ describe('fixed image model pricing', () => {
     expect(FIXED_IMAGE_MODEL_OPTIONS.map((option) => option.value)).toContain('seedream-5-pro')
     expect(FIXED_IMAGE_MODEL_OPTIONS.map((option) => option.value)).not.toContain('mj-niji7')
     expect(FIXED_IMAGE_MODEL_OPTIONS.map((option) => option.value)).toEqual(expect.arrayContaining([
-      'gpt-image-2.5-sunburst-4k',
-      'gpt-image-2.5-flare-4k',
+      'gpt-image-2.5-sunburst-满血',
+      'gpt-image-2.5-flare-满血',
+      'gpt-image-2.5-sunburst-官渠',
+      'gpt-image-2.5-flare-官渠',
     ]))
     expect(getImageSizeTiersForModel('seedream-5-pro')).toEqual(['1K', '2K'])
     expect(getFixedImageRequestModel('nano-banana-2.1')).toBe('nano-banana-2.1')
@@ -44,17 +46,27 @@ describe('fixed image model pricing', () => {
     }
   })
 
-  it('四K和满血路由继续保留全部清晰度', () => {
+  it('图片二四K、满血和官渠路由继续保留全部清晰度', () => {
     const models = [
-      'gpt-image-2.5-flare-4k',
-      'gpt-image-2.5-sunburst-4k',
+      'gpt-image-2-4k',
       'gpt-image-2.5-flare-满血',
       'gpt-image-2.5-sunburst-满血',
+      'gpt-image-2.5-flare-官渠',
+      'gpt-image-2.5-sunburst-官渠',
     ]
 
     for (const model of models) {
       expect(getImageSizeTiersForModel(model)).toEqual(['1K', '2K', '4K'])
     }
+  })
+
+  it.each(['gpt-image-2.5-flare-4k', 'gpt-image-2.5-sunburst-4k'])('%s 从模型和价格列表移除，旧配置不再选中停用模型', model => {
+    expect(FIXED_IMAGE_MODEL_OPTIONS.map(option => option.value)).not.toContain(model)
+    expect(buildFixedModelPriceRows('wenyun-site').map(row => row.model)).not.toContain(model)
+    expect(normalizeFixedImageModel(model)).toBe(DEFAULT_IMAGES_MODEL)
+    expect(normalizeFixedImageModel(model.toUpperCase())).toBe(DEFAULT_IMAGES_MODEL)
+    const settings = normalizeSettings({ ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, model })) })
+    expect(settings.profiles.every(profile => profile.model === DEFAULT_IMAGES_MODEL)).toBe(true)
   })
 
 })

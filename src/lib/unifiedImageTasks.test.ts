@@ -27,7 +27,7 @@ it.each(['nano-banana-2.1', 'gpt-image-2.5-sunburst', 'mj-v8.2'])('%s 统一提�
   expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ taskId: 'saved-task' }))
 })
 
-it.each(['nano-banana-2.1', 'gpt-image-2.5-sunburst-4k', 'seedream-5-pro', 'mj-v8.2'].flatMap(model => [false, true].map(edit => ({ model, edit }))))('画布 $model edit=$edit 创建和刷新恢复复用同一任务', async ({ model, edit }) => {
+it.each(['nano-banana-2.1', 'gpt-image-2-4k', 'seedream-5-pro', 'mj-v8.2'].flatMap(model => [false, true].map(edit => ({ model, edit }))))('画布 $model edit=$edit 创建和刷新恢复复用同一任务', async ({ model, edit }) => {
   vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'enabled')
   const originalSettings = useStore.getState().settings
   const realFetch = globalThis.fetch

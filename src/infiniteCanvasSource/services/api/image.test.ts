@@ -77,7 +77,7 @@ describe("canvas image api", () => {
         expect(images).toEqual([{ id: expect.any(String), dataUrl: "data:image/png;base64,ZmluYWw=" }]);
     });
 
-    it.each(["gpt-image-2.5-flare-满血", "gpt-image-2.5-sunburst-满血", "gpt-image-2.5-flare-官渠", "gpt-image-2.5-sunburst-官渠"])("画布 %s 文生图和图生图沿用节点背景参数", async (model) => {
+    it.each(["gpt-image-2-4k", "gpt-image-2.5-flare-满血", "gpt-image-2.5-sunburst-满血", "gpt-image-2.5-flare-官渠", "gpt-image-2.5-sunburst-官渠"])("画布 %s 文生图和图生图沿用节点背景参数", async (model) => {
         const originalFetch = globalThis.fetch;
         const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => String(input).startsWith("data:") ? originalFetch(input, init) : new Response(JSON.stringify({ data: [{ b64_json: "aW1hZ2U=" }] }), { headers: { "Content-Type": "application/json" } }));
         useStore.setState({ settings: { ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({ ...profile, model, apiKey: "test-key" })) } });
@@ -91,7 +91,7 @@ describe("canvas image api", () => {
         expect(form.get("model")).toBe(model);
     });
 
-    it.each(["gpt-image-2", "gpt-image-2-4k", "gpt-image-2.5-sunburst-4k", "gpt-image-2.5-flare-4k"])("画布 %s 图生图保留高品质、竖版尺寸和三张参考图", async (model) => {
+    it.each(["gpt-image-2", "gpt-image-2-4k", "gpt-image-2.5-sunburst-满血", "gpt-image-2.5-flare-满血"])("画布 %s 图生图保留高品质、竖版尺寸和三张参考图", async (model) => {
         const originalFetch = globalThis.fetch;
         const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => String(input).startsWith("data:") ? originalFetch(input, init) : new Response(JSON.stringify({ data: [{ b64_json: "aW1hZ2U=" }] }), { headers: { "Content-Type": "application/json" } }));
         useStore.setState({ settings: { ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, model, apiKey: "test-key" })) } });

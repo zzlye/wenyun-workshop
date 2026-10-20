@@ -3,10 +3,11 @@ import { DEFAULT_PARAMS, type TaskParams } from '../types'
 import { DEFAULT_SETTINGS, normalizeSettings } from './apiProfiles'
 import { callImageApi } from './api'
 import { normalizeParamsForSettings } from './paramCompatibility'
+import * as canvasImage from './canvasImage'
 import { FIXED_IMAGE_MODEL_OPTIONS, getFixedImageRequestModel, getImageSizeTiersForModel, normalizeFixedImageModel, supportsExtendedImageQuality, supportsTransparentImageBackground } from './modelPricing'
 
-const models = ['gpt-image-2.5-flare-满血', 'gpt-image-2.5-sunburst-满血', 'gpt-image-2.5-flare-官渠', 'gpt-image-2.5-sunburst-官渠']
-const otherModels = ['gpt-image-2', 'gpt-image-2-4k', 'gpt-image-2.5-flare-4k', 'gpt-image-2.5-sunburst-4k', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'Nano-Banana-Pro', 'seedream-5-pro']
+const models = ['gpt-image-2-4k', 'gpt-image-2.5-flare-满血', 'gpt-image-2.5-sunburst-满血', 'gpt-image-2.5-flare-官渠', 'gpt-image-2.5-sunburst-官渠']
+const otherModels = ['gpt-image-2', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'Nano-Banana-Pro', 'seedream-5-pro']
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='
 const settingsFor = (model: string) => normalizeSettings({ ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, model, apiKey: 'test-only' })) })
 const originalFetch = globalThis.fetch
@@ -14,7 +15,7 @@ const mockImages = () => vi.spyOn(globalThis, 'fetch').mockImplementation(async 
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
 
-describe('GPT Image 2.5 全参数渠道', () => {
+describe('GPT Image 全参数渠道', () => {
   it.each(models)('%s 出现在模型列表中，原样路由并开放背景和扩展品质', model => {
     expect(FIXED_IMAGE_MODEL_OPTIONS.some(option => option.value === model)).toBe(true)
     expect(normalizeFixedImageModel(model)).toBe(model)
@@ -55,6 +56,30 @@ describe('GPT Image 2.5 全参数渠道', () => {
     const body = JSON.parse(String(mock.mock.calls[0][1]?.body))
     expect(body.output_format).toBe(format === 'jpeg' ? 'png' : 'webp')
     expect(body.output_compression).toBe(format === 'jpeg' ? undefined : 80)
+  })
+
+  it.each(['gpt-image-2-4k', 'gpt-image-2-vip', 'gpt-image-2-超分'])('%s 遮罩编辑保留全部字段并按四K路由发送', async model => {
+    const mock = mockImages()
+    // 这里只替代浏览器像素转换，参数归一、遮罩解码和请求组装均走真实调用链。
+    const primaryImage = await canvasImage.dataUrlToBlob(png)
+    const convert = vi.spyOn(canvasImage, 'imageDataUrlToPngBlob').mockResolvedValue(primaryImage)
+    expect(supportsTransparentImageBackground(model)).toBe(true)
+    expect(supportsExtendedImageQuality(model)).toBe(true)
+    await callImageApi({
+      settings: settingsFor(model), prompt: '仅修改遮罩区域',
+      params: { ...DEFAULT_PARAMS, background: 'transparent', quality: 'max', moderation: 'low', size: '2560x1440' },
+      inputImageDataUrls: [png], maskDataUrl: png,
+    })
+    const form = mock.mock.calls.find(([url]) => String(url).includes('/images/edits'))![1]?.body as FormData
+    expect(Object.fromEntries(form.entries())).toMatchObject({
+      model: 'gpt-image-2-4k', background: 'transparent', quality: 'max', moderation: 'low',
+      size: '2560x1440', output_format: 'png', response_format: 'url',
+    })
+    expect(convert).toHaveBeenCalledWith(png)
+    expect(form.get('image')).toBeInstanceOf(Blob)
+    const mask = form.get('mask') as Blob
+    expect(mask.type).toBe('image/png')
+    expect(await mask.arrayBuffer()).toEqual(await primaryImage.arrayBuffer())
   })
 
   it.each(otherModels)('%s 隐藏背景选项，残留透明参数不会发送', async model => {
