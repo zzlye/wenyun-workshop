@@ -22,6 +22,22 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
     return restored.every((node, index) => node === nodes[index]) ? nodes : restored;
 }
 
+/** 读盘只补齐未变化的媒体信息，不能覆盖等待期间已写入的生成终态、位置或增删节点。 */
+export function reconcileHydratedCanvasNodes(snapshot: CanvasNodeData[], hydrated: CanvasNodeData[], latest: CanvasNodeData[]) {
+    if (snapshot === latest) return hydrated;
+    const snapshotById = new Map(snapshot.map(node => [node.id, node]));
+    const hydratedById = new Map(hydrated.map(node => [node.id, node]));
+    const merged = latest.map(node => {
+        const original = snapshotById.get(node.id);
+        const restored = hydratedById.get(node.id);
+        // 新结果已经自带最新内容与状态，不能合入旧视频或旧任务的元数据。
+        if (!original || !restored || node.metadata !== original.metadata) return node;
+        if (node === original) return restored;
+        return restored.metadata === node.metadata ? node : { ...node, metadata: restored.metadata };
+    });
+    return merged.every((node, index) => node === latest[index]) ? latest : merged;
+}
+
 /** 后台同步只做一次索引，避免末尾生成节点触发平方级查找。 */
 export function hasCanvasGenerationUpdate(nodes: CanvasNodeData[], current: CanvasNodeData[], activeIds: ReadonlySet<string>) {
     const currentById = new Map(current.map((node) => [node.id, node]));

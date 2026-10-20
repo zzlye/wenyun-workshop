@@ -14,7 +14,7 @@ import { requestEdit, requestGeneration, requestImageQuestion } from "@/services
 import { requestVideoGeneration, VideoTaskPendingError } from "@/services/api/video";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { getImageBlob as getStoredCanvasImageBlob, imageToDataUrl, resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
-import { hydrateCanvasImages, hasCanvasGenerationUpdate } from "../utils/canvas-media-hydration";
+import { hydrateCanvasImages, hasCanvasGenerationUpdate, reconcileHydratedCanvasNodes } from "../utils/canvas-media-hydration";
 import { CanvasImage, useOriginalImageNode } from "../components/canvas-image";
 import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
@@ -762,33 +762,39 @@ function InfiniteCanvasPage() {
             const restoredSessions = await hydrateAssistantImages(project.chatSessions || []);
             // 切换画布或退出后，旧图片加载结果不得覆盖当前画布。
             if (cancelled) return;
-            nodesRef.current = restoredNodes;
-            connectionsRef.current = project.connections;
-            setNodes(restoredNodes);
-            runningNodeIdsRef.current = activeGenerationIds;
-            setRunningNodeIds(new Set(activeGenerationIds));
-            setConnections(project.connections);
-            setGroups(project.groups || []);
-            setChatSessions(restoredSessions);
-            setActiveChatId(project.activeChatId || null);
-            setBackgroundMode(project.backgroundMode);
-            setShowImageInfo(project.showImageInfo || false);
-            setViewport(project.viewport);
+            const latestProject = useCanvasStore.getState().projects.find(item => item.id === projectId);
+            if (!latestProject) { replaceCanvasRoute("/canvas"); return; }
+            // 读盘期间后台可能已写回失败或成功，迟到的 loading 快照不得反向覆盖终态。
+            const currentNodes = reconcileHydratedCanvasNodes(project.nodes, restoredNodes, latestProject.nodes);
+            const currentSessions = latestProject.chatSessions === project.chatSessions ? restoredSessions : latestProject.chatSessions || [];
+            const currentGenerationIds = getCanvasGenerationSessionIds(projectId);
+            nodesRef.current = currentNodes;
+            connectionsRef.current = latestProject.connections;
+            setNodes(currentNodes);
+            runningNodeIdsRef.current = currentGenerationIds;
+            setRunningNodeIds(new Set(currentGenerationIds));
+            setConnections(latestProject.connections);
+            setGroups(latestProject.groups || []);
+            setChatSessions(currentSessions);
+            setActiveChatId(latestProject.activeChatId || null);
+            setBackgroundMode(latestProject.backgroundMode);
+            setShowImageInfo(latestProject.showImageInfo || false);
+            setViewport(latestProject.viewport);
             // 只有默认视口才交给首次布局居中，避免覆盖用户已保存的画布位置。
-            didInitialCenterRef.current = !(project.viewport.x === 0 && project.viewport.y === 0 && project.viewport.k === 1);
+            didInitialCenterRef.current = !(latestProject.viewport.x === 0 && latestProject.viewport.y === 0 && latestProject.viewport.k === 1);
             historyRef.current = { past: [], future: [] };
             if (historyCommitTimerRef.current) {
                 clearTimeout(historyCommitTimerRef.current);
                 historyCommitTimerRef.current = null;
             }
             lastHistoryRef.current = {
-                nodes: restoredNodes,
-                connections: project.connections,
-                groups: project.groups || [],
-                chatSessions: restoredSessions,
-                activeChatId: project.activeChatId || null,
-                backgroundMode: project.backgroundMode,
-                showImageInfo: project.showImageInfo || false,
+                nodes: currentNodes,
+                connections: latestProject.connections,
+                groups: latestProject.groups || [],
+                chatSessions: currentSessions,
+                activeChatId: latestProject.activeChatId || null,
+                backgroundMode: latestProject.backgroundMode,
+                showImageInfo: latestProject.showImageInfo || false,
             };
             setHistoryState({ canUndo: false, canRedo: false });
             setProjectLoaded(true);

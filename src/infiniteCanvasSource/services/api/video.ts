@@ -82,7 +82,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     } catch (error) {
         if (error instanceof VideoTaskPendingError) throw error;
         const permanentHttpError = axios.isAxiosError(error) && [400, 401, 403, 404, 410, 422].includes(error.response?.status);
-        if (activeTaskId && !(error instanceof VideoTaskFailedError) && !permanentHttpError) throw new VideoTaskPendingError(activeTaskId, `任务已保存，等待继续查询：${readAxiosError(error, "查询暂时中断")}`);
+        if (activeTaskId && !(error instanceof VideoTaskFailedError) && !(error instanceof VideoTaskResultError) && !permanentHttpError) throw new VideoTaskPendingError(activeTaskId, `任务已保存，等待继续查询：${readAxiosError(error, "查询暂时中断")}`);
         throw new Error(readAxiosError(error, "视频生成失败"));
     }
 }
@@ -150,6 +150,24 @@ export class VideoTaskPendingError extends Error {
     constructor(public taskId: string, message = "任务仍在后台处理中，稍后继续查询") { super(message); this.name = "VideoTaskPendingError"; }
 }
 class VideoTaskFailedError extends Error {}
+// 完成结果本身不合法时必须显示错误，不能再伪装成后台仍在生成。
+class VideoTaskResultError extends Error {}
+
+function resolveVideoTaskMediaPath(source: VideoApiSource, taskPath: string, value: unknown) {
+    if (typeof value === "string" && (/^https?:\/\//i.test(value) || /^\/(?!\/)/.test(value))) {
+        try {
+            const target = new URL(value, source.baseUrl);
+            const path = target.pathname.replace(/^\/v1(?=\/)/, "");
+            const prefix = `${taskPath}/media/`;
+            // 新版返回绝对地址、旧版返回相对地址；只取本次任务的数字索引，实际下载仍重建到配置的代理。
+            if (["http:", "https:"].includes(target.protocol) && !target.username && !target.password && !target.search && !target.hash
+                && path.startsWith(prefix) && /^\d+$/.test(path.slice(prefix.length))) return `${prefix}${path.slice(prefix.length)}`;
+        } catch {
+            // 无效地址交给结果错误处理，不能把解析异常当作网络中断而无限续查。
+        }
+    }
+    throw new VideoTaskResultError("任务已完成，但没有返回可读取的视频文件");
+}
 
 async function waitForVideoResult(source: VideoApiSource, created: VideoTask, onDownloading?: () => void) {
     if (!created.id) throw new Error("视频接口没有返回任务 ID");
@@ -163,11 +181,9 @@ async function waitForVideoResult(source: VideoApiSource, created: VideoTask, on
         if (isVideoStatusFailed(task.status)) throw new VideoTaskFailedError(task.error?.message || "视频生成失败");
         if (task.resultExpired) throw new VideoTaskFailedError("视频文件已过期，任务记录仍然保留");
         if (backgroundTask && isVideoStatusCompleted(task.status)) {
-            onDownloading?.();
             const media = task.media?.find(item => item.kind === "video");
-            const mediaPath = media?.url?.replace(/^\/v1/, "") || "";
-            // 只携带鉴权访问当前任务的内容接口，不信任响应里任意外部地址。
-            if (!mediaPath.startsWith(`${taskPath}/media/`) || !/^\d+$/.test(mediaPath.slice(`${taskPath}/media/`.length))) throw new Error("任务已完成，但没有返回可读取的视频文件");
+            const mediaPath = resolveVideoTaskMediaPath(source, taskPath, media?.url);
+            onDownloading?.();
             return fetchVideoContentPath(source, mediaPath);
         }
         const videoUrl = findVideoUrl(task);
