@@ -1,4 +1,5 @@
 import type { SizeTier } from './size'
+import type { TaskParams } from '../types'
 import { isMidjourneyModel } from './midjourney'
 
 export const DEFAULT_IMAGES_MODEL = 'gpt-image-2'
@@ -51,16 +52,21 @@ export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
   { model: 'mj-v8.2', label: 'mj-v8.2', requestModel: 'mj-v8.2', unitCostText: 'HUHN --', resolutionText: '自动' },
 ]
 
-// 全参数模型开放扩展品质，旧版无后缀模型保留原有选项。
+// 官方仅为图片二点五开放 xhigh/max；透明背景是独立能力，不能用它推断品质档位。
 export function supportsExtendedImageQuality(model: string): boolean {
-  if (supportsTransparentImageBackground(model)) return true
-  // 未开放全参数的四 K 路由仍只支持基础档位，不能因旧配置残留误传扩展品质。
-  if (/-4k$/i.test(model.trim())) return false
   const normalized = getFixedImageRequestModel(model).toLowerCase()
-  return normalized === GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL || normalized === GPT_IMAGE_2_5_FLARE_LEGACY_MODEL
+  return [GPT_IMAGE_2_5_FLARE_FULL_MODEL, GPT_IMAGE_2_5_SUNBURST_FULL_MODEL,
+    GPT_IMAGE_2_5_FLARE_OFFICIAL_CHANNEL_MODEL, GPT_IMAGE_2_5_SUNBURST_OFFICIAL_CHANNEL_MODEL,
+    GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, GPT_IMAGE_2_5_FLARE_LEGACY_MODEL].includes(normalized)
 }
 
-// 图片二四 K、满血和官渠统一开放全参数；旧别名按实际路由判断，界面和请求保持一致。
+// 旧配置和历史任务重试都使用同一规则，防止界面隐藏后仍然发送不支持的品质。
+export function normalizeImageQuality(model: string, value: TaskParams['quality']): TaskParams['quality'] {
+  if ((value === 'xhigh' || value === 'max') && !supportsExtendedImageQuality(model)) return 'auto'
+  return value || 'auto'
+}
+
+// 图片二四 K、满血和官渠开放背景参数；旧别名按实际路由判断，不与扩展品质绑定。
 export function supportsTransparentImageBackground(model: string): boolean {
   const normalized = getFixedImageRequestModel(model).toLowerCase()
   return [GPT_IMAGE_2_4K_MODEL, GPT_IMAGE_2_5_FLARE_FULL_MODEL, GPT_IMAGE_2_5_SUNBURST_FULL_MODEL,

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { defaultConfig } from "@/stores/use-config-store";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { CanvasImageSizePanel } from "./canvas-image-settings-popover";
+import { CanvasImageSettingsPopover, CanvasImageSizePanel } from "./canvas-image-settings-popover";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let host: HTMLDivElement;
@@ -36,6 +36,21 @@ async function renderModel(model: string, size = "1376x768") {
 }
 
 describe("画布香蕉尺寸选择", () => {
+    it("图片二四K只展示官方四档品质，同时保留透明背景并清理残留最大品质", async () => {
+        host = document.createElement("div");
+        document.body.append(host);
+        root = createRoot(host);
+        const onConfigChange = vi.fn();
+        await act(async () => root.render(<CanvasImageSettingsPopover config={{ ...defaultConfig, model: "gpt-image-2-4k", imageModel: "gpt-image-2-4k", quality: "max" }} onConfigChange={onConfigChange} />));
+        expect(onConfigChange).toHaveBeenCalledWith("quality", "auto");
+        await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
+        const panel = document.querySelector(".canvas-image-settings-popover")!;
+        const labels = Array.from(panel.querySelectorAll("button")).map(button => button.textContent);
+        expect(labels).toEqual(expect.arrayContaining(["自动", "低", "中", "高", "透明背景"]));
+        expect(labels).not.toContain("极高");
+        expect(labels).not.toContain("最大");
+    });
+
     it("图片二四K展示背景选项并写回透明背景，普通模型隐藏该选项", async () => {
         const { onConfigChange, render } = await renderModel("gpt-image-2-4k", "3840x2160");
         const transparent = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "透明背景");

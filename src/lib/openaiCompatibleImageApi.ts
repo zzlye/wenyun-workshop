@@ -5,7 +5,7 @@ import { buildApiUrl, getLockedNewApiProxyPrefix, isLockedApiProxyTarget, readCl
 import { fetchImageTask, hasImageTaskCredentials, shouldUseImageTasks } from './imageTasks'
 import { fetchResultResponse, ResultReadTimeoutError } from './resultRequest'
 import { formatImageRatio, normalizeImageSize, parseRatio } from './size'
-import { normalizeImageBackground, supportsTransparentImageBackground } from './modelPricing'
+import { normalizeImageBackground, normalizeImageQuality, supportsTransparentImageBackground } from './modelPricing'
 import { findBananaSizePreset, resolveBananaSizePreset } from './bananaImageSize'
 import { isMidjourneyModel } from './midjourney'
 import { callMidjourneyImageApi } from './midjourneyImageApi'
@@ -863,8 +863,9 @@ export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile
 
 async function callOpenAIImageApi(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
   const background = normalizeImageBackground(profile.model, opts.params.background)
-  // 透明图片必须使用带透明通道的格式；直接调用和重试也经过此处校验。
-  opts = { ...opts, params: { ...opts.params, background, ...(background === 'transparent' && opts.params.output_format === 'jpeg' ? { output_format: 'png' as const, output_compression: null } : {}) } }
+  // 提交边界独立校验品质与透明格式，直接调用和历史任务重试也不能绕过模型能力。
+  const quality = normalizeImageQuality(profile.model, opts.params.quality)
+  opts = { ...opts, params: { ...opts.params, quality, background, ...(background === 'transparent' && opts.params.output_format === 'jpeg' ? { output_format: 'png' as const, output_compression: null } : {}) } }
   const requestModel = getFixedImageRequestModel(profile.model)
   if (profile.provider === 'openai' && requestModel !== profile.model) {
     return callImagesApi(opts, {

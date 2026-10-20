@@ -1,6 +1,6 @@
 import { DEFAULT_PARAMS, type AppSettings, type TaskParams } from '../types'
 import { getActiveApiProfile, normalizeImageSizeForProfile } from './apiProfiles'
-import { normalizeImageBackground, supportsExtendedImageQuality } from './modelPricing'
+import { normalizeImageBackground, normalizeImageQuality } from './modelPricing'
 import { isMidjourneyModel, normalizeMidjourneyRatio } from './midjourney'
 
 export const DEFAULT_FAL_IMAGE_SIZE = '1360x1024'
@@ -27,8 +27,7 @@ export function normalizeParamsForSettings(
   const nextParams: TaskParams = {
     ...params,
     size: normalizedSize === 'auto' ? DEFAULT_PARAMS.size : normalizedSize || DEFAULT_PARAMS.size,
-    quality: (params.quality === 'xhigh' || params.quality === 'max') && !supportsExtendedImageQuality(activeProfile.model)
-      ? DEFAULT_PARAMS.quality : params.quality || DEFAULT_PARAMS.quality,
+    quality: normalizeImageQuality(activeProfile.model, params.quality),
     output_format: 'png',
     output_compression: DEFAULT_PARAMS.output_compression,
     n: Math.min(outputImageLimit, Math.max(1, params.n || DEFAULT_PARAMS.n)),
