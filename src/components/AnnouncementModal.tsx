@@ -4,13 +4,11 @@ import type { NewApiNoticeItem } from '../lib/newApi'
 
 interface AnnouncementModalProps {
   content: string
-  dismissForever: boolean
   items: NewApiNoticeItem[]
   loading?: boolean
   publishedAt?: string
   onClose: () => void
   onDismissToday: () => void
-  onToggleDismissForever: (checked: boolean) => void
 }
 
 function formatAnnouncementDate(value: string | undefined) {
@@ -39,13 +37,11 @@ function formatRelativeTime(value: string | undefined) {
 
 export default function AnnouncementModal({
   content,
-  dismissForever,
   items,
   loading = false,
   publishedAt,
   onClose,
   onDismissToday,
-  onToggleDismissForever,
 }: AnnouncementModalProps) {
   const displayDate = formatAnnouncementDate(publishedAt)
   const displayItems = items.slice(0, 20)
@@ -111,20 +107,7 @@ export default function AnnouncementModal({
           )}
         </div>
 
-        <div className="flex shrink-0 flex-col gap-3 border-t border-gray-100 p-4 dark:border-white/[0.08] sm:flex-row sm:items-center sm:justify-between">
-          <button
-            type="button"
-            onClick={() => onToggleDismissForever(!dismissForever)}
-            className="flex items-center justify-between gap-3 rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-600 transition hover:bg-gray-100 dark:bg-white/[0.04] dark:text-gray-300 dark:hover:bg-white/[0.08] sm:min-w-44"
-            role="switch"
-            aria-checked={dismissForever}
-          >
-            <span>以后不再提醒</span>
-            <span className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${dismissForever ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
-              <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${dismissForever ? 'translate-x-[14px]' : 'translate-x-[2px]'}`} />
-            </span>
-          </button>
-
+        <div className="flex shrink-0 justify-end border-t border-gray-100 p-4 dark:border-white/[0.08]">
           <div className="flex justify-end gap-2">
             <button
               type="button"

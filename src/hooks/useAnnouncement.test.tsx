@@ -81,12 +81,15 @@ describe('公告自动提醒（网页和桌面共用）', () => {
     expect(current.open).toBe(true)
   })
 
-  it('尊重永久不提醒，但仍可手动查看最新公告', async () => {
+  it('旧版永久免提醒设置不再阻止公告，新公告仍会弹出', async () => {
     preferences.announcementDismissedForever = true
     await render()
+    expect(host.textContent).toBe('公告1')
+    await close()
     response = makeNotice(2)
     await tick()
-    expect(current.open).toBe(false)
+    expect(host.textContent).toBe('公告2')
+    await close()
     await act(async () => current.openManually())
     expect(host.textContent).toBe('公告2')
   })

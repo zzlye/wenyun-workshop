@@ -987,7 +987,6 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     newApiAccountSessions,
     announcementDismissedDate: typeof record.announcementDismissedDate === 'string' ? record.announcementDismissedDate : undefined,
     announcementDismissedHash: typeof record.announcementDismissedHash === 'string' ? record.announcementDismissedHash : undefined,
-    announcementDismissedForever: typeof record.announcementDismissedForever === 'boolean' ? record.announcementDismissedForever : false,
     agentScrollToBottomAfterSubmit: typeof record.agentScrollToBottomAfterSubmit === 'boolean' ? record.agentScrollToBottomAfterSubmit : true,
     agentMaxToolRounds: normalizeAgentMaxToolRounds(record.agentMaxToolRounds),
     agentWebSearch: typeof record.agentWebSearch === 'boolean' ? record.agentWebSearch : false,

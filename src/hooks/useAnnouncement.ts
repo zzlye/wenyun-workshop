@@ -54,9 +54,10 @@ export function useAnnouncement(enabled: boolean) {
         && (settings.announcementDismissedHash === key
           // 兼容旧版本保存的“今日不再提醒”。
           || settings.announcementDismissedHash === hashContent(result.content))
+      // 永久免提醒已取消，旧客户端保存的该选项不再阻止公告弹出。
       if (request.manual) {
         seen.current.add(key)
-      } else if (!settings.announcementDismissedForever && !dismissedToday && !seen.current.has(key)) {
+      } else if (!dismissedToday && !seen.current.has(key)) {
         seen.current.add(key)
         setOpen(true)
       }

@@ -280,8 +280,6 @@ export interface AppSettings {
   announcementDismissedDate?: string
   /** 当天不再提醒对应的公告内容指纹，公告更新后会重新弹出 */
   announcementDismissedHash?: string
-  /** 公告永久不再提醒 */
-  announcementDismissedForever: boolean
   agentScrollToBottomAfterSubmit: boolean
   agentMaxToolRounds: number
   agentWebSearch: boolean

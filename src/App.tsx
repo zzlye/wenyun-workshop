@@ -199,13 +199,6 @@ export default function App() {
     }
   }, [])
 
-  const toggleAnnouncementForever = (checked: boolean) => {
-    setSettings({
-      announcementDismissedForever: checked,
-      ...(checked ? { announcementDismissedDate: undefined, announcementDismissedHash: undefined } : {}),
-    })
-  }
-
   const renderStoreLoading = () => (
     <div role="status" className="p-8 text-center">
       {storeError ? (
@@ -288,13 +281,11 @@ export default function App() {
         {!showHome && announcementOpen && (
           <AnnouncementModal
             content={announcement.content}
-            dismissForever={settings.announcementDismissedForever}
             items={announcement.items}
             loading={announcementLoading}
             publishedAt={announcement.publishedAt}
             onClose={() => setAnnouncementOpen(false)}
             onDismissToday={dismissAnnouncementToday}
-            onToggleDismissForever={toggleAnnouncementForever}
           />
         )}
       </div>
