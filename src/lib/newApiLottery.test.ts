@@ -122,4 +122,15 @@ describe('NewAPI 抽奖协议', () => {
     )
     expect(formatLotteryQuota(250000, { ...status, quota_display_type: 'TOKENS' })).toBe('250,000 额度')
   })
+
+  it('新版用户接口不返回奖池字段时按活动状态与个人资格参与，不把缺失字段当作奖池耗尽', () => {
+    const activity = {
+      id: 12, name: '灵感好运礼', status: 'active', min_topup_quota: 50,
+      topup_scope: 'lifetime', topup_start: 0, topup_end: 0,
+      per_user_limit: 3, used_draws: 1, eligible_topup_quota: 100,
+    } as LotteryActivity
+    expect(lotteryParticipation(activity).canDraw).toBe(true)
+    expect(lotteryParticipation({ ...activity, status: 'exhausted' }).canDraw).toBe(false)
+    expect(lotteryParticipation({ ...activity, used_draws: 3 }).canDraw).toBe(false)
+  })
 })

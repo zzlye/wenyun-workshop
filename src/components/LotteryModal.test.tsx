@@ -125,7 +125,8 @@ afterEach(async () => {
 
 it('展示服务端参与资格、脱敏中奖名单和本人记录，成功后刷新赠金余额但保留视频凭据', async () => {
   await render()
-  expect(document.body.textContent).toContain('总奖池HUHN 100')
+  expect(document.body.textContent).not.toContain('总奖池')
+  expect(document.body.textContent).not.toContain('HUHN 100')
   expect(document.body.textContent).not.toContain('剩余')
   expect(document.body.textContent).not.toContain('HUHN 60')
   expect(document.body.textContent).not.toContain('20 份')
@@ -159,6 +160,19 @@ it('充值不足不能抽奖，未上线的接口给出可重试状态而不伪�
   })
   await settle()
   expect(document.body.textContent).toContain('抽奖活动暂未开放')
+})
+
+it('新版用户接口隐藏奖池字段后仍可参与抽奖，不展示缺失金额或剩余信息', async () => {
+  const { total_quota, remaining_quota, remaining_shares, mode, ...visible } = activities[0]
+  activities[0] = visible
+  await render()
+  expect(button('立即抽奖').disabled).toBe(false)
+  expect(document.body.textContent).not.toContain('奖池')
+  expect(document.body.textContent).not.toContain('剩余')
+  expect(document.body.textContent).not.toContain('NaN')
+  await click('立即抽奖')
+  expect(drawNewApiLottery).toHaveBeenCalledTimes(1)
+  expect(document.body.textContent).toContain('恭喜获得 HUHN 0.5')
 })
 
 it('循环中奖栏保留超过六条的完整名单，后台更新不打断手动暂停，复制项不重复读屏', async () => {

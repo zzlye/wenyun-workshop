@@ -6,9 +6,9 @@ export interface LotteryActivity {
   id: number
   name: string
   status: 'active' | 'paused' | 'ended' | 'exhausted'
-  mode: 'initial_percent' | 'remaining_percent' | 'random_shares' | 'fixed'
-  total_quota: number
-  remaining_quota: number
+  mode?: 'initial_percent' | 'remaining_percent' | 'random_shares' | 'fixed'
+  total_quota?: number
+  remaining_quota?: number
   min_topup_quota: number
   topup_scope: 'lifetime' | 'period'
   topup_start: number
@@ -16,10 +16,10 @@ export interface LotteryActivity {
   per_user_limit: number
   used_draws: number
   eligible_topup_quota: number
-  remaining_shares: number
-  fixed_quota: number
-  min_percent: number
-  max_percent: number
+  remaining_shares?: number
+  fixed_quota?: number
+  min_percent?: number
+  max_percent?: number
 }
 
 export interface LotteryDraw {
@@ -114,10 +114,12 @@ export function drawNewApiLottery(
 export function lotteryParticipation(activity: LotteryActivity) {
   const remaining = Math.max(0, activity.per_user_limit - activity.used_draws)
   const qualified = activity.eligible_topup_quota >= activity.min_topup_quota
+  // 新版用户接口不再公开奖池；兼容旧接口明确返回零额度的情况，最终资格仍由服务端校验。
+  const poolAvailable = activity.remaining_quota === undefined || activity.remaining_quota > 0
   return {
     remaining,
     qualified,
-    canDraw: activity.status === 'active' && qualified && remaining > 0 && activity.remaining_quota > 0,
+    canDraw: activity.status === 'active' && qualified && remaining > 0 && poolAvailable,
   }
 }
 

@@ -393,16 +393,10 @@ export default function LotteryModal({
                   <span className="mb-5 flex h-20 w-20 rotate-[-8deg] items-center justify-center rounded-3xl border border-white bg-white/90 text-blue-500 shadow-lg shadow-blue-100/60 dark:border-white/10 dark:bg-blue-950/60 dark:shadow-none">
                     <Gift size={42} strokeWidth={1.4} />
                   </span>
-                  {/* 剩余额度和次数仅用于参与判断，不在活动界面展示。 */}
-                  <p className="text-xs text-slate-500 dark:text-slate-400">总奖池</p>
+                  {/* 用户接口不再公开奖池信息，卡片不依赖金额和份数展示。 */}
                   <p className="mt-2 break-all text-3xl font-semibold tracking-tight text-blue-600 dark:text-blue-300 sm:text-4xl">
-                    {money(activity.total_quota)}
+                    幸运抽奖
                   </p>
-                  {activity.mode === 'fixed' && (
-                    <span className="mt-5 rounded-full bg-white/80 px-3 py-1.5 text-xs text-slate-500 dark:bg-white/5 dark:text-slate-300">
-                      每次奖励 {money(activity.fixed_quota)}
-                    </span>
-                  )}
                 </div>
                 <div className="flex flex-col justify-center p-5 sm:p-6">
                   <div className="mb-5 flex items-center justify-between text-sm">
