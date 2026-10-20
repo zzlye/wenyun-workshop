@@ -7,7 +7,7 @@ import { callOpenAICompatibleImageApi } from './openaiCompatibleImageApi'
 const reference = 'data:image/png;base64,cmVm'
 const imageUrl = 'https://api.xn--v5z30ywuk.com/task-media/async_fixture/media/0?expires=9999999999&signature=fixture'
 const imageBytes = new Uint8Array([137, 80, 78, 71, 0, 255, 128, 42])
-const models = ['gpt-image-2', 'gpt-image-2-4k', 'gpt-image-2.5-sunburst-满血', 'Nano-Banana-2', 'Nano-Banana-Pro']
+const models = ['gpt-image-2', 'gpt-image-2-4k', 'gpt-image-2.5-flare-4k', 'gpt-image-2.5-sunburst-4k', 'gpt-image-2.5-sunburst-满血', 'Nano-Banana-2', 'Nano-Banana-Pro']
 const settingsFor = (model: string) => normalizeSettings({ ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map(p => ({ ...p, model, apiKey: 'fixture-key' })) })
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
@@ -33,6 +33,7 @@ describe('西米露 URL 结果传输', () => {
           expect(body.generationConfig.imageConfig).toMatchObject({ imageSize: '4K', aspectRatio: '1:1' })
           if (edit) expect(body.contents[0].parts[1].inlineData.data).toBe('cmVm')
         } else {
+          expect(body.model).toBe(model)
           expect(body.quality).toBe('high')
           if (edit) expect(body.image).toBeInstanceOf(Blob)
         }

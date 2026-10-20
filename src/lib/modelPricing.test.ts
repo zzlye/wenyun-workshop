@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildFixedModelPriceRows, DEFAULT_IMAGES_MODEL, FIXED_IMAGE_MODEL_OPTIONS, getFixedImageRequestModel, getImageSizeTiersForModel, normalizeFixedImageModel } from './modelPricing'
+import { buildFixedModelPriceRows, FIXED_IMAGE_MODEL_OPTIONS, getFixedImageRequestModel, getImageSizeTiersForModel, normalizeFixedImageModel, supportsExtendedImageQuality, supportsTransparentImageBackground } from './modelPricing'
 import { DEFAULT_SETTINGS, normalizeImageSizeForProfile, normalizeSettings } from './apiProfiles'
 
 describe('fixed image model pricing', () => {
@@ -60,13 +60,18 @@ describe('fixed image model pricing', () => {
     }
   })
 
-  it.each(['gpt-image-2.5-flare-4k', 'gpt-image-2.5-sunburst-4k'])('%s 从模型和价格列表移除，旧配置不再选中停用模型', model => {
-    expect(FIXED_IMAGE_MODEL_OPTIONS.map(option => option.value)).not.toContain(model)
-    expect(buildFixedModelPriceRows('wenyun-site').map(row => row.model)).not.toContain(model)
-    expect(normalizeFixedImageModel(model)).toBe(DEFAULT_IMAGES_MODEL)
-    expect(normalizeFixedImageModel(model.toUpperCase())).toBe(DEFAULT_IMAGES_MODEL)
+  it.each(['gpt-image-2.5-flare-4k', 'gpt-image-2.5-sunburst-4k'])('%s 恢复模型和价格入口，旧配置保留原渠道与参数能力', model => {
+    expect(FIXED_IMAGE_MODEL_OPTIONS.map(option => option.value)).toContain(model)
+    expect(buildFixedModelPriceRows('wenyun-site')).toContainEqual({ model, upstreamModel: undefined, priceText: 'HUHN --', resolutionText: '1K、2K、4K' })
+    expect(normalizeFixedImageModel(model)).toBe(model)
+    expect(normalizeFixedImageModel(model.toUpperCase())).toBe(model)
+    expect(getFixedImageRequestModel(model)).toBe(model)
+    expect(getImageSizeTiersForModel(model)).toEqual(['1K', '2K', '4K'])
+    expect(supportsExtendedImageQuality(model)).toBe(false)
+    expect(supportsTransparentImageBackground(model)).toBe(false)
+    expect(normalizeImageSizeForProfile('3840x2160', 'wenyun-site', model)).toBe('3840x2160')
     const settings = normalizeSettings({ ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, model })) })
-    expect(settings.profiles.every(profile => profile.model === DEFAULT_IMAGES_MODEL)).toBe(true)
+    expect(settings.profiles.every(profile => profile.model === model)).toBe(true)
   })
 
 })

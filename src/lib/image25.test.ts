@@ -8,7 +8,7 @@ import { FIXED_IMAGE_MODEL_OPTIONS, getFixedImageRequestModel, getImageSizeTiers
 
 const models = ['gpt-image-2-4k', 'gpt-image-2.5-flare-满血', 'gpt-image-2.5-sunburst-满血', 'gpt-image-2.5-flare-官渠', 'gpt-image-2.5-sunburst-官渠']
 const modelQuality = (model: string, extended: 'max' | 'xhigh' = 'max') => model === 'gpt-image-2-4k' ? 'high' as const : extended
-const otherModels = ['gpt-image-2', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'Nano-Banana-Pro', 'seedream-5-pro']
+const otherModels = ['gpt-image-2', 'gpt-image-2.5-flare-4k', 'gpt-image-2.5-sunburst-4k', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'Nano-Banana-Pro', 'seedream-5-pro']
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='
 const settingsFor = (model: string) => normalizeSettings({ ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, model, apiKey: 'test-only' })) })
 const originalFetch = globalThis.fetch
@@ -93,6 +93,7 @@ describe('GPT Image 全参数渠道', () => {
     expect(params.background).toBeUndefined()
     await callImageApi({ settings, prompt: '测试', params: { ...DEFAULT_PARAMS, background: 'transparent' }, inputImageDataUrls: [] })
     const body = JSON.parse(String(mock.mock.calls[0][1]?.body))
+    if (model.startsWith('gpt-image-')) expect(body.model).toBe(model)
     expect(body).not.toHaveProperty('background')
   })
 

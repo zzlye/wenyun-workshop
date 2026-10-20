@@ -6,6 +6,8 @@ export const DEFAULT_IMAGES_MODEL = 'gpt-image-2'
 export const GPT_IMAGE_2_4K_MODEL = 'gpt-image-2-4k'
 export const GPT_IMAGE_2_4K_REQUEST_MODEL = 'gpt-image-2-4k'
 export const SEEDREAM_5_PRO_MODEL = 'seedream-5-pro'
+export const GPT_IMAGE_2_5_SUNBURST_MODEL = 'gpt-image-2.5-sunburst-4k'
+export const GPT_IMAGE_2_5_FLARE_MODEL = 'gpt-image-2.5-flare-4k'
 export const GPT_IMAGE_2_5_FLARE_FULL_MODEL = 'gpt-image-2.5-flare-满血'
 export const GPT_IMAGE_2_5_SUNBURST_FULL_MODEL = 'gpt-image-2.5-sunburst-满血'
 export const GPT_IMAGE_2_5_FLARE_OFFICIAL_CHANNEL_MODEL = 'gpt-image-2.5-flare-官渠'
@@ -37,6 +39,9 @@ export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
   { model: DEFAULT_IMAGES_MODEL, label: DEFAULT_IMAGES_MODEL, requestModel: DEFAULT_IMAGES_MODEL, unitCostText: 'HUHN 0.06', resolutionText: '1K' },
   { model: GPT_IMAGE_2_4K_MODEL, label: GPT_IMAGE_2_4K_MODEL, requestModel: GPT_IMAGE_2_4K_REQUEST_MODEL, unitCostText: 'HUHN 0.09', resolutionText: '1K、2K、4K' },
   { model: SEEDREAM_5_PRO_MODEL, label: SEEDREAM_5_PRO_MODEL, requestModel: SEEDREAM_5_PRO_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K' },
+  // 恢复原四 K 渠道入口，保留独立路由和原有参数能力，价格仍从站点获取。
+  { model: GPT_IMAGE_2_5_SUNBURST_MODEL, label: GPT_IMAGE_2_5_SUNBURST_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
+  { model: GPT_IMAGE_2_5_FLARE_MODEL, label: GPT_IMAGE_2_5_FLARE_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   // 保留渠道的完整路由名，避免去掉“满血”后被中转分配到其他渠道；价格由实际渠道查询。
   { model: GPT_IMAGE_2_5_FLARE_FULL_MODEL, label: GPT_IMAGE_2_5_FLARE_FULL_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_FULL_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   { model: GPT_IMAGE_2_5_SUNBURST_FULL_MODEL, label: GPT_IMAGE_2_5_SUNBURST_FULL_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_FULL_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
