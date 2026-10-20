@@ -393,14 +393,11 @@ export default function LotteryModal({
                   <span className="mb-5 flex h-20 w-20 rotate-[-8deg] items-center justify-center rounded-3xl border border-white bg-white/90 text-blue-500 shadow-lg shadow-blue-100/60 dark:border-white/10 dark:bg-blue-950/60 dark:shadow-none">
                     <Gift size={42} strokeWidth={1.4} />
                   </span>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">剩余奖池</p>
+                  {/* 剩余额度和次数仅用于参与判断，不在活动界面展示。 */}
+                  <p className="text-xs text-slate-500 dark:text-slate-400">总奖池</p>
                   <p className="mt-2 break-all text-3xl font-semibold tracking-tight text-blue-600 dark:text-blue-300 sm:text-4xl">
-                    {money(activity.remaining_quota)}
+                    {money(activity.total_quota)}
                   </p>
-                  <p className="mt-4 text-xs text-slate-400">总奖池 {money(activity.total_quota)}</p>
-                  {activity.mode === 'random_shares' && (
-                    <p className="mt-1.5 text-xs text-slate-400">剩余 {activity.remaining_shares} 份</p>
-                  )}
                   {activity.mode === 'fixed' && (
                     <span className="mt-5 rounded-full bg-white/80 px-3 py-1.5 text-xs text-slate-500 dark:bg-white/5 dark:text-slate-300">
                       每次奖励 {money(activity.fixed_quota)}
@@ -408,8 +405,8 @@ export default function LotteryModal({
                   )}
                 </div>
                 <div className="flex flex-col justify-center p-5 sm:p-6">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium">我的抽奖机会</span>
+                  <div className="mb-5 flex items-center justify-between text-sm">
+                    <span className="font-medium">参与抽奖</span>
                     <button
                       className="flex items-center gap-1 text-xs text-slate-400 hover:text-blue-500"
                       onClick={() => setShowHistory((value) => !value)}
@@ -417,10 +414,6 @@ export default function LotteryModal({
                       <History size={13} />
                       抽奖记录
                     </button>
-                  </div>
-                  <div className="my-5 flex items-baseline gap-2">
-                    <strong className="text-4xl font-semibold">{participation?.remaining}</strong>
-                    <span className="text-xs text-slate-400">次剩余机会</span>
                   </div>
                   <div className="space-y-3 border-t border-slate-100 pt-4 text-xs dark:border-white/10">
                     <div className="flex justify-between gap-2 text-slate-500 dark:text-slate-400">

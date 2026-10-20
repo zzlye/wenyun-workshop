@@ -125,7 +125,10 @@ afterEach(async () => {
 
 it('展示服务端参与资格、脱敏中奖名单和本人记录，成功后刷新赠金余额但保留视频凭据', async () => {
   await render()
-  expect(document.body.textContent).toContain('HUHN 60')
+  expect(document.body.textContent).toContain('总奖池HUHN 100')
+  expect(document.body.textContent).not.toContain('剩余')
+  expect(document.body.textContent).not.toContain('HUHN 60')
+  expect(document.body.textContent).not.toContain('20 份')
   expect(document.body.textContent).toContain('客***人')
   expect(button('立即抽奖').disabled).toBe(false)
   await click('抽奖记录')
