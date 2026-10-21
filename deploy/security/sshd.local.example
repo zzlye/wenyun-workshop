@@ -1,0 +1,24 @@
+# 仅保护 SSH，网页和 API 请求不参与此处的自动封禁。
+# 复制到 /etc/fail2ban/jail.d/99-ximilu-sshd.local 后，先检查配置再启用服务。
+[DEFAULT]
+enabled = false
+usedns = no
+ignoreself = true
+# 部署时仅追加核实过的管理出口单 IP，不放行整个代理商或运营商网段。
+ignoreip = 127.0.0.1/8 ::1
+
+[sshd]
+enabled = true
+backend = systemd
+filter = sshd[mode=normal]
+journalmatch = _SYSTEMD_UNIT=ssh.service + _SYSTEMD_UNIT=sshd.service + _COMM=sshd
+port = 22
+protocol = tcp
+findtime = 10m
+maxretry = 5
+bantime = 1h
+# 对重复违规逐次加倍，最长一天；到期由服务自动解除。
+bantime.increment = true
+bantime.factor = 1
+bantime.maxtime = 24h
+action = nftables-multiport[name=sshd, port="22", protocol=tcp, blocktype=drop]
