@@ -1,0 +1,11 @@
+[Unit]
+Description=检查西米露容器地址变化
+
+[Timer]
+OnBootSec=15s
+OnUnitInactiveSec=30s
+AccuracySec=1s
+Unit=wenyun-proxy-trust.service
+
+[Install]
+WantedBy=timers.target
