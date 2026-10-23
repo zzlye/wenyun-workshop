@@ -123,6 +123,28 @@ afterEach(async () => {
   clearLotteryRequest(lotteryRequestKey(session.userId, 12))
 })
 
+it('会话失效后停止抽奖轮询，重新登录后恢复查询', async () => {
+  vi.mocked(fetchLotteryActivities).mockRejectedValue(new Error('登录状态已过期，请退出账号后重新登录'))
+  vi.useFakeTimers()
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><LotteryButton /></QueryClientProvider>))
+    await act(async () => { await vi.advanceTimersByTimeAsync(100) })
+    expect(fetchLotteryActivities).toHaveBeenCalledTimes(1)
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
+    expect(fetchLotteryActivities).toHaveBeenCalledTimes(1)
+    vi.mocked(fetchLotteryActivities).mockResolvedValue({ items: activities, total: activities.length, paid_topup_quota: 0 })
+    await act(async () => {
+      useStore.setState({ settings: { ...DEFAULT_SETTINGS, newApiAccountSessions: {
+        [LOCKED_WENYUN_PROFILE_ID]: { ...session, accessToken: 'new-login-after-expiry' },
+      } } })
+      await vi.advanceTimersByTimeAsync(100)
+    })
+    expect(fetchLotteryActivities).toHaveBeenCalledTimes(2)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 it('展示服务端参与资格、脱敏中奖名单和本人记录，成功后刷新赠金余额但保留视频凭据', async () => {
   await render()
   expect(document.body.textContent).not.toContain('总奖池')

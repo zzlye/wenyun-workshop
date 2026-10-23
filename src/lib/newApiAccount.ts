@@ -57,10 +57,24 @@ type RequestMethod = 'GET' | 'POST' | 'PUT' | 'DELETE'
 type NewApiSessionUpdated = (session: NewApiAccountSession) => void
 
 const accountRefreshRequests = new Map<string, Promise<NewApiAccountSession>>()
+// 失效状态绑定原访问令牌，其他账号和重新登录获得的新令牌不受影响。
+const accountRefreshFailures = new Map<string, { error: Error; until: number }>()
+
+function accountRefreshKey(profile: ApiProfile, session: NewApiAccountSession): string {
+  return JSON.stringify([getApiRoot(profile), session.userId ?? session.username, session.authSessionId, session.accessToken])
+}
+
+function getAccountRefreshFailure(key: string): Error | undefined {
+  const failure = accountRefreshFailures.get(key)
+  if (!failure) return undefined
+  if (performance.now() < failure.until) return failure.error
+  accountRefreshFailures.delete(key)
+  return undefined
+}
 
 // 保留服务端状态，区分临时网络故障与需要用户处理的账号权限错误。
 class NewApiAccountRequestError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly retryAfterMs?: number) {
     super(message)
     this.name = 'NewApiAccountRequestError'
   }
@@ -178,7 +192,15 @@ async function newApiRequest<T>(
   const businessError = /^error$/i.test(message)
 
   if (!response.ok || code !== undefined && code !== 0 || success === false || businessError) {
-    throw new NewApiAccountRequestError(readErrorMessage(payload) || `请求失败：${response.status}`, response.status)
+    const retryAfter = response.headers.get('Retry-After')
+    const retryAfterMs = retryAfter?.trim()
+      ? (/^\d+$/.test(retryAfter.trim()) ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now())
+      : NaN
+    throw new NewApiAccountRequestError(
+      response.status === 429 ? '请求过于频繁，请稍后再试' : readErrorMessage(payload) || `请求失败：${response.status}`,
+      response.status,
+      Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? retryAfterMs : undefined,
+    )
   }
 
   if (options.onServerClock) {
@@ -236,15 +258,18 @@ function readAccessTokenExpiresAt(payload: unknown): number | undefined {
   return nested ? readAccessTokenExpiresAt(nested) : undefined
 }
 
-function isNewApiAuthenticationError(error: unknown): boolean {
-  return error instanceof Error && /access token|unauthorized|not logged in|未登录|登录状态|AUTH_(?:TOKEN|SESSION|UNAUTHORIZED)|401/i.test(error.message)
+export function isNewApiAuthenticationError(error: unknown): boolean {
+  return error instanceof NewApiAccountRequestError && error.status === 401
+    || error instanceof Error && /access token|unauthorized|not logged in|未登录|登录状态|AUTH_(?:TOKEN|SESSION|UNAUTHORIZED)|401/i.test(error.message)
 }
 
 async function refreshNewApiAccountSession(
   profile: ApiProfile,
   session: NewApiAccountSession,
 ): Promise<NewApiAccountSession> {
-  const refreshKey = `${getApiRoot(profile)}:${session.authSessionId ?? session.userId ?? session.username}`
+  const refreshKey = accountRefreshKey(profile, session)
+  const previousFailure = getAccountRefreshFailure(refreshKey)
+  if (previousFailure) throw previousFailure
   const existing = accountRefreshRequests.get(refreshKey)
   if (existing) return existing
 
@@ -278,10 +303,17 @@ async function refreshNewApiAccountSession(
         displayName: readDisplayName(refreshedPayload) ?? session.displayName,
       }
     } catch (error) {
-      // 续期服务短暂异常不等于登录过期，保留错误类型供视频凭据自动恢复。
-      if (isRetryableNewApiAccountError(error)) throw error
-      // 刷新 Cookie 失效或属于其他账号时，需要重新登录一次建立当前设备会话。
-      throw new Error('登录状态已过期，请退出账号后重新登录')
+      const retryable = isRetryableNewApiAccountError(error)
+      const failure = retryable && error instanceof Error ? error : new Error('登录状态已过期，请退出账号后重新登录')
+      // 明确失效后停止自动续期；429 按服务端剩余窗口退避，不能靠持续轮询耗尽登录额度。
+      if (!retryable || error instanceof NewApiAccountRequestError && error.status === 429) {
+        if (accountRefreshFailures.size >= 128) accountRefreshFailures.delete(accountRefreshFailures.keys().next().value!)
+        accountRefreshFailures.set(refreshKey, {
+          error: failure,
+          until: retryable ? performance.now() + (error instanceof NewApiAccountRequestError ? error.retryAfterMs ?? 60000 : 60000) : Infinity,
+        })
+      }
+      throw failure
     }
   })()
   accountRefreshRequests.set(refreshKey, request)
@@ -298,6 +330,8 @@ async function requestWithNewApiSession<T>(
   request: (activeSession: NewApiAccountSession) => Promise<T>,
   onSessionUpdated?: NewApiSessionUpdated,
 ): Promise<T> {
+  const failure = getAccountRefreshFailure(accountRefreshKey(profile, session))
+  if (failure) throw failure
   try {
     return await request(session)
   } catch (error) {

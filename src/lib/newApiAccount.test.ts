@@ -11,6 +11,7 @@ import {
   fetchNewApiTopupInfo,
   fetchNewApiAccountRole,
   requestNewApiVideoProtocol,
+  requestNewApiAccountResource,
   loginNewApiAccount,
   normalizeNewApiAccountErrorMessage,
   readAccessToken,
@@ -21,6 +22,39 @@ import {
 
 afterEach(() => {
   vi.restoreAllMocks()
+})
+
+describe('失效会话续期节流', () => {
+  it('抽奖轮询遇到失效会话后不重复续期，新登录凭据仍可请求', async () => {
+    const session = { siteProfileId: 'wenyun-site', username: 'expired-poll', userId: 93452, accessToken: 'poll-expired-unique', authSessionId: 'poll-session-unique' }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      if ((init?.headers as Record<string, string>)?.Authorization === 'Bearer new-login-unique') return new Response(JSON.stringify({ success: true, data: { items: [] } }))
+      return new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 })
+    })
+    for (let i = 0; i < 5; i++) {
+      await expect(requestNewApiAccountResource(DEFAULT_SETTINGS.profiles[0], { ...session }, '/api/user/lottery')).rejects.toThrow('登录状态已过期')
+    }
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/auth/refresh'))).toHaveLength(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await expect(requestNewApiAccountResource(DEFAULT_SETTINGS.profiles[0], { ...session, accessToken: 'new-login-unique' }, '/api/user/lottery')).resolves.toEqual({ items: [] })
+  })
+
+  it('续期429遵守Retry-After，冷却结束才允许重新尝试', async () => {
+    const session = { siteProfileId: 'wenyun-site', username: 'limited-poll', userId: 93453, accessToken: 'limited-poll-unique' }
+    let clock = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => clock)
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async input => String(input).endsWith('/auth/refresh')
+      ? new Response('', { status: 429, headers: { 'Retry-After': '120' } })
+      : new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }))
+    const call = () => requestNewApiAccountResource(DEFAULT_SETTINGS.profiles[0], { ...session }, '/api/user/lottery')
+    await expect(call()).rejects.toThrow('请求过于频繁')
+    clock += 15000
+    await expect(call()).rejects.toThrow('请求过于频繁')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    clock += 120000
+    await expect(call()).rejects.toThrow('请求过于频繁')
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/auth/refresh'))).toHaveLength(2)
+  })
 })
 
 describe('独立账号视频Key', () => {

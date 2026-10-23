@@ -17,6 +17,7 @@ import {
   fetchNewApiAccountBalance,
   fetchNewApiSiteStatus,
   isNewApiBusinessRejection,
+  isNewApiAuthenticationError,
 } from '../lib/newApiAccount'
 import {
   clearLotteryRequest,
@@ -94,11 +95,12 @@ export function LotteryButton({
   const accountId = session?.userId ?? session?.username
   const [, refreshSeen] = useState(0)
   const activities = useQuery({
-    queryKey: ['wenyun-lottery', profile.baseUrl, accountId, session?.authSessionId, 'activities', 1],
+    queryKey: ['wenyun-lottery', profile.baseUrl, accountId, session?.authSessionId, session?.accessToken, 'activities', 1],
     queryFn: ({ signal }) => fetchLotteryActivities(profile, session!, 1, signal, onSessionUpdated),
     enabled: !!session,
     retry: false,
-    refetchInterval: 15000,
+    // 登录明确失效后停止后台查询，新登录的凭据会重新启用查询。
+    refetchInterval: query => isNewApiAuthenticationError(query.state.error) ? false : 15000,
     staleTime: 10000,
   })
   useEffect(() => {
@@ -168,7 +170,7 @@ export default function LotteryModal({
   const [result, setResult] = useState<LotteryDraw | null>(null)
   const [, setRequestVersion] = useState(0)
   const accountId = session.userId ?? session.username
-  const key = ['wenyun-lottery', profile.baseUrl, accountId, session.authSessionId]
+  const key = ['wenyun-lottery', profile.baseUrl, accountId, session.authSessionId, session.accessToken]
   usePreventBackgroundScroll(true, modalRef)
   useCloseOnEscape(true, onClose)
 
@@ -178,7 +180,7 @@ export default function LotteryModal({
     queryKey: [...key, 'activities', page],
     queryFn: ({ signal }) => fetchLotteryActivities(profile, session, page, signal, onSessionUpdated),
     retry: false,
-    refetchInterval: 15000,
+    refetchInterval: query => isNewApiAuthenticationError(query.state.error) ? false : 15000,
   })
   useEffect(() => {
     if (query.isSuccess && query.data)
@@ -208,7 +210,7 @@ export default function LotteryModal({
     queryFn: ({ signal }) => fetchLotteryWinners(profile, session, activityId!, signal, onSessionUpdated),
     enabled: !!activityId,
     retry: false,
-    refetchInterval: 15000,
+    refetchInterval: query => isNewApiAuthenticationError(query.state.error) ? false : 15000,
   })
   const money = (quota: number) => formatLotteryQuota(quota, site.data ?? null)
   const requestKey = activityId ? lotteryRequestKey(accountId, activityId) : ''

@@ -1,6 +1,13 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS } from './apiProfiles'
-import { buildVideoCatalogRows, fetchVideoModelCatalog, type VideoCatalogData } from './videoModelCatalog'
+import { buildVideoCatalogRows, type VideoCatalogData } from './videoModelCatalog'
+
+let fetchVideoModelCatalog: typeof import('./videoModelCatalog').fetchVideoModelCatalog
+beforeEach(async () => {
+  // 每个场景独立加载会话状态，避免前一用例的过期凭据影响下一用例。
+  vi.resetModules()
+  fetchVideoModelCatalog = (await import('./videoModelCatalog')).fetchVideoModelCatalog
+})
 
 const profile = DEFAULT_SETTINGS.profiles[0]
 const session = { siteProfileId: profile.id, username: 'test', userId: 2, accessToken: 'account-session', boundVideoApiKey: 'generation-key', boundVideoApiKeyGroup: '视频' }
