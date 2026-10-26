@@ -5,6 +5,12 @@ export type DesktopScope = 'tasks' | 'images' | 'thumbnails' | 'agentConversatio
 export interface DesktopBridge {
   version: number
   checkForUpdates?(): Promise<void>
+  downloads?: {
+    info(): Promise<{ enabled: boolean; directory: string }>
+    choose(): Promise<{ enabled: boolean; directory: string } | null>
+    disable(): Promise<{ enabled: boolean; directory: string }>
+    save(filename: string, bytes: ArrayBuffer): Promise<void>
+  }
   info(): Promise<{ version: string; dataDirectory: string }>
   openDataDirectory(): Promise<void>
   changeDataDirectory(): Promise<{ dataDirectory: string } | null>

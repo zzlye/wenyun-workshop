@@ -489,10 +489,10 @@ export default function InputBar() {
 
     try {
       const timeStr = formatExportFileTime(new Date())
-      const { successCount, failCount } = await downloadImageIds(imageIds, `batch-${timeStr}`)
+      const { successCount, failCount, errorMessage } = await downloadImageIds(imageIds, `batch-${timeStr}`)
 
       if (successCount === 0) {
-        showToast('下载失败', 'error')
+        showToast(errorMessage || '下载失败', 'error')
       } else if (failCount > 0) {
         showToast(`部分下载失败：成功 ${successCount}，失败 ${failCount}`, 'error')
       } else {

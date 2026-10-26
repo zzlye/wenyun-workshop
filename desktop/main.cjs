@@ -7,6 +7,7 @@ const { DataDirectoryManager } = require('./data-directory.cjs');
 const { AgentRuntime } = require('./agent-runtime.cjs');
 const { APP_ORIGIN, isAppUrl, isAppDocumentUrl, createProtocolHandler } = require('./protocol.cjs');
 const { createTaskDiagnostics } = require('./diagnostics.cjs');
+const { DownloadManager } = require('./downloads.cjs');
 
 app.setName('西米露桌面版');
 const profileRoot = path.resolve(process.env.WENYUN_DESKTOP_PROFILE || path.join(app.getPath('appData'), 'WenyunDesktop'));
@@ -105,6 +106,19 @@ async function prepareClose(installUpdate) {
 }
 
 async function start() {
+  const downloads = new DownloadManager(profileRoot);
+  await downloads.initialize();
+  handle('desktop:download-info', () => downloads.info());
+  handle('desktop:download-disable', () => downloads.disable());
+  handle('desktop:download-save', (filename, bytes) => downloads.save(filename, bytes));
+  handle('desktop:download-choose', async () => {
+    const selection = await dialog.showOpenDialog(window, {
+      title: '选择默认下载位置', defaultPath: downloads.info().directory || app.getPath('downloads'),
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (selection.canceled || !selection.filePaths[0]) return null;
+    return downloads.choose(selection.filePaths[0]);
+  });
   const directories = new DataDirectoryManager({
     profileRoot,
     softwareDirectory: app.isPackaged ? (process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath('exe'))) : __dirname,

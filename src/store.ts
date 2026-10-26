@@ -4870,12 +4870,8 @@ export async function createDataExportFile(options: ExportOptions = getFullDataE
 export async function exportData(options: ExportOptions = getFullDataExportOptions()) {
   try {
     const { blob, fileName } = await createDataExportFile(options)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = fileName
-    a.click()
-    URL.revokeObjectURL(url)
+    const { downloadFile } = await import('./lib/downloadLocation')
+    await downloadFile(blob, fileName)
     useStore.getState().showToast('数据已导出', 'success')
   } catch (e) {
     useStore

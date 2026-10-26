@@ -317,7 +317,7 @@ export default function DetailModal() {
     try {
       const result = await downloadImageIds([currentOutputImageId], `task-${task.id}`)
       if (result.successCount === 0) {
-        showToast('下载失败', 'error')
+        showToast(result.errorMessage || '下载失败', 'error')
       } else {
         showToast('下载成功', 'success')
       }
@@ -334,7 +334,7 @@ export default function DetailModal() {
     try {
       const result = await downloadImageIds(task.outputImages, `task-${task.id}`)
       if (result.successCount === 0) {
-        showToast('下载失败', 'error')
+        showToast(result.errorMessage || '下载失败', 'error')
       } else if (result.failCount > 0) {
         showToast(`部分下载失败：成功 ${result.successCount}，失败 ${result.failCount}`, 'error')
       } else {
@@ -352,7 +352,7 @@ export default function DetailModal() {
     try {
       const result = await downloadImageIds(streamPartialImageIds, `task-${task.id}-partial`)
       if (result.successCount === 0) {
-        showToast('下载失败', 'error')
+        showToast(result.errorMessage || '下载失败', 'error')
       } else if (result.failCount > 0) {
         showToast(`部分下载失败：成功 ${result.successCount}，失败 ${result.failCount}`, 'error')
       } else {

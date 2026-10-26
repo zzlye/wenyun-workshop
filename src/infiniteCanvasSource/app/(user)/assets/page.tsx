@@ -3,12 +3,13 @@
 import { AudioLines, Copy, Download, PencilLine, Search, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { App, Button, Card, Drawer, Dropdown, Empty, Form, Image, Input, Modal, Pagination, Select, Space, Tag, Typography } from "antd";
-import { saveAs } from "file-saver";
+import { downloadFile } from "@/lib/download";
+import { getImageSourceBlob } from '../../../../lib/imageTransfer';
 
 import { useCopyText } from "@/hooks/use-copy-text";
 import { formatBytes, readFileAsDataUrl } from "@/lib/image-utils";
-import { uploadMediaFile } from "@/services/file-storage";
-import { uploadImage } from "@/services/image-storage";
+import { uploadMediaFile, getMediaBlob } from "@/services/file-storage";
+import { uploadImage, getImageBlob } from "@/services/image-storage";
 import { cn } from "@/lib/utils";
 import { useAssetStore, type Asset, type AssetKind, type AudioAsset, type ImageAsset } from "@/stores/use-asset-store";
 import { assetTagOptions, assetTagValues, buildAssetTagList, buildAssetTagPatch, getAssetTag, type AssetTag, type AssetTagFilter } from "@/lib/asset-tags";
@@ -176,10 +177,20 @@ export default function AssetsPage() {
         copyText(asset.data.content, "文本已复制");
     };
 
-    const downloadImage = (asset: Asset) => {
+    const downloadImage = async (asset: Asset) => {
         if (asset.kind !== "image" && asset.kind !== "video" && asset.kind !== "audio") return;
-        const url = asset.kind === "image" ? asset.data.dataUrl : asset.data.url;
-        saveAs(url, `${asset.title || "asset"}.${asset.data.mimeType.split("/")[1] || "bin"}`);
+        try {
+            const url = asset.kind === "image" ? asset.data.dataUrl : asset.data.url;
+            const stored = asset.data.storageKey ? await (asset.kind === "image" ? getImageBlob(asset.data.storageKey) : getMediaBlob(asset.data.storageKey)) : null;
+            const blob = stored || (asset.kind === "image" ? await getImageSourceBlob(url) : await fetch(url).then(response => {
+                if (!response.ok) throw new Error(`下载失败（HTTP ${response.status}）`);
+                return response.blob();
+            }));
+            if (!blob) throw new Error('素材文件不存在，请重新加载后再试');
+            await downloadFile(blob, `${asset.title || "asset"}.${asset.data.mimeType.split("/")[1] || "bin"}`);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "下载失败");
+        }
     };
 
     const exportAllAssets = async () => {

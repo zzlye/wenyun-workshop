@@ -8,7 +8,7 @@ import { useParams, useRouter } from "next/navigation";
 import { AudioLines, Bot, Home, ImageIcon, Images, List, Menu, Paintbrush, Plus, Redo2, Scissors, Settings, Trash2, Undo2, Upload, Video, WandSparkles } from "lucide-react";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useAgentBridge } from "@/lib/canvas/use-agent-bridge";
-import { saveAs } from "file-saver";
+import { downloadFile } from "@/lib/download";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestVideoGeneration, VideoTaskPendingError } from "@/services/api/video";
@@ -2431,19 +2431,22 @@ function InfiniteCanvasPage() {
 
     const downloadNodeImage = useCallback(async (node: CanvasNodeData) => {
         if ((node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video && node.type !== CanvasNodeType.Audio) || !(node.metadata?.content || node.metadata?.storageKey)) return;
-        if (node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) {
-            const storedBlob = node.metadata.storageKey ? await getMediaBlob(node.metadata.storageKey) : null;
-            const blob = storedBlob || (await fetch(node.metadata.content).then((response) => response.blob()));
-            saveAs(blob, `canvas-${node.type}-${node.id}.${getMediaFileExtension(blob, node.metadata.mimeType, node.type)}`);
-            return;
-        }
-
         try {
+            if (node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) {
+                const storedBlob = node.metadata.storageKey ? await getMediaBlob(node.metadata.storageKey) : null;
+                const blob = storedBlob || (await fetch(node.metadata.content).then((response) => {
+                    if (!response.ok) throw new Error(`下载失败（HTTP ${response.status}）`);
+                    return response.blob();
+                }));
+                await downloadFile(blob, `canvas-${node.type}-${node.id}.${getMediaFileExtension(blob, node.metadata.mimeType, node.type)}`);
+                return;
+            }
+
             const storedBlob = node.metadata.storageKey ? await getStoredCanvasImageBlob(node.metadata.storageKey) : null;
             const blob = storedBlob || (await getImageSourceBlob(node.metadata.content));
-            saveAs(blob, `canvas-${node.type}-${node.id}.${getImageBlobExtension(blob, node.metadata.content)}`);
+            await downloadFile(blob, `canvas-${node.type}-${node.id}.${getImageBlobExtension(blob, node.metadata.content)}`);
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "下载图片失败");
+            message.error(error instanceof Error ? error.message : "下载失败");
         }
     }, [message]);
 

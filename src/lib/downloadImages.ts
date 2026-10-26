@@ -1,9 +1,11 @@
 import { ensureImageCached } from '../store'
+import { downloadFile } from './downloadLocation'
 import { getImageBlobExtension, getImageSourceBlob } from './imageTransfer'
 
 export interface DownloadImagesResult {
   successCount: number
   failCount: number
+  errorMessage?: string
 }
 
 export function formatExportFileTime(date: Date): string {
@@ -16,6 +18,7 @@ export async function downloadImageIds(imageIds: string[], fileNameBase = 'image
 
   let successCount = 0
   let failCount = 0
+  let errorMessage: string | undefined
   const multiple = imageIds.length > 1
 
   for (let index = 0; index < imageIds.length; index++) {
@@ -25,16 +28,17 @@ export async function downloadImageIds(imageIds: string[], fileNameBase = 'image
       const fileName = multiple
         ? `${fileNameBase}-${order}.${getImageBlobExtension(blob, imageIds[index])}`
         : `${fileNameBase}.${getImageBlobExtension(blob, imageIds[index])}`
-      triggerDownload(blob, fileName)
+      await downloadFile(blob, fileName)
       successCount++
       if (multiple) await delay(100)
     } catch (err) {
       console.error(err)
+      errorMessage ??= err instanceof Error ? err.message : '下载失败'
       failCount++
     }
   }
 
-  return { successCount, failCount }
+  return { successCount, failCount, errorMessage }
 }
 
 async function getImageBlob(imageIdOrUrl: string): Promise<Blob> {
@@ -44,17 +48,6 @@ async function getImageBlob(imageIdOrUrl: string): Promise<Blob> {
   }
 
   return getImageSourceBlob(src)
-}
-
-function triggerDownload(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = fileName
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 function delay(ms: number) {

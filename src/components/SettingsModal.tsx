@@ -24,6 +24,7 @@ import { useAssetStore } from '../infiniteCanvasSource/stores/use-asset-store'
 import Select from './Select'
 import { Checkbox } from './Checkbox'
 import { DesktopDataDirectory } from './DesktopDataDirectory'
+import { DownloadLocationSetting } from './DownloadLocationSetting'
 import { getDesktopBridge } from '../lib/desktop'
 
 import PriceTableButton from './PriceTableButton'
@@ -905,6 +906,7 @@ export default function SettingsModal() {
             <div className="flex-1 overflow-y-auto overscroll-contain custom-scrollbar p-5 sm:p-6">
             {activeTab === 'general' && (
               <div className="space-y-4">
+                <DownloadLocationSetting />
                 <div className="hidden sm:block">
                   <div className="mb-1 flex items-center justify-between">
                     <span className="block text-sm text-gray-600 dark:text-gray-300">任务提交方式</span>

@@ -1172,9 +1172,9 @@ export default function AgentWorkspace() {
                                if (imageIds.length === 0) return;
                                try {
                                  const roundIndex = round?.index ?? 0;
-                                 const { successCount, failCount } = await downloadImageIds(imageIds, 'agent-round-' + roundIndex);
+                                 const { successCount, failCount, errorMessage } = await downloadImageIds(imageIds, 'agent-round-' + roundIndex);
                                  if (successCount === 0) {
-                                   useStore.getState().showToast('下载失败', 'error');
+                                   useStore.getState().showToast(errorMessage || '下载失败', 'error');
                                  } else if (failCount > 0) {
                                    useStore.getState().showToast('部分下载失败：成功 ' + successCount + '，失败 ' + failCount, 'error');
                                  } else {
