@@ -1,6 +1,6 @@
 import { DEFAULT_PARAMS, type AppSettings, type TaskParams } from '../types'
 import { getActiveApiProfile, normalizeImageSizeForProfile } from './apiProfiles'
-import { normalizeImageBackground, normalizeImageQuality } from './modelPricing'
+import { isGptImageModel, normalizeImageBackground, normalizeImageQuality } from './modelPricing'
 import { isMidjourneyModel, normalizeMidjourneyRatio } from './midjourney'
 
 export const DEFAULT_FAL_IMAGE_SIZE = '1360x1024'
@@ -26,17 +26,22 @@ export function normalizeParamsForSettings(
   const normalizedSize = normalizeImageSizeForProfile(params.size, activeProfile.id, activeProfile.model)
   const nextParams: TaskParams = {
     ...params,
-    size: normalizedSize === 'auto' ? DEFAULT_PARAMS.size : normalizedSize || DEFAULT_PARAMS.size,
+    size: normalizedSize || DEFAULT_PARAMS.size,
     quality: normalizeImageQuality(activeProfile.model, params.quality),
-    output_format: 'png',
-    output_compression: DEFAULT_PARAMS.output_compression,
+    output_format: isGptImageModel(activeProfile.model) && ['png', 'jpeg', 'webp'].includes(params.output_format) ? params.output_format : 'png',
+    output_compression: isGptImageModel(activeProfile.model) && params.output_format !== 'png' ? params.output_compression : DEFAULT_PARAMS.output_compression,
     n: Math.min(outputImageLimit, Math.max(1, params.n || DEFAULT_PARAMS.n)),
   }
+
+  // 压缩只适用于 JPEG/WebP，保留零值，清理旧配置中的非数值和越界值。
+  nextParams.output_compression = nextParams.output_format !== 'png' && typeof nextParams.output_compression === 'number' && Number.isFinite(nextParams.output_compression) ? Math.min(100, Math.max(0, Math.round(nextParams.output_compression))) : null
 
   // 模型切换后清理透明背景，避免残留参数传给没有开放该能力的渠道。
   const background = normalizeImageBackground(activeProfile.model, params.background)
   if (background) nextParams.background = background
-  else if ('background' in nextParams) nextParams.background = undefined
+  // JPEG 没有透明通道，透明背景统一使用 PNG，避免界面和请求格式相互冲突。
+  if (background === 'transparent' && nextParams.output_format === 'jpeg') { nextParams.output_format = 'png'; nextParams.output_compression = null }
+  if (!background && 'background' in nextParams) nextParams.background = undefined
 
   if (activeProfile.provider === 'openai' && activeProfile.codexCli) {
     nextParams.quality = DEFAULT_PARAMS.quality

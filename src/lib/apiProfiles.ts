@@ -1,3 +1,4 @@
+import { isGptImageModel } from './modelPricing'
 import { isMidjourneyModel, normalizeMidjourneyRatio } from './midjourney'
 import type {
   AccountApiKeyMode,
@@ -117,6 +118,7 @@ export function allowsCustomImageRatioForProfile(_profileId: string): boolean {
 
 export function normalizeImageSizeForProfile(size: string, _profileId: string, model = ''): string {
   if (isMidjourneyModel(model)) return normalizeMidjourneyRatio(size)
+  if (size === 'auto' && isGptImageModel(model)) return 'auto'
   const bananaSize = resolveBananaSizePreset(model, size)
   if (bananaSize) return bananaSize.size
   // MJ 的比例值不能直接作为普通图片模型的像素尺寸提交。

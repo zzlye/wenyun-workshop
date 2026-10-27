@@ -6,9 +6,9 @@ import { normalizeParamsForSettings } from './paramCompatibility'
 import * as canvasImage from './canvasImage'
 import { FIXED_IMAGE_MODEL_OPTIONS, getFixedImageRequestModel, getImageSizeTiersForModel, normalizeFixedImageModel, supportsExtendedImageQuality, supportsTransparentImageBackground } from './modelPricing'
 
-const models = ['gpt-image-2-4k', 'gpt-image-2.5-flare-满血', 'gpt-image-2.5-sunburst-满血', 'gpt-image-2.5-flare-官渠', 'gpt-image-2.5-sunburst-官渠']
-const modelQuality = (model: string, extended: 'max' | 'xhigh' = 'max') => model === 'gpt-image-2-4k' ? 'high' as const : extended
-const otherModels = ['gpt-image-2', 'gpt-image-2.5-flare-4k', 'gpt-image-2.5-sunburst-4k', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'Nano-Banana-Pro', 'seedream-5-pro']
+const models = ['gpt-image-2', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'gpt-image-2.5-flare-4k', 'gpt-image-2.5-sunburst-4k', 'gpt-image-2-4k', 'gpt-image-2.5-flare-满血', 'gpt-image-2.5-sunburst-满血', 'gpt-image-2.5-flare-官渠', 'gpt-image-2.5-sunburst-官渠']
+const modelQuality = (model: string, extended: 'max' | 'xhigh' = 'max') => !model.includes('2.5') ? 'high' as const : extended
+const otherModels = ['Nano-Banana-Pro', 'seedream-5-pro']
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='
 const settingsFor = (model: string) => normalizeSettings({ ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, model, apiKey: 'test-only' })) })
 const originalFetch = globalThis.fetch
@@ -22,12 +22,12 @@ describe('GPT Image 全参数渠道', () => {
     expect(normalizeFixedImageModel(model)).toBe(model)
     expect(getFixedImageRequestModel(model)).toBe(model)
     expect(supportsTransparentImageBackground(model)).toBe(true)
-    expect(supportsExtendedImageQuality(model)).toBe(model !== 'gpt-image-2-4k')
+    expect(supportsExtendedImageQuality(model)).toBe(model.includes('2.5'))
     expect(getImageSizeTiersForModel(model)).toEqual(['1K', '2K', '4K'])
     expect(normalizeFixedImageModel(model.toUpperCase())).toBe(model)
   })
 
-  it.each(models.flatMap(model => ['auto', 'opaque', 'transparent'].map(background => [model, background])) )('%s 文生图发送背景 %s 和官方字段', async (model, background) => {
+  it.each([...models, 'AZ-gpt-image-2.5-flara', 'AZ-gpt-image-2.5-flare', '官-gpt-image-2', 'provider/gpt-image-2.5-sunburst'].flatMap(model => ['auto', 'opaque', 'transparent'].map(background => [model, background])) )('%s 文生图发送背景 %s 和官方字段', async (model, background) => {
     const mock = mockImages()
     const quality = modelQuality(model)
     const result = await callImageApi({ settings: settingsFor(model), prompt: '透明贴纸', params: { ...DEFAULT_PARAMS, quality, size: '3840x2160', background: background as TaskParams['background'] }, inputImageDataUrls: [] })
@@ -38,7 +38,7 @@ describe('GPT Image 全参数渠道', () => {
     expect(result.actualParams?.background).toBe('transparent')
   })
 
-  it.each(models)('%s 图生图保留背景、支持的品质和 PNG，使用 URL 返回', async model => {
+  it.each([...models, 'AZ-gpt-image-2.5-flara', '官-gpt-image-2', 'provider/gpt-image-2.5-sunburst'])('%s 图生图保留背景、支持的品质和 PNG，使用 URL 返回', async model => {
     const mock = mockImages()
     const quality = modelQuality(model, 'xhigh')
     await callImageApi({ settings: settingsFor(model), prompt: '去除背景', params: { ...DEFAULT_PARAMS, quality, background: 'transparent' }, inputImageDataUrls: [png] })
@@ -105,7 +105,7 @@ describe('GPT Image 全参数渠道', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ b64_json: 'aW1hZ2U=' }] }), { headers: { 'Content-Type': 'application/json' } }))
     await callImageApi({ settings: settingsFor(model), prompt: '贴纸', params: { ...DEFAULT_PARAMS, quality: 'max', background: 'transparent' }, inputImageDataUrls: [], imageTask: { taskId: '', accessToken: '', idempotencyKey: 'test-idempotency' } })
     expect(mock.mock.calls[0][0]).toBe('/image-tasks?endpoint=%2Fimages%2Fgenerations')
-    expect(JSON.parse(String(mock.mock.calls[0][1]?.body))).toMatchObject({ model, quality: model === 'gpt-image-2-4k' ? 'auto' : 'max', background: 'transparent', output_format: 'png', response_format: 'url' })
+    expect(JSON.parse(String(mock.mock.calls[0][1]?.body))).toMatchObject({ model, quality: !model.includes('2.5') ? 'auto' : 'max', background: 'transparent', output_format: 'png', response_format: 'url' })
     expect(mock).toHaveBeenCalledTimes(3)
   })
 

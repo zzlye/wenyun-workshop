@@ -32,8 +32,8 @@ describe('图片品质从界面参数到出站请求保持一致', () => {
       profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, model, apiKey: 'test-only' })) })
     const params = normalizeParamsForSettings({ ...DEFAULT_PARAMS, quality, size: '2160x3840' }, settings, { hasInputImages: edit })
     expect(params.quality).toBe(quality)
-    // 无后缀的旧路由按既有能力限制为一 K，四 K 和满血路由保留截图中的尺寸。
-    const expectedSize = model === 'gpt-image-2.5-sunburst' || model === 'gpt-image-2.5-flare' ? '720x1280' : '2160x3840'
+    // 基础名、渠道前后缀统一保留所选官方尺寸。
+    const expectedSize = '2160x3840'
     expect(params.size).toBe(expectedSize)
     await callImageApi({ settings, prompt: '保留参考主体，生成背面全身图', params,
       inputImageDataUrls: edit ? [reference, reference, reference] : [],

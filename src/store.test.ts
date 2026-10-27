@@ -1881,7 +1881,7 @@ describe('reused task API profile', () => {
     const state = useStore.getState()
     expect(state.settings.activeProfileId).toBe(openaiProfile.id)
     expect(state.reusedTaskApiProfileId).toBe(publicProfile.id)
-    expect(state.params).toMatchObject({ n: 8, size: '1024x1024', quality: 'auto' })
+    expect(state.params).toMatchObject({ n: 8, size: 'auto', quality: 'auto' })
     expect(state.showToast).toHaveBeenCalledWith('已临时复用该任务的 API 配置「公益站」', 'success')
   })
 
@@ -1939,7 +1939,7 @@ describe('reused task API profile', () => {
     const state = useStore.getState()
     expect(state.settings.activeProfileId).toBe(openaiProfile.id)
     expect(state.reusedTaskApiProfileId).toBeNull()
-    expect(state.params).toMatchObject({ n: 8, size: '1024x1024', quality: 'auto' })
+    expect(state.params).toMatchObject({ n: 8, size: 'auto', quality: 'auto' })
   })
 
   it('asks whether to submit with current API profile when the reused API profile is missing', async () => {

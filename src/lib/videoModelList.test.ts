@@ -12,8 +12,10 @@ describe('视频 API 模型列表', () => {
     const controller = new AbortController()
     expect(await fetchVideoModelList(' video-key ', false, controller.signal)).toEqual(['api-video-model-v3', 'sd-2.0-933-720p'])
     expect(request).toHaveBeenCalledExactlyOnceWith('/api-proxy/wenyun/models', {
-      headers: { Authorization: 'Bearer video-key' }, cache: 'no-store', signal: controller.signal,
+      headers: { Authorization: 'Bearer video-key' }, cache: 'no-store', signal: expect.any(AbortSignal),
     })
+    controller.abort()
+    expect(request.mock.calls[0][1].signal.aborted).toBe(true)
   })
 
   it('再次获取重新请求接口，不继续返回旧的固定选项', async () => {

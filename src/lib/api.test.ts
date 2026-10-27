@@ -1,3 +1,4 @@
+import * as canvasImage from './canvasImage'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PARAMS } from '../types'
 import { DEFAULT_SETTINGS, GPT_IMAGE_2_SUPER_MODEL, LOCKED_PUBLIC_PROFILE_ID } from './apiProfiles'
@@ -483,7 +484,9 @@ describe('callImageApi', () => {
     expect(result.images).toEqual(['data:image/png;base64,ZWRpdC1maW5hbA=='])
   })
 
-  it('文运站图生图保留品质，同时维持旧渠道的其他参数兼容规则', async () => {
+  it('文运站基础图片模型保留官方编辑参数与遮罩', async () => {
+    // 测试只替代浏览器像素转换，实际请求组装和遮罩处理不变。
+    vi.spyOn(canvasImage, 'imageDataUrlToPngBlob').mockResolvedValue(new Blob(['ref'], { type: 'image/png' }))
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input)
       if (url.startsWith('data:')) return new Response(new Blob(['ref'], { type: 'image/png' }))
@@ -518,11 +521,11 @@ describe('callImageApi', () => {
     const formData = (init as RequestInit).body as FormData
     expect(formData.getAll('image')).toHaveLength(1)
     expect(formData.get('image[]')).toBeNull()
-    expect(formData.get('mask')).toBeNull()
+    expect(formData.get('mask')).toBeInstanceOf(Blob)
     expect(formData.get('quality')).toBe(DEFAULT_PARAMS.quality)
-    expect(formData.get('output_format')).toBeNull()
+    expect(formData.get('output_format')).toBe('png')
     expect(formData.get('output_compression')).toBeNull()
-    expect(formData.get('moderation')).toBeNull()
+    expect(formData.get('moderation')).toBe('auto')
   })
 
   it('routes Banana image models through Gemini even with old auto settings', async () => {

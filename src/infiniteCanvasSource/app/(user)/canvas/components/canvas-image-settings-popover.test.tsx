@@ -51,13 +51,15 @@ describe("画布香蕉尺寸选择", () => {
         expect(labels).not.toContain("最大");
     });
 
-    it("图片二四K展示背景选项并写回透明背景，普通模型隐藏该选项", async () => {
+    it("图片二四K展示背景选项并写回透明背景，所有GPT图片渠道都显示，香蕉隐藏该选项", async () => {
         const { onConfigChange, render } = await renderModel("gpt-image-2-4k", "3840x2160");
         const transparent = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "透明背景");
         expect(transparent).toBeDefined();
         await act(async () => transparent!.click());
         expect(onConfigChange).toHaveBeenCalledWith("imageBackground", "transparent");
         await render("gpt-image-2", "1024x1024");
+        expect(host.textContent).toContain("透明背景");
+        await render("Nano-Banana-2", "1024x1024");
         expect(host.textContent).not.toContain("透明背景");
     });
 
@@ -97,4 +99,15 @@ describe("画布香蕉尺寸选择", () => {
         expect(host.textContent).toContain("384x3072");
         expect(onConfigChange).not.toHaveBeenCalled();
     });
+});
+
+it("新增渠道显示输出设置并可选自动尺寸", async () => {
+    const { onConfigChange } = await renderModel("AZ-gpt-image-2.5-flara", "3840x2160");
+    expect(host.querySelector('select[aria-label="输出格式"]')).not.toBeNull();
+    const select = host.querySelector<HTMLSelectElement>('select[aria-label="输出格式"]')!;
+    await act(async () => { select.value = "webp"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(onConfigChange).toHaveBeenCalledWith("imageOutputFormat", "webp");
+    const auto = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "自动尺寸")!;
+    await act(async () => auto.click());
+    expect(onConfigChange).toHaveBeenCalledWith("size", "auto");
 });

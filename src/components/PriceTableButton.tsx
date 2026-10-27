@@ -129,11 +129,11 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
             <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
               <div id={`${tabId}-video-panel`} role="tabpanel" aria-labelledby={`${tabId}-video`} hidden={tab !== 'video'}>
                 <MediaModelTable video options={videoCatalog.data?.videos ?? []} loading={videoCatalog.isFetching}
-                  error={videoCatalog.error?.message} metadataReady={videoCatalog.metadataReady} metrics={performance.data?.items} />
+                  error={videoCatalog.error?.message} warning={videoCatalog.descriptionError?.message} metadataReady={videoCatalog.metadataReady} metrics={performance.data?.items} />
               </div>
               <div id={`${tabId}-image-panel`} role="tabpanel" aria-labelledby={`${tabId}-image`} hidden={tab !== 'image'}>
                 <MediaModelTable options={imageCatalog.data?.images ?? []} loading={imageCatalog.isFetching}
-                  error={imageCatalog.error?.message} metadataReady={imageCatalog.metadataReady} metrics={performance.data?.items} />
+                  error={imageCatalog.error?.message} warning={imageCatalog.descriptionError?.message} metadataReady={imageCatalog.metadataReady} metrics={performance.data?.items} />
               </div>
             </div>
           </div>

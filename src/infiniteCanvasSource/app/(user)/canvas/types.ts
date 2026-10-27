@@ -52,6 +52,9 @@ export type CanvasNodeMetadata = {
     size?: string;
     quality?: string;
     imageBackground?: string;
+    imageOutputFormat?: string;
+    imageOutputCompression?: string;
+    imageModeration?: string;
     // 保存专属参数，节点重试和刷新恢复沿用本次生成设置。
     mjRaw?: string;
     mjParameters?: string;

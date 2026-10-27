@@ -4,6 +4,7 @@ import { useStore } from '../store'
 import { LOCKED_WENYUN_PROFILE_ID, normalizeSettings } from '../lib/apiProfiles'
 import { fetchNewApiAccountModelCatalog, fetchNewApiSiteStatus, requestNewApiAccountResource } from '../lib/newApiAccount'
 import { applyMediaCatalogMetadata, parseMediaCatalogMetadata } from '../lib/mediaCatalogPricing'
+import { fetchMediaGroupDescriptions } from '../lib/mediaModels'
 import { useMediaModels } from './useMediaModels'
 import { useAccountVideoKey } from './useAccountVideoKey'
 import { hasBoundMediaApiKey } from '../lib/videoAccount'
@@ -36,17 +37,28 @@ export function useMediaCatalog(baseUrl: string, apiKey: string, apiProxy: boole
     },
   })
   const metadata = models.data?.metadata ?? (session ? fallback.data : undefined)
-  const data = useMemo(() => !needsMigration && models.data && metadata ? applyMediaCatalogMetadata(models.data, metadata) : undefined, [models.data, metadata, needsMigration])
-  const isFetching = models.isFetching || fallback.isFetching || needsMigration && migration.isFetching
+  const needsDescriptions = Boolean(metadata?.groups.some(group => !metadata.group_description?.[group]))
+  const descriptions = useQuery({
+    queryKey: ['media-group-descriptions', baseUrl],
+    enabled: enabled && needsDescriptions,
+    queryFn: ({ signal }) => fetchMediaGroupDescriptions(baseUrl, signal),
+    staleTime: 300000, gcTime: 600000, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
+  })
+  const data = useMemo(() => !needsMigration && models.data && metadata
+    ? applyMediaCatalogMetadata(models.data, { ...metadata, group_description: { ...descriptions.data, ...metadata.group_description } })
+    : undefined, [models.data, metadata, descriptions.data, needsMigration])
+  const isFetching = models.isFetching || fallback.isFetching || (needsDescriptions && descriptions.isFetching) || needsMigration && migration.isFetching
   const missingGroups = Boolean(apiKey.trim() && models.isSuccess && !metadata && !isFetching && !needsMigration)
   return { data, metadataReady: Boolean(metadata), isFetching,
     error: needsMigration ? migration.error : models.error ?? (models.data?.metadata ? null : fallback.error) ?? (missingGroups ? new Error('此 Key 暂未返回可用分组，请登录账号或刷新重试') : null),
+    descriptionError: needsDescriptions && descriptions.isError ? new Error('分组说明暂时加载失败，模型和计费不受影响') : null,
     updatedAt: Math.max(models.dataUpdatedAt, fallback.dataUpdatedAt),
     refetch: async () => {
       if (needsMigration) { await migration.refetch(); return }
-      const refreshed = await models.refetch()
+      const refreshed = await models.refetch({ cancelRefetch: false })
       // 升级后的目录已含专属报价，不再沿用刷新前的状态重复请求账号接口。
       if (session && refreshed.isSuccess && !refreshed.data.metadata) await fallback.refetch()
+      if (needsDescriptions) await descriptions.refetch({ cancelRefetch: false })
     },
   }
 }

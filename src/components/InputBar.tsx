@@ -1,3 +1,4 @@
+import ImageOutputSettings from './ImageOutputSettings'
 import { useRef, useEffect, useCallback, useState, useMemo, useLayoutEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useStore, submitTask, submitAgentMessage, stopAgentResponse, addImageFromFile, createInputImageFromFile, deleteImageIfUnreferenced, updateTaskInStore, removeMultipleTasks, getCachedImage, ensureImageCached, getActiveAgentRounds } from '../store'
@@ -1860,6 +1861,7 @@ export default function InputBar() {
         <ButtonTooltip visible={nLimitHint.visible} text={nLimitHintText} />
         <ButtonTooltip visible={splitIntoIndependentTasks && !nLimitHint.visible} text="数量大于 1 时会创建多个独立任务，完成一张显示一张" />
       </label>}
+      {supportsTransparentImageBackground(activeProfile.model) && <ImageOutputSettings value={params} onChange={setParams} />}
     </div>
   )
 

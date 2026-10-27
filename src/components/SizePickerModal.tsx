@@ -1,3 +1,4 @@
+import { isGptImageModel } from '../lib/modelPricing'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { calculateImageSize, normalizeImageSize, parseRatio, type SizeTier } from '../lib/size'
 import { getBananaSizeConfig, resolveBananaSizePreset, type BananaSizeTier } from '../lib/bananaImageSize'
@@ -190,6 +191,7 @@ function PixelSizePickerModal({ currentSize, imageModel = '', allowedTiers, allo
           </button>
         </div>
 
+        {isGptImageModel(imageModel) && <button type="button" className={buttonClass(currentSize === 'auto') + ' mb-3 w-full'} onClick={() => { onSelect('auto'); onClose() }}>自动尺寸</button>}
         <div className="space-y-6">
           <div className="h-[380px] max-h-[55vh] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-white/10 pr-1 -mr-1 pb-2">
             {mode === 'ratio' && (

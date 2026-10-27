@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import ImageOutputSettings from "../../../../../components/ImageOutputSettings";
 import { Settings2 } from "lucide-react";
 import { Button } from "antd";
 
@@ -265,6 +266,7 @@ function PixelImageSizePanel({ config, allowedTiers, qualityOptions, allowCustom
                         ))}
                     </div>
                 </SettingGroup>
+                {supportsTransparentImageBackground(imageModel) && <OptionPill selected={config.size === "auto"} theme={theme} onClick={() => onConfigChange("size", "auto")}>自动尺寸</OptionPill>}
                 <SettingGroup title="基准分辨率" color={theme.node.muted}>
                     <div className={`grid gap-2.5 ${tiers.length === 4 ? "grid-cols-4" : "grid-cols-3"}`}>
                         {tiers.map((item) => (
@@ -296,7 +298,7 @@ function PixelImageSizePanel({ config, allowedTiers, qualityOptions, allowCustom
                     <SettingGroup title="背景" color={theme.node.muted}>
                         <div className="grid grid-cols-3 gap-2.5">
                             {[{ value: "auto", label: "自动" }, { value: "opaque", label: "不透明" }, { value: "transparent", label: "透明背景" }].map((item) => (
-                                <OptionPill key={item.value} selected={normalizeImageBackground(config.imageModel || config.model, config.imageBackground) === item.value} theme={theme} onClick={() => onConfigChange("imageBackground", item.value)}>
+                                <OptionPill key={item.value} selected={normalizeImageBackground(config.imageModel || config.model, config.imageBackground) === item.value} theme={theme} onClick={() => { onConfigChange("imageBackground", item.value); if (item.value === "transparent" && config.imageOutputFormat === "jpeg") { onConfigChange("imageOutputFormat", "png"); onConfigChange("imageOutputCompression", ""); } }}>
                                     {item.label}
                                 </OptionPill>
                             ))}
@@ -315,6 +317,15 @@ function PixelImageSizePanel({ config, allowedTiers, qualityOptions, allowCustom
                         />
                     </SettingGroup>
                 ) : null}
+                {supportsTransparentImageBackground(imageModel) && <ImageOutputSettings
+                    style={{ color: theme.node.text }}
+                    value={{ output_format: config.imageOutputFormat === "jpeg" || config.imageOutputFormat === "webp" ? config.imageOutputFormat : "png", output_compression: config.imageOutputCompression?.trim() ? Number(config.imageOutputCompression) : null, moderation: config.imageModeration === "low" ? "low" : "auto", background: normalizeImageBackground(imageModel, config.imageBackground) }}
+                    onChange={patch => {
+                        if (patch.output_format !== undefined) onConfigChange("imageOutputFormat", patch.output_format);
+                        if (patch.output_compression !== undefined) onConfigChange("imageOutputCompression", patch.output_compression === null ? "" : String(patch.output_compression));
+                        if (patch.moderation !== undefined) onConfigChange("imageModeration", patch.moderation);
+                    }}
+                />}
                 <SettingGroup title="生成张数" color={theme.node.muted}>
                     <div className="grid grid-cols-5 gap-2">
                         {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
@@ -329,7 +340,7 @@ function PixelImageSizePanel({ config, allowedTiers, qualityOptions, allowCustom
                     <div className="text-xs" style={{ color: theme.node.muted }}>
                         将使用
                     </div>
-                    <div className="mt-1 font-mono text-lg font-semibold">{previewSize || "尺寸无效"}</div>
+                    <div className="mt-1 font-mono text-lg font-semibold">{config.size === "auto" ? "自动" : previewSize || "尺寸无效"}</div>
                 </div>
             </div>
         </ImageSettingsTheme>

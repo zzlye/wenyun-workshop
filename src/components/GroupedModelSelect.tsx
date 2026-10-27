@@ -40,7 +40,7 @@ export default function GroupedModelSelect({ value, options, onChange, className
   }, [id])
   const renderModels = (models: ModelOption[]) => <DropdownMenu.RadioGroup value={value} onValueChange={onChange}>
     {models.map(model => <DropdownMenu.RadioItem key={model.value} value={model.value} textValue={model.label} className={itemClass}>
-      <span className="min-w-0 flex-1 break-words">{model.label}</span>
+      <span className="min-w-0 flex-1 break-words">{model.label}{model.description && <span className="mt-1 block max-w-72 whitespace-pre-wrap text-[11px] text-gray-500 dark:text-gray-400">{model.description}</span>}</span>
       <span className="w-3 shrink-0"><DropdownMenu.ItemIndicator><Check size={12} /></DropdownMenu.ItemIndicator></span>
     </DropdownMenu.RadioItem>)}
   </DropdownMenu.RadioGroup>
@@ -64,8 +64,8 @@ export default function GroupedModelSelect({ value, options, onChange, className
       <DropdownMenu.Content data-canvas-no-zoom className={`${panelClass} ${compact ? 'w-80' : ''}`} sideOffset={6} align="start" collisionPadding={12}
         style={{ maxHeight: 'min(28rem, var(--radix-dropdown-menu-content-available-height))' }}
         onPointerDown={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()} onWheel={event => event.stopPropagation()}>
-        {error ? <div role="alert" className="max-w-72 px-3 py-2 text-red-500">{error}</div>
-          : !categories.length ? <div className="px-3 py-2 text-gray-500">{loading ? '正在获取模型…' : emptyText}</div>
+        {error && <div role="alert" className="max-w-72 px-3 py-2 text-red-500">{error}</div>}
+        {!categories.length ? <div className="px-3 py-2 text-gray-500">{loading ? '正在获取模型…' : emptyText}</div>
           : compact ? currentCategory ? <>
             {/* 窄屏在同一个浮层内逐级选择，避免侧边子菜单超出屏幕。 */}
             <DropdownMenu.Item className={itemClass} onSelect={event => { event.preventDefault(); setActiveCategory(null) }}>
@@ -75,10 +75,10 @@ export default function GroupedModelSelect({ value, options, onChange, className
             {renderModels(currentCategory.models)}
           </> : categories.map(category => <DropdownMenu.Item key={category.label} className={itemClass}
             onSelect={event => { event.preventDefault(); setActiveCategory(category.label) }}>
-            <span className="flex-1">{category.label}</span>{category.ratio !== undefined && <span className="text-xs text-gray-500">{category.ratio} 倍</span>}<ChevronRight size={13} />
+            <span className="min-w-0 flex-1">{category.label}{category.description && <span className="mt-1 block max-w-64 whitespace-pre-wrap break-words text-[11px] text-gray-500 dark:text-gray-400">{category.description}</span>}</span>{category.ratio !== undefined && <span className="text-xs text-gray-500">{category.ratio} 倍</span>}<ChevronRight size={13} />
           </DropdownMenu.Item>) : categories.map(category => <DropdownMenu.Sub key={category.label}>
             <DropdownMenu.SubTrigger className={itemClass}>
-              <span className="flex-1">{category.label}</span>{category.ratio !== undefined && <span className="text-xs text-gray-500">{category.ratio} 倍</span>}<ChevronRight size={13} />
+              <span className="min-w-0 flex-1">{category.label}{category.description && <span className="mt-1 block max-w-64 whitespace-pre-wrap break-words text-[11px] text-gray-500 dark:text-gray-400">{category.description}</span>}</span>{category.ratio !== undefined && <span className="text-xs text-gray-500">{category.ratio} 倍</span>}<ChevronRight size={13} />
             </DropdownMenu.SubTrigger>
             <DropdownMenu.Portal>
               <DropdownMenu.SubContent data-canvas-no-zoom className={`${panelClass} max-w-[min(22rem,calc(100vw-24px))]`} sideOffset={2} collisionPadding={12}

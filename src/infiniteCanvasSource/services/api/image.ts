@@ -100,8 +100,11 @@ function buildTaskParams(config: AiConfig): TaskParams {
         n,
         quality,
         background: normalizeImageBackground(config.imageModel || config.model, config.imageBackground),
+        output_format: config.imageOutputFormat === "jpeg" || config.imageOutputFormat === "webp" ? config.imageOutputFormat : "png",
+        output_compression: config.imageOutputCompression?.trim() ? Number(config.imageOutputCompression) : null,
+        moderation: config.imageModeration === "low" ? "low" : "auto",
         // 品质可以交给模型自动判断；旧画布里残留的比例值按 1K 转成具体尺寸，避免预览和实际请求不一致。
-        size: resolveRequestSize(quality === "auto" ? "low" : quality, config.size) || DEFAULT_PARAMS.size,
+        size: config.size === "auto" ? "auto" : resolveRequestSize(quality === "auto" ? "low" : quality, config.size) || DEFAULT_PARAMS.size,
     };
 }
 

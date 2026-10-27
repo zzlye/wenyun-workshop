@@ -40,6 +40,10 @@ export type AiConfig = {
     models: string[];
     quality: string;
     imageBackground: string;
+    // 保留为字符串以兼容画布的节点参数编辑与旧配置存储。
+    imageOutputFormat?: string;
+    imageOutputCompression?: string;
+    imageModeration?: string;
     mjRaw?: string;
     mjParameters?: string;
     size: string;
@@ -81,6 +85,9 @@ export const defaultConfig: AiConfig = {
     models: [],
     quality: "auto",
     imageBackground: "auto",
+    imageOutputFormat: "png",
+    imageOutputCompression: "",
+    imageModeration: "auto",
     size: "1024x1024",
     count: "1",
 };

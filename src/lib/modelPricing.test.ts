@@ -15,7 +15,7 @@ describe('fixed image model pricing', () => {
     const rows = buildFixedModelPriceRows('wenyun-site')
 
     expect(rows).toEqual(expect.arrayContaining([
-      expect.objectContaining({ model: 'gpt-image-2', resolutionText: '1K', priceText: 'HUHN 0.06' }),
+      expect.objectContaining({ model: 'gpt-image-2', resolutionText: '1K、2K、4K', priceText: 'HUHN 0.06' }),
       expect.objectContaining({ model: 'gpt-image-2-4k', resolutionText: '1K、2K、4K', priceText: 'HUHN 0.09' }),
       expect.objectContaining({ model: 'seedream-5-pro', resolutionText: '1K、2K', priceText: 'HUHN --' }),
       expect.objectContaining({ model: 'Nano-Banana-2', resolutionText: '1K、2K、4K' }),
@@ -37,12 +37,12 @@ describe('fixed image model pricing', () => {
     expect(getFixedImageRequestModel('nano-banana-2.1')).toBe('nano-banana-2.1')
   })
 
-  it('基础2.5模型仅支持1K，列表和参数能力保持一致', () => {
+  it('基础2.5模型按官方开放全档位，不再静默降到1K', () => {
     for (const model of ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']) {
-      expect(getImageSizeTiersForModel(model)).toEqual(['1K'])
-      expect(getImageSizeTiersForModel(model.toUpperCase())).toEqual(['1K'])
-      expect(buildFixedModelPriceRows('wenyun-site').find((row) => row.model === model)?.resolutionText).toBe('1K')
-      expect(normalizeImageSizeForProfile('3840x2160', 'wenyun-site', model)).toBe('1280x720')
+      expect(getImageSizeTiersForModel(model)).toEqual(['1K', '2K', '4K'])
+      expect(getImageSizeTiersForModel(model.toUpperCase())).toEqual(['1K', '2K', '4K'])
+      expect(buildFixedModelPriceRows('wenyun-site').find((row) => row.model === model)?.resolutionText).toBe('1K、2K、4K')
+      expect(normalizeImageSizeForProfile('3840x2160', 'wenyun-site', model)).toBe('3840x2160')
     }
   })
 
@@ -67,8 +67,8 @@ describe('fixed image model pricing', () => {
     expect(normalizeFixedImageModel(model.toUpperCase())).toBe(model)
     expect(getFixedImageRequestModel(model)).toBe(model)
     expect(getImageSizeTiersForModel(model)).toEqual(['1K', '2K', '4K'])
-    expect(supportsExtendedImageQuality(model)).toBe(false)
-    expect(supportsTransparentImageBackground(model)).toBe(false)
+    expect(supportsExtendedImageQuality(model)).toBe(true)
+    expect(supportsTransparentImageBackground(model)).toBe(true)
     expect(normalizeImageSizeForProfile('3840x2160', 'wenyun-site', model)).toBe('3840x2160')
     const settings = normalizeSettings({ ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, model })) })
     expect(settings.profiles.every(profile => profile.model === model)).toBe(true)

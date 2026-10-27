@@ -93,7 +93,7 @@ describe('parameter compatibility', () => {
   })
 
 
-  it('normalizes auto size through fixed-site defaults when stale settings contain fal.ai', () => {
+  it('保留固定站点GPT图片的自动尺寸，清理旧fal配置', () => {
     const falProfile = createDefaultFalProfile({ apiKey: 'fal-key' })
     const settings = {
       ...DEFAULT_SETTINGS,
@@ -101,8 +101,8 @@ describe('parameter compatibility', () => {
       activeProfileId: falProfile.id,
     }
 
-    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: 'auto' }, settings).size).toBe(DEFAULT_PARAMS.size)
-    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: 'auto' }, settings, { hasInputImages: true }).size).toBe(DEFAULT_PARAMS.size)
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: 'auto' }, settings).size).toBe('auto')
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: 'auto' }, settings, { hasInputImages: true }).size).toBe('auto')
   })
 
   it('keeps public site image size options the same as Wenyun', () => {

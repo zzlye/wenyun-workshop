@@ -36,10 +36,10 @@ export type ModelPriceRow = {
 
 // 图片模型价格统一放这里，模型列表和发送按钮都会读取这份配置。
 export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
-  { model: DEFAULT_IMAGES_MODEL, label: DEFAULT_IMAGES_MODEL, requestModel: DEFAULT_IMAGES_MODEL, unitCostText: 'HUHN 0.06', resolutionText: '1K' },
+  { model: DEFAULT_IMAGES_MODEL, label: DEFAULT_IMAGES_MODEL, requestModel: DEFAULT_IMAGES_MODEL, unitCostText: 'HUHN 0.06', resolutionText: '1K、2K、4K' },
   { model: GPT_IMAGE_2_4K_MODEL, label: GPT_IMAGE_2_4K_MODEL, requestModel: GPT_IMAGE_2_4K_REQUEST_MODEL, unitCostText: 'HUHN 0.09', resolutionText: '1K、2K、4K' },
   { model: SEEDREAM_5_PRO_MODEL, label: SEEDREAM_5_PRO_MODEL, requestModel: SEEDREAM_5_PRO_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K' },
-  // 恢复原四 K 渠道入口，保留独立路由和原有参数能力，价格仍从站点获取。
+  // 保留原四 K 渠道入口和独立路由，参数能力统一按模型版本处理，价格仍从站点获取。
   { model: GPT_IMAGE_2_5_SUNBURST_MODEL, label: GPT_IMAGE_2_5_SUNBURST_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   { model: GPT_IMAGE_2_5_FLARE_MODEL, label: GPT_IMAGE_2_5_FLARE_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   // 保留渠道的完整路由名，避免去掉“满血”后被中转分配到其他渠道；价格由实际渠道查询。
@@ -48,8 +48,8 @@ export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
   // 官渠保留独立路由名，使用全参数能力，价格仍从站点获取。
   { model: GPT_IMAGE_2_5_FLARE_OFFICIAL_CHANNEL_MODEL, label: GPT_IMAGE_2_5_FLARE_OFFICIAL_CHANNEL_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_OFFICIAL_CHANNEL_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   { model: GPT_IMAGE_2_5_SUNBURST_OFFICIAL_CHANNEL_MODEL, label: GPT_IMAGE_2_5_SUNBURST_OFFICIAL_CHANNEL_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_OFFICIAL_CHANNEL_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
-  { model: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, label: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K' },
-  { model: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, label: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K' },
+  { model: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, label: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
+  { model: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, label: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, requestModel: GPT_IMAGE_2_5_FLARE_LEGACY_MODEL, unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
   { model: 'Nano-Banana-2', label: 'Nano Banana 2', requestModel: 'nano-banana-2', unitCostText: 'HUHN 0.09', resolutionText: '1K、2K、4K' },
   // 保留站点路由名，由中转映射官方模型；尺寸能力与旧版香蕉二分别维护。
   { model: 'nano-banana-2.1', label: 'Nano Banana 2.1', requestModel: 'nano-banana-2.1', unitCostText: 'HUHN --', resolutionText: '1K、2K、4K' },
@@ -57,12 +57,14 @@ export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
   { model: 'mj-v8.2', label: 'mj-v8.2', requestModel: 'mj-v8.2', unitCostText: 'HUHN --', resolutionText: '自动' },
 ]
 
-// 官方仅为图片二点五开放 xhigh/max；透明背景是独立能力，不能用它推断品质档位。
+// 渠道前缀和后缀只负责路由，参数能力跟随官方模型版本，不能依赖固定名称白名单。
+export function isGptImageModel(model: string): boolean {
+  return /(?:^|[^a-z0-9])gpt-image-\d+(?:\.\d+)?(?=$|[^a-z0-9.])/i.test(model.trim())
+}
+
+// 图片二点五支持扩展品质；图片二仍只允许 auto/low/medium/high。
 export function supportsExtendedImageQuality(model: string): boolean {
-  const normalized = getFixedImageRequestModel(model).toLowerCase()
-  return [GPT_IMAGE_2_5_FLARE_FULL_MODEL, GPT_IMAGE_2_5_SUNBURST_FULL_MODEL,
-    GPT_IMAGE_2_5_FLARE_OFFICIAL_CHANNEL_MODEL, GPT_IMAGE_2_5_SUNBURST_OFFICIAL_CHANNEL_MODEL,
-    GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL, GPT_IMAGE_2_5_FLARE_LEGACY_MODEL].includes(normalized)
+  return /(?:^|[^a-z0-9])gpt-image-2\.5(?=$|[^a-z0-9.])/i.test(model.trim())
 }
 
 // 旧配置和历史任务重试都使用同一规则，防止界面隐藏后仍然发送不支持的品质。
@@ -71,11 +73,9 @@ export function normalizeImageQuality(model: string, value: TaskParams['quality'
   return value || 'auto'
 }
 
-// 图片二四 K、满血和官渠开放背景参数；旧别名按实际路由判断，不与扩展品质绑定。
+// GPT Image 渠道统一开放背景和编辑参数，不因新增分组、前缀或旧后缀而裁剪能力。
 export function supportsTransparentImageBackground(model: string): boolean {
-  const normalized = getFixedImageRequestModel(model).toLowerCase()
-  return [GPT_IMAGE_2_4K_MODEL, GPT_IMAGE_2_5_FLARE_FULL_MODEL, GPT_IMAGE_2_5_SUNBURST_FULL_MODEL,
-    GPT_IMAGE_2_5_FLARE_OFFICIAL_CHANNEL_MODEL, GPT_IMAGE_2_5_SUNBURST_OFFICIAL_CHANNEL_MODEL].includes(normalized)
+  return isGptImageModel(model)
 }
 
 export function normalizeImageBackground(model: string, value?: string): 'auto' | 'opaque' | 'transparent' | undefined {
@@ -132,8 +132,6 @@ export function getFixedImageRequestModel(model: string): string {
 export function getImageSizeTiersForModel(model: string): SizeTier[] {
   if (isMidjourneyModel(model)) return []
   const normalized = getFixedImageRequestModel(model).toLowerCase()
-  // 无后缀的两个基础路由仅支持一 K，不影响四 K 和满血路由。
-  if (normalized === GPT_IMAGE_2_5_SUNBURST_LEGACY_MODEL || normalized === GPT_IMAGE_2_5_FLARE_LEGACY_MODEL) return ['1K']
   if (normalized === SEEDREAM_5_PRO_MODEL) return ['1K', '2K']
   return ['1K', '2K', '4K']
 }

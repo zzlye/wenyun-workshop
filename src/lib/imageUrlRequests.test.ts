@@ -20,9 +20,8 @@ describe('西米露 URL 结果传输', () => {
     await callOpenAICompatibleImageApi({ settings: DEFAULT_SETTINGS, prompt: '兼容直连', params: DEFAULT_PARAMS, inputImageDataUrls: [] }, profile)
     const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body))
     if (!isBananaImageModel(model)) expect(body.model).toBe(model)
-    // 带渠道前缀的自定义接口沿用通用图片协议，不自动请求本站的 URL 扩展。
-    if (/^(AZ|官)-/.test(model)) expect(body.response_format).toBe('b64_json')
-    else expect(body).not.toHaveProperty('response_format')
+    // 自定义直连遵循官方协议，不因渠道前缀注入本站的 URL 扩展。
+    expect(body).not.toHaveProperty('response_format')
   })
 
   it.each(models.flatMap(model => [false, true].map(edit => ({ model, edit }))))('$model edit=$edit 仅提交一次，下载原始二进制并保留可保存的图片', async ({ model, edit }) => {

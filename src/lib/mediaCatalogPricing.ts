@@ -2,9 +2,23 @@ import type { MediaModelCatalog, ModelOption } from './mediaModels'
 import { readResolutionPrices } from './videoModelCatalog'
 
 export type MediaBilling = { summary: string; lines: { label: string; text: string }[] }
-export type MediaCatalogMetadata = { groups: string[]; group_ratio: Record<string, number>; data: Record<string, unknown>[]; status: Record<string, unknown> }
+export type MediaCatalogMetadata = { groups: string[]; group_description?: Record<string, string>; group_ratio: Record<string, number>; data: Record<string, unknown>[]; status: Record<string, unknown> }
 export const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const number = (value: unknown): number | undefined => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
+
+// 说明来自 NewAPI 的公开分组描述，不把说明当授权组或倍率来源。
+export function readMediaGroupDescriptions(value: unknown): Record<string, string> {
+  const source = record(value)
+  const descriptions: Record<string, string> = {}
+  for (const entries of [source.usable_group, source.group_description]) {
+    for (const [group, raw] of Object.entries(record(entries))) {
+      const item = record(raw)
+      const description = typeof raw === 'string' ? raw : typeof item.desc === 'string' ? item.desc : item.description
+      if (typeof description === 'string' && description.trim()) descriptions[group] = description.trim()
+    }
+  }
+  return descriptions
+}
 
 export function parseMediaCatalogMetadata(value: unknown): MediaCatalogMetadata | undefined {
   const source = record(value)
@@ -15,7 +29,7 @@ export function parseMediaCatalogMetadata(value: unknown): MediaCatalogMetadata 
     if (ratio !== undefined) ratios[key] = ratio
   }
   return { groups: [...new Set(source.groups.filter((item): item is string => typeof item === 'string' && Boolean(item)))],
-    group_ratio: ratios, data: source.data.map(record), status: record(source.status) }
+    group_description: readMediaGroupDescriptions(source), group_ratio: ratios, data: source.data.map(record), status: record(source.status) }
 }
 
 function money(value: number, status: Record<string, unknown>): string | undefined {
@@ -96,7 +110,7 @@ export function applyMediaCatalogMetadata(catalog: MediaModelCatalog, metadata: 
           return price.lines.length ? price.lines.map(line => ({ label: `${item} · ${line.label}`, text: line.text })) : [{ label: item, text: price.summary }]
         }) }
       }
-      return { ...option, group, ratio, billing, description: typeof row.description === 'string' ? row.description : undefined }
+      return { ...option, group, ratio, groupDescription: metadata.group_description?.[group], billing, description: typeof row.description === 'string' ? row.description : undefined }
     })
   })
   const sorted = (options: ModelOption[]) => decorate(options).sort((a, b) => metadata.groups.indexOf(a.group) - metadata.groups.indexOf(b.group))

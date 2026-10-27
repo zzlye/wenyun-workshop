@@ -23,7 +23,7 @@ vi.mock('../lib/newApi', async original => ({ ...await original<typeof import('.
 }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let host: HTMLDivElement, root: Root, client: QueryClient
-let ratio: number, failed: boolean, requests: { url: string; headers: HeadersInit | undefined }[]
+let ratio: number, failed: boolean, descriptionFailed: boolean, embeddedDescriptions: boolean, requests: { url: string; headers: HeadersInit | undefined }[]
 const status = { quota_display_type: 'CUSTOM', custom_currency_symbol: 'HUHN', custom_currency_exchange_rate: 1 }
 const panel = () => document.querySelector('[role="tabpanel"]:not([hidden])')!
 const button = (name: string) => Array.from(document.querySelectorAll('button')).find(item => item.textContent === name)!
@@ -33,19 +33,21 @@ const click = async (element: HTMLElement) => { await act(async () => element.cl
 const open = async () => { await render(); await click(button('模型列表')) }
 
 beforeEach(() => {
-  vi.useFakeTimers(); vi.clearAllMocks(); ratio = 4; failed = false; requests = []; fixture.embeddedCatalog = true
+  vi.useFakeTimers(); vi.clearAllMocks(); ratio = 4; failed = false; descriptionFailed = false; embeddedDescriptions = false; requests = []; fixture.embeddedCatalog = true
   fixture.settings = normalizeSettings({ ...DEFAULT_SETTINGS, videoApiKey: 'media-key', accountApiKeyMode: 'manual',
     profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, apiKey: 'media-key' })) })
   fixture.setSettings.mockClear()
   vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     requests.push({ url: String(url), headers: init?.headers })
     if (failed) return new Response('{}', { status: 503 })
+    if (descriptionFailed && String(url).endsWith('/api/pricing')) throw new TypeError('Failed to fetch')
+    if (String(url).endsWith('/api/pricing')) return new Response(JSON.stringify({ usable_group: { 'adobe-image': '图像创作分组', '官key-image': '官方渠道说明', 视频: '视频创作分组', 隐藏分组: '不能显示的说明' }, group_ratio: { 'adobe-image': 999 } }))
     if (!String(url).endsWith('/models')) throw new Error('不应借用账号价格：' + String(url))
     return new Response(JSON.stringify({ data: [
       { id: 'gpt-image-2' }, { id: '官-gpt-image-2.5-flare', supported_endpoint_types: ['image-generation'] }, { id: 'sd2.5-720p' },
-    ], media_catalog: fixture.embeddedCatalog ? { groups: ['adobe-image', '官key-image', '视频'], group_ratio: { 'adobe-image': ratio, '官key-image': 4.6, 视频: 2 }, status,
+    ], media_catalog: fixture.embeddedCatalog ? { groups: ['adobe-image', '官key-image', '视频'], group_description: embeddedDescriptions ? { 'adobe-image': '目录专属说明', '官key-image': '目录官方说明', 视频: '目录视频说明' } : undefined, group_ratio: { 'adobe-image': ratio, '官key-image': 4.6, 视频: 2 }, status,
       data: [
-        { model_name: 'gpt-image-2', enable_groups: ['adobe-image'], quota_type: 1, model_price: .02 },
+        { model_name: 'gpt-image-2', description: '图片模型简介', enable_groups: ['adobe-image'], quota_type: 1, model_price: .02 },
         { model_name: '官-gpt-image-2.5-flare', enable_groups: ['官key-image'], billing_mode: 'tiered_expr', billing_expr: 'tier("base", p * 5 + img_o * 30)' },
         { model_name: 'sd2.5-720p', enable_groups: ['视频'], quota_type: 1, model_price: .1, billing_mode: 'per_second', description: '视频模型简介' },
       ] } : undefined }))
@@ -58,9 +60,9 @@ afterEach(async () => { await act(async () => root.unmount()); client.clear(); h
 describe('真实分类与倍率模型列表', () => {
   it('图片显示实际分类、倍率、含倍率按次价格及Token分项价格', async () => {
     await open()
-    expect(panel().textContent).toContain('adobe-image4 倍')
+    expect(panel().textContent).toContain('adobe-image图像创作分组4 倍')
     expect(panel().textContent).toContain('HUHN 0.08 / 次')
-    expect(panel().textContent).toContain('官key-image4.6 倍')
+    expect(panel().textContent).toContain('官key-image官方渠道说明4.6 倍')
     expect(panel().textContent).toContain('HUHN 138 / 百万 Token')
     expect(fixture.setSettings).not.toHaveBeenCalled()
   })
@@ -69,7 +71,7 @@ describe('真实分类与倍率模型列表', () => {
     const dialog = document.querySelector('.animate-modal-in')!
     await click(button('视频'))
     expect(requests).toHaveLength(count)
-    expect(panel().textContent).toContain('视频2 倍')
+    expect(panel().textContent).toContain('视频视频创作分组2 倍')
     expect(panel().textContent).toContain('HUHN 0.2 / 秒')
     expect(panel().textContent).toContain('视频模型简介')
     expect(panel().textContent).toContain('0.00%')
@@ -80,7 +82,7 @@ describe('真实分类与倍率模型列表', () => {
   it('刷新同步倍率和价格，不写入按站点共用的旧报价缓存', async () => {
     await open(); ratio = 5
     await click(button('刷新'))
-    expect(panel().textContent).toContain('adobe-image5 倍')
+    expect(panel().textContent).toContain('adobe-image图像创作分组5 倍')
     expect(panel().textContent).toContain('HUHN 0.1 / 次')
     expect(panel().textContent).not.toContain('HUHN 0.08 / 次')
     expect(fixture.setSettings).not.toHaveBeenCalled()
@@ -88,7 +90,8 @@ describe('真实分类与倍率模型列表', () => {
   it('手填Key与登录账号不同也只使用Key自己的报价', async () => {
     fixture.settings.newApiAccountSessions['wenyun-site'] = { siteProfileId: 'wenyun-site', username: 'other', userId: 3, accessToken: 'other-session', boundApiKey: 'other-key', boundApiKeyPurpose: 'media' }
     await open()
-    expect(requests.every(request => request.url.endsWith('/models'))).toBe(true)
+    expect(requests.every(request => request.url.endsWith('/models') || request.url.endsWith('/api/pricing'))).toBe(true)
+    expect(requests.filter(request => request.url.endsWith('/api/pricing')).every(request => !request.headers)).toBe(true)
     expect(requests[0].headers).toMatchObject({ Authorization: 'Bearer media-key' })
     expect(fetchNewApiAccountModelCatalog).not.toHaveBeenCalled()
   })
@@ -102,7 +105,7 @@ describe('真实分类与倍率模型列表', () => {
     expect(fetchNewApiAccountModelCatalog).toHaveBeenCalledTimes(1)
     fixture.embeddedCatalog = true
     await click(button('刷新'))
-    expect(panel().textContent).toContain('adobe-image4 倍')
+    expect(panel().textContent).toContain('adobe-image图像创作分组4 倍')
     expect(panel().textContent).not.toContain('账号分组')
     expect(fetchNewApiAccountModelCatalog).toHaveBeenCalledTimes(1)
   })
@@ -123,13 +126,44 @@ describe('真实分类与倍率模型列表', () => {
     await open(); ratio = 3
     fixture.settings = normalizeSettings({ ...fixture.settings, videoApiKey: 'next-key', profiles: fixture.settings.profiles.map(profile => ({ ...profile, apiKey: 'next-key' })) })
     await render()
-    expect(panel().textContent).toContain('adobe-image3 倍')
+    expect(panel().textContent).toContain('adobe-image图像创作分组3 倍')
     expect(panel().textContent).toContain('HUHN 0.06 / 次')
-    expect(requests.at(-1)?.headers).toMatchObject({ Authorization: 'Bearer next-key' })
+    expect(requests.filter(request => request.url.endsWith('/models')).at(-1)?.headers).toMatchObject({ Authorization: 'Bearer next-key' })
   })
   it('目录失败不虚构固定价格和模型，错误可见', async () => {
     failed = true; await open()
     expect(panel().textContent).toContain('获取模型失败')
     expect(panel().textContent).not.toContain('HUHN 0.06')
   })
+  it('分组说明仅补充当前Key授权分类，不覆盖价格也不重复查询', async () => {
+    await open(); await settle()
+    expect(panel().textContent).toContain('图像创作分组')
+    expect(panel().textContent).toContain('图片模型简介')
+    expect(panel().textContent).not.toContain('不能显示的说明')
+    expect(panel().textContent).toContain('HUHN 0.08 / 次')
+    expect(requests.filter(request => request.url.endsWith('/api/pricing'))).toHaveLength(1)
+  })
+  it('目录已含全部说明时不另行请求公开报价', async () => {
+    embeddedDescriptions = true; await open()
+    expect(panel().textContent).toContain('目录专属说明')
+    expect(requests.filter(request => request.url.endsWith('/api/pricing'))).toHaveLength(0)
+  })
+  it('仅说明失败不误报整个目录过期，手动刷新可以恢复', async () => {
+    descriptionFailed = true; await open(); await settle()
+    expect(panel().textContent).toContain('分组说明暂时加载失败')
+    expect(panel().textContent).not.toContain('上次成功获取的数据')
+    expect(panel().textContent).toContain('HUHN 0.08 / 次')
+    descriptionFailed = false; await click(button('刷新')); await settle()
+    expect(panel().textContent).toContain('图像创作分组')
+    expect(panel().textContent).not.toContain('分组说明暂时加载失败')
+  })
+  it('目录刷新失败保留旧数据并明确提示，恢复后清除错误', async () => {
+    await open(); failed = true; await click(button('刷新')); await settle()
+    expect(panel().textContent).toContain('刷新失败，当前显示上次成功获取的数据')
+    expect(panel().textContent).toContain('HUHN 0.08 / 次')
+    failed = false; ratio = 5; await click(button('刷新')); await settle()
+    expect(panel().textContent).not.toContain('刷新失败')
+    expect(panel().textContent).toContain('HUHN 0.1 / 次')
+  })
+
 })

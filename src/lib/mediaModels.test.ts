@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchMediaModelCatalog, groupMediaModels, parseMediaModelCatalog } from './mediaModels'
+import { fetchMediaGroupDescriptions, fetchMediaModelCatalog, groupMediaModels, parseMediaModelCatalog } from './mediaModels'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -36,4 +36,32 @@ describe('媒体 Key 模型目录', () => {
     await expect(fetchMediaModelCatalog('https://api.xn--v5z30ywuk.com/v1', 'test-key', false)).rejects.toThrow('获取模型失败')
     await expect(fetchMediaModelCatalog('https://api.xn--v5z30ywuk.com/v1', 'test-key', false)).rejects.toThrow('模型列表格式不正确')
   })
+})
+
+describe('目录故障和公开说明', () => {
+  it('连接失败显示明确错误，不把失败当作空权限', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'))
+    await expect(fetchMediaModelCatalog('https://api.xn--v5z30ywuk.com/v1', 'fixture-key', false)).rejects.toThrow('模型列表连接失败')
+  })
+  it('外部取消仍作为取消处理，不显示网络故障', async () => {
+    const controller = new AbortController(); controller.abort()
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(controller.signal.reason)
+    await expect(fetchMediaModelCatalog('https://api.xn--v5z30ywuk.com/v1', 'fixture-key', false, controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+  })
+  it('说明走同源公开接口，不发送Key或账号身份，支持字符串和对象描述', async () => {
+    const mock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      usable_group: { a: ' 图片分组 ', b: { desc: '视频分组' }, c: { description: '其它说明' }, empty: '' },
+    })))
+    expect(await fetchMediaGroupDescriptions('https://api.xn--v5z30ywuk.com/v1/')).toEqual({ a: '图片分组', b: '视频分组', c: '其它说明' })
+    expect(mock.mock.calls[0][0]).toBe('/newapi-proxy/wenyun/api/pricing')
+    expect(mock.mock.calls[0][1]?.headers).toBeUndefined()
+    expect(mock.mock.calls[0][1]?.credentials).toBe('omit')
+  })
+})
+
+it('响应正文中途断流也归为连接失败', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new ReadableStream({
+    start(controller) { controller.error(new TypeError('terminated')) },
+  })))
+  await expect(fetchMediaModelCatalog('https://api.xn--v5z30ywuk.com/v1', 'fixture', false)).rejects.toThrow('模型列表连接失败')
 })
