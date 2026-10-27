@@ -2,9 +2,10 @@ import { useRef, useEffect, useCallback, useState, useMemo, useLayoutEffect, typ
 import { createPortal } from 'react-dom'
 import { useStore, submitTask, submitAgentMessage, stopAgentResponse, addImageFromFile, createInputImageFromFile, deleteImageIfUnreferenced, updateTaskInStore, removeMultipleTasks, getCachedImage, ensureImageCached, getActiveAgentRounds } from '../store'
 import { DEFAULT_PARAMS } from '../types'
-import { FIXED_IMAGE_MODEL_OPTIONS, allowsCustomImageRatioForProfile, getActiveApiProfile, getApiModelUnitCostText, getImageSizeTiersForProfile, normalizeImageSizeForProfile, normalizeSettings, supportsExtendedImageQuality } from '../lib/apiProfiles'
+import { FIXED_IMAGE_MODEL_OPTIONS, allowsCustomImageRatioForProfile, getActiveApiProfile, getImageSizeTiersForProfile, normalizeImageSizeForProfile, normalizeSettings, supportsExtendedImageQuality } from '../lib/apiProfiles'
 import GroupedModelSelect from './GroupedModelSelect'
-import { useMediaModels } from '../hooks/useMediaModels'
+import { useMediaCatalog } from '../hooks/useMediaCatalog'
+import type { ModelOption } from '../lib/mediaModels'
 import { supportsTransparentImageBackground } from '../lib/modelPricing'
 import { getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
@@ -611,7 +612,7 @@ export default function InputBar() {
   const effectiveActiveProfile = useMemo(() => getEffectiveImageApiProfile(effectiveSettings, activeProfile), [activeProfile, effectiveSettings])
   const hasSubmitApiConfig = Boolean(effectiveActiveProfile.apiKey)
   const canSubmit = Boolean(prompt.trim() && hasSubmitApiConfig && !activeAgentIsRunning)
-  const modelUnitCostText = getApiModelUnitCostText(settings, activeProfile.id, activeProfile.model) ?? 'HUHN --'
+
   const submitButtonAriaLabel = activeAgentIsRunning
     ? '停止生成'
     : hasSubmitApiConfig
@@ -657,9 +658,10 @@ export default function InputBar() {
   const displaySize = isMidjourney ? normalizedDisplaySize : normalizedDisplaySize === 'auto' ? DEFAULT_PARAMS.size : normalizedDisplaySize || DEFAULT_PARAMS.size
   const imageSizeTiers = getImageSizeTiersForProfile(activeProfile.id, activeProfile.model)
   const allowCustomImageRatio = allowsCustomImageRatioForProfile(activeProfile.id)
-  const mediaModels = useMediaModels(effectiveActiveProfile.baseUrl, effectiveActiveProfile.apiKey, effectiveActiveProfile.apiProxy)
-  const modelOptions = effectiveActiveProfile.apiKey ? mediaModels.data?.images ?? [] : [...FIXED_IMAGE_MODEL_OPTIONS]
+  const mediaModels = useMediaCatalog(effectiveActiveProfile.baseUrl, effectiveActiveProfile.apiKey, effectiveActiveProfile.apiProxy)
+  const modelOptions: ModelOption[] = effectiveActiveProfile.apiKey ? mediaModels.data?.images ?? [] : [...FIXED_IMAGE_MODEL_OPTIONS]
   const selectedModelOption = modelOptions.find(option => option.value === activeProfile.model)
+  const modelUnitCostText = effectiveActiveProfile.apiKey ? selectedModelOption?.billing?.summary ?? '暂无价格' : 'HUHN --'
 
   useEffect(() => {
     const nextSize = normalizeImageSizeForProfile(params.size, activeProfile.id, activeProfile.model)
@@ -1768,7 +1770,7 @@ export default function InputBar() {
           onChange={(model) => setSettings({ model: String(model) })}
           options={modelOptions}
           loading={mediaModels.isFetching}
-          error={mediaModels.isError ? mediaModels.error.message : undefined}
+          error={mediaModels.error?.message}
           className="px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/[0.06] focus:outline-none text-xs transition-all duration-200 shadow-sm"
         />
       </label>

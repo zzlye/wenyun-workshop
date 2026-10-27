@@ -1,14 +1,15 @@
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useId, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import { useIsFetching } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { QrCode, ReceiptText, RefreshCw, X } from 'lucide-react'
-import type { ApiPriceSnapshot, ApiProfile } from '../types'
+import type { ApiProfile } from '../types'
 import { useStore } from '../store'
-import { buildFixedModelPriceRows } from '../lib/modelPricing'
-import { queryNewApiModelPerformance, queryNewApiPriceTable, type NewApiModelPerformanceItem } from '../lib/newApi'
-import { setApiPriceSnapshot } from '../lib/apiProfiles'
+import { queryNewApiModelPerformance } from '../lib/newApi'
+import { normalizeSettings, LOCKED_WENYUN_PROFILE_ID } from '../lib/apiProfiles'
+import { getEffectiveImageApiProfile, getEffectiveVideoApiKey } from '../lib/accountApiKey'
+import { useMediaCatalog } from '../hooks/useMediaCatalog'
+import MediaModelTable from './MediaModelTable'
 import SupportJoinGroupNotice from './SupportJoinGroupNotice'
-import VideoModelCatalog from './VideoModelCatalog'
 
 type PriceTableButtonProps = {
   activeProfile: ApiProfile
@@ -16,107 +17,30 @@ type PriceTableButtonProps = {
   buttonStyle?: CSSProperties
 }
 
-function formatSuccessRate(rate: number | null): string {
-  if (!Number.isFinite(rate)) return '—'
-  return `${Math.max(0, Math.min(100, rate ?? 0)).toFixed(2)}%`
-}
-
-function normalizeModelKey(model: string): string {
-  return model.trim().toLowerCase()
-}
-
-function findMetric(metrics: NewApiModelPerformanceItem[], model: string, upstreamModel?: string): NewApiModelPerformanceItem | null {
-  const keys = [model, upstreamModel].filter((value): value is string => Boolean(value?.trim())).map(normalizeModelKey)
-  return metrics.find((item) => keys.includes(normalizeModelKey(item.model))) ?? null
-}
-
 export default function PriceTableButton({ activeProfile, buttonClassName, buttonStyle }: PriceTableButtonProps) {
-  const settings = useStore((state) => state.settings)
-  const setSettings = useStore((state) => state.setSettings)
+  const settings = normalizeSettings(useStore((state) => state.settings))
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<'image' | 'video'>('image')
   const tabId = useId()
   const [contactOpen, setContactOpen] = useState(false)
-  const [isLoadingPerformance, setIsLoadingPerformance] = useState(false)
-  const [priceError, setPriceError] = useState('')
-  const [performanceError, setPerformanceError] = useState('')
-  const [performanceItems, setPerformanceItems] = useState<NewApiModelPerformanceItem[]>([])
-  const [performanceUpdatedAt, setPerformanceUpdatedAt] = useState<number | null>(null)
-  const [videoUpdatedAt, setVideoUpdatedAt] = useState<number | null>(null)
-  const [videoRefreshSignal, setVideoRefreshSignal] = useState(0)
-  const videoLoading = useIsFetching({ queryKey: ['video-model-catalog'] }) + useIsFetching({ queryKey: ['canvas-video-models'] }) > 0
-  const [priceItems, setPriceItems] = useState<ApiPriceSnapshot['items']>([])
-  const pendingPriceSnapshotRef = useRef<ApiPriceSnapshot | null>(null)
-  const loadRequestIdRef = useRef(0)
-  const rows = useMemo(() => {
-    const baseRows = buildFixedModelPriceRows(activeProfile.id)
-    const snapshot = settings.apiPriceByProfileId[activeProfile.id]
-    const syncedItems = priceItems.length ? priceItems : snapshot?.items ?? []
-    if (!syncedItems.length) return baseRows
-    const priceMap = new Map(syncedItems.map((item) => [item.model.trim().toLowerCase(), item] as const))
-    return baseRows.map((row) => {
-      const synced = priceMap.get(row.model.trim().toLowerCase()) ?? (row.upstreamModel ? priceMap.get(row.upstreamModel.trim().toLowerCase()) : undefined)
-      return synced ? { ...row, priceText: synced.text } : row
-    })
-  }, [activeProfile.id, priceItems, settings.apiPriceByProfileId])
-
-  const loadPerformance = async () => {
-    const requestId = ++loadRequestIdRef.current
-    setIsLoadingPerformance(true)
-    setPriceError('')
-    setPerformanceError('')
-
-    try {
-      const priceTable = await queryNewApiPriceTable(activeProfile)
-      if (requestId !== loadRequestIdRef.current) return
-      if (priceTable.found) {
-        // 模型列表打开时只更新弹窗内的价格，避免刷新全局设置导致画布浮层被卸载。
-        setPriceItems(priceTable.items)
-        pendingPriceSnapshotRef.current = {
-          items: priceTable.items,
-          updatedAt: priceTable.updatedAt,
-          found: priceTable.found,
-        }
-      } else {
-        setPriceError('本次价格同步未获取到数据，已沿用上次同步价格或固定价格')
-      }
-    } catch (err) {
-      if (requestId !== loadRequestIdRef.current) return
-      setPriceError(err instanceof Error ? `价格同步失败：${err.message}` : '价格同步失败，已沿用上次同步价格或固定价格')
-    }
-
-    try {
-      const result = await queryNewApiModelPerformance(activeProfile, 24)
-      if (requestId !== loadRequestIdRef.current) return
-      setPerformanceItems(result.items)
-      setPerformanceUpdatedAt(result.found ? result.updatedAt : null)
-      if (!result.found) setPerformanceError('当前站点的 NewAPI 模型广场成功率未开放或暂无 24 小时数据')
-    } catch (err) {
-      if (requestId !== loadRequestIdRef.current) return
-      setPerformanceItems([])
-      setPerformanceUpdatedAt(null)
-      setPerformanceError(err instanceof Error ? err.message : '成功率检测失败')
-    } finally {
-      if (requestId !== loadRequestIdRef.current) return
-      setIsLoadingPerformance(false)
-    }
-  }
-
-  useEffect(() => {
-    if (!open) return
-    void loadPerformance()
-    return () => { loadRequestIdRef.current++ }
-    // 模型列表打开时拉取当前站点的实时成功率，刷新按钮负责再次手动检测。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, activeProfile.id])
-
-  const closeModelList = () => {
-    const pendingSnapshot = pendingPriceSnapshotRef.current
-    if (pendingSnapshot) {
-      setSettings(setApiPriceSnapshot(useStore.getState().settings, activeProfile.id, pendingSnapshot))
-      pendingPriceSnapshotRef.current = null
-    }
-    setOpen(false)
+  const imageProfile = getEffectiveImageApiProfile(settings, activeProfile)
+  const videoProfile = settings.profiles.find(item => item.id === LOCKED_WENYUN_PROFILE_ID)!
+  const videoKey = getEffectiveVideoApiKey(settings)
+  const imageCatalog = useMediaCatalog(imageProfile.baseUrl, imageProfile.apiKey, imageProfile.apiProxy, open)
+  const videoCatalog = useMediaCatalog(videoProfile.baseUrl, videoKey, settings.videoApiProxy, open)
+  const performance = useQuery({
+    queryKey: ['media-catalog-performance', activeProfile.baseUrl],
+    queryFn: () => queryNewApiModelPerformance(activeProfile, 24),
+    enabled: open, staleTime: 60_000, retry: false,
+  })
+  const loading = imageCatalog.isFetching || videoCatalog.isFetching || performance.isFetching
+  const currentCatalog = tab === 'image' ? imageCatalog : videoCatalog
+  const updatedAt = currentCatalog.updatedAt
+  const closeModelList = () => setOpen(false)
+  const refresh = () => {
+    void imageCatalog.refetch()
+    if (imageProfile.apiKey !== videoKey || imageProfile.baseUrl !== videoProfile.baseUrl) void videoCatalog.refetch()
+    void performance.refetch()
   }
 
   return (
@@ -166,19 +90,19 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
                   <span>{activeProfile.name || '西米露'}模型列表</span>
                 </div>
                 <div className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                  {(tab === 'image' ? performanceUpdatedAt : videoUpdatedAt)
-                    ? `更新于 ${new Date((tab === 'image' ? performanceUpdatedAt : videoUpdatedAt)!).toLocaleString()}` : '更新中'}
+                  {updatedAt
+                    ? `更新于 ${new Date(updatedAt!).toLocaleString()}` : '更新中'}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <button
                   type="button"
                   className="inline-flex h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:border-blue-400/30 dark:hover:bg-blue-500/15 dark:hover:text-blue-200"
-                  onClick={() => { void loadPerformance(); setVideoRefreshSignal(value => value + 1) }}
-                  disabled={isLoadingPerformance || videoLoading}
+                  onClick={refresh}
+                  disabled={loading}
                 >
-                  <RefreshCw className={`h-3.5 w-3.5 ${isLoadingPerformance || videoLoading ? 'animate-spin' : ''}`} />
-                  {isLoadingPerformance || videoLoading ? '更新中' : '刷新'}
+                  <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+                  {loading ? '更新中' : '刷新'}
                 </button>
                 <button
                   type="button"
@@ -204,45 +128,12 @@ export default function PriceTableButton({ activeProfile, buttonClassName, butto
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
               <div id={`${tabId}-video-panel`} role="tabpanel" aria-labelledby={`${tabId}-video`} hidden={tab !== 'video'}>
-                <VideoModelCatalog refreshSignal={videoRefreshSignal} onUpdatedAt={setVideoUpdatedAt} />
+                <MediaModelTable video options={videoCatalog.data?.videos ?? []} loading={videoCatalog.isFetching}
+                  error={videoCatalog.error?.message} metadataReady={videoCatalog.metadataReady} metrics={performance.data?.items} />
               </div>
               <div id={`${tabId}-image-panel`} role="tabpanel" aria-labelledby={`${tabId}-image`} hidden={tab !== 'image'}>
-              {performanceError ? (
-                <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
-                  {performanceError}
-                </div>
-              ) : null}
-              {priceError ? (
-                <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-400/20 dark:bg-blue-500/10 dark:text-blue-200">
-                  {priceError}
-                </div>
-              ) : null}
-              <div className="overflow-x-auto rounded-xl border border-gray-200/70 dark:border-white/[0.08]">
-                <div className="min-w-[640px]">
-                  <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(120px,0.9fr)_110px_100px] gap-3 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-400 dark:bg-white/[0.04] dark:text-gray-500">
-                    <span>模型</span>
-                    <span>支持分辨率</span>
-                    <span>价格</span>
-                    <span>成功率</span>
-                  </div>
-                  {rows.map((row) => {
-                    const metric = findMetric(performanceItems, row.model, row.upstreamModel)
-                    const rate = metric?.successRate ?? null
-                    const isLegacyBanana = /^Nano-Banana-(?:2|Pro)$/i.test(row.model)
-                    return (
-                      <div key={`${row.model}-${row.upstreamModel || ''}`} className="grid grid-cols-[minmax(0,1.2fr)_minmax(120px,0.9fr)_110px_100px] gap-3 border-t border-gray-100 px-4 py-3 text-sm dark:border-white/[0.06]">
-                        <div className="min-w-0">
-                          <div className="break-all font-medium text-gray-800 dark:text-gray-100">{isLegacyBanana ? row.model.toLowerCase() : row.model}</div>
-                          {row.upstreamModel && !isLegacyBanana ? <div className="mt-1 break-all text-[11px] text-gray-400 dark:text-gray-500">实际模型：{row.upstreamModel}</div> : null}
-                        </div>
-                        <div className="min-w-0 text-gray-600 dark:text-gray-300">{row.resolutionText || '—'}</div>
-                        <div className="font-mono text-gray-700 dark:text-gray-200">{row.priceText}</div>
-                        <div className="font-mono text-gray-700 dark:text-gray-200">{formatSuccessRate(rate)}</div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
+                <MediaModelTable options={imageCatalog.data?.images ?? []} loading={imageCatalog.isFetching}
+                  error={imageCatalog.error?.message} metadataReady={imageCatalog.metadataReady} metrics={performance.data?.items} />
               </div>
             </div>
           </div>

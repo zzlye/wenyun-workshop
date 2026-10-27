@@ -41,8 +41,9 @@ function shouldRequestImageStream(): boolean {
 
 function shouldRequestImageUrl(profile: ApiProfile): boolean {
   // 西米露网关支持图片链接；自定义直连仍遵循各自协议，避免发送官方不接受的扩展字段。
+  // 渠道前缀只参与路由，不能让同一图片模型退回大体积的 Base64 结果。
   return getLockedNewApiProxyPrefix(profile.baseUrl) === '/newapi-proxy/wenyun'
-    && (/^gpt-image-/i.test(profile.model) || isBananaImageModel(profile.model))
+    && (/^(?:(?:AZ|官)-)?gpt-image-/i.test(profile.model) || isBananaImageModel(profile.model))
 }
 
 function getBananaImageSize(size: string, model: string): '512' | '1K' | '2K' | '4K' {

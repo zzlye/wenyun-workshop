@@ -6,7 +6,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { AiConfig } from "@/stores/use-config-store";
-import { useMediaModels } from "../../hooks/useMediaModels";
+import { useMediaCatalog } from "../../hooks/useMediaCatalog";
 import GroupedModelSelect from "../../components/GroupedModelSelect";
 import { FIXED_IMAGE_MODEL_OPTIONS } from "../../lib/modelPricing";
 import { CANVAS_VIDEO_BASE_URL } from "../../lib/videoModel";
@@ -29,7 +29,7 @@ export function ModelPicker({ config, value, onChange, options: fixedOptions, cl
     const isVideo = modelType === "video";
     const isMedia = modelType !== "text";
     const mediaKey = isVideo ? config.videoApiKey : config.apiKey;
-    const mediaModels = useMediaModels(isVideo ? CANVAS_VIDEO_BASE_URL : config.baseUrl, mediaKey,
+    const mediaModels = useMediaCatalog(isVideo ? CANVAS_VIDEO_BASE_URL : config.baseUrl, mediaKey,
         isVideo ? config.videoApiProxy : Boolean(config.imageApiProxy), isMedia);
     const options = useMemo(() => {
         if (fixedOptions?.length) {
@@ -52,7 +52,7 @@ export function ModelPicker({ config, value, onChange, options: fixedOptions, cl
 
     if (isMedia) return <GroupedModelSelect value={current} onChange={onChange}
         options={mediaKey.trim() ? (isVideo ? mediaModels.data?.videos : mediaModels.data?.images) ?? [] : isVideo ? [] : FIXED_IMAGE_MODEL_OPTIONS}
-        loading={mediaModels.isFetching} error={mediaModels.isError ? mediaModels.error.message : undefined}
+        loading={mediaModels.isFetching} error={mediaModels.error?.message}
         emptyText={mediaKey.trim() ? "暂无可用模型" : "请先登录或填写 Key"}
         className={cn("canvas-composer-model-picker h-8 w-fit max-w-full rounded-full border border-input bg-transparent px-3 text-sm font-normal shadow-sm", fullWidth ? "w-full" : "min-w-[9rem]", className)} />;
 

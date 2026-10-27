@@ -1,4 +1,5 @@
 "use client";
+import { useMediaCatalog } from "../../../../../hooks/useMediaCatalog";
 import { CanvasImage } from "./canvas-image";
 
 import { Children, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -16,7 +17,7 @@ import { useAssetStore, type Asset } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { assetTagOptions, assetTagValues, getAssetTag, normalizeAssetTag, type AssetTag } from "@/lib/asset-tags";
 import type { InputImage } from "../../../../../types";
-import { getActiveApiProfile, getApiModelUnitCostText, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
+import { getActiveApiProfile, normalizeImageModelForProfile, normalizeImageSizeForProfile, normalizeSettings } from "../../../../../lib/apiProfiles";
 import { audioMentionMatches, getAtImageQuery, getAudioMentionLabel, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, getVideoMentionLabel, imageMentionMatches, insertAudioMentionAtVisibleRange, insertImageMentionAtVisibleRange, insertVideoMentionAtVisibleRange, isCursorInSelectedImageMention, remapImageMentionsForOrder, stripImageMentionMarkers, videoMentionMatches } from "../../../../../lib/promptImageMentions";
 import { storeImage } from "../../../../../lib/db";
 import { normalizeCanvasVideoModel } from "../../../../../lib/videoModel";
@@ -120,7 +121,8 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
     const mentionableReferencesRef = useRef(mentionableReferences);
     const promptRef = useRef(prompt);
     const credits = requestCreditCost({ channelMode: config.channelMode, modelCosts, model: config.model, count: mode === "image" ? config.count : 1 });
-    const imageCostText = mode === "image" ? (getApiModelUnitCostText(settings, activeProfile.id, config.model) ?? "HUHN --") : null;
+    const imageCatalog = useMediaCatalog(config.baseUrl, config.apiKey, Boolean(config.imageApiProxy), mode === "image");
+    const imageCostText = mode === "image" ? imageCatalog.data?.images.find(item => item.value === config.model)?.billing?.summary ?? "暂无价格" : null;
     const atReferenceLimit = referenceImages.length >= MAX_REFERENCE_IMAGES;
     const visiblePrompt = stripImageMentionMarkers(prompt);
     const mentionableMediaCount = mentionableInputImages.length + connectedReferenceAudios.length + connectedReferenceVideos.length;

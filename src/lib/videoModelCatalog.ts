@@ -59,7 +59,7 @@ function formatPrice(amount: number, rawStatus: unknown): string {
   return `${symbol} ${new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 8 }).format(converted)}`
 }
 
-function readResolutionPrices(expression: string): { label: string; price: number }[] | null {
+export function readResolutionPrices(expression: string): { label: string; price: number }[] | null {
   // 只读取分辨率等值条件和非负数字字面量，不执行服务端表达式或猜测其他参数。
   const number = String.raw`(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?`
   const branch = new RegExp(String.raw`^param\s*\(\s*"resolution"\s*\)\s*==\s*"([A-Za-z0-9][A-Za-z0-9_.-]{0,63})"\s*\?\s*(${number})\s*:\s*`)

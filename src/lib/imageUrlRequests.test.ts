@@ -7,18 +7,22 @@ import { callOpenAICompatibleImageApi } from './openaiCompatibleImageApi'
 const reference = 'data:image/png;base64,cmVm'
 const imageUrl = 'https://api.xn--v5z30ywuk.com/task-media/async_fixture/media/0?expires=9999999999&signature=fixture'
 const imageBytes = new Uint8Array([137, 80, 78, 71, 0, 255, 128, 42])
-const models = ['gpt-image-2', 'gpt-image-2-4k', 'gpt-image-2.5-flare-4k', 'gpt-image-2.5-sunburst-4k', 'gpt-image-2.5-sunburst-满血', 'Nano-Banana-2', 'Nano-Banana-Pro']
+const models = ['gpt-image-2', 'gpt-image-2-4k', 'gpt-image-2.5-flare-4k', 'gpt-image-2.5-sunburst-4k', 'gpt-image-2.5-sunburst-满血', 'AZ-gpt-image-2.5-flare', '官-gpt-image-2.5-sunburst', '官-gpt-image-2', 'Nano-Banana-2', 'Nano-Banana-Pro']
 const settingsFor = (model: string) => normalizeSettings({ ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map(p => ({ ...p, model, apiKey: 'fixture-key' })) })
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
 
 describe('西米露 URL 结果传输', () => {
-  it.each(['gpt-image-2.5-sunburst-满血', 'Nano-Banana-Pro'])('%s 自定义直连接口不注入网关扩展参数', async model => {
+  it.each(['gpt-image-2.5-sunburst-满血', 'AZ-gpt-image-2.5-flare', '官-gpt-image-2', 'Nano-Banana-Pro'])('%s 自定义直连接口不注入网关扩展参数', async model => {
     vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', 'disabled')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ data: [{ b64_json: 'cmVm' }] }))
     const profile = { ...DEFAULT_SETTINGS.profiles[0], model, baseUrl: 'https://direct.example/v1', apiProxy: false }
     await callOpenAICompatibleImageApi({ settings: DEFAULT_SETTINGS, prompt: '兼容直连', params: DEFAULT_PARAMS, inputImageDataUrls: [] }, profile)
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).not.toHaveProperty('response_format')
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body))
+    if (!isBananaImageModel(model)) expect(body.model).toBe(model)
+    // 带渠道前缀的自定义接口沿用通用图片协议，不自动请求本站的 URL 扩展。
+    if (/^(AZ|官)-/.test(model)) expect(body.response_format).toBe('b64_json')
+    else expect(body).not.toHaveProperty('response_format')
   })
 
   it.each(models.flatMap(model => [false, true].map(edit => ({ model, edit }))))('$model edit=$edit 仅提交一次，下载原始二进制并保留可保存的图片', async ({ model, edit }) => {

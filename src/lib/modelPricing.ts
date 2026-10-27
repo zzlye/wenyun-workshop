@@ -88,7 +88,6 @@ export const FIXED_IMAGE_MODEL_OPTIONS = FIXED_IMAGE_MODEL_PRICING.map((item) =>
   label: item.label,
 }))
 
-const FIXED_IMAGE_MODEL_VALUES = new Set<string>(FIXED_IMAGE_MODEL_PRICING.map((item) => item.model))
 
 export function isBananaImageModel(model: string): boolean {
   return /^Nano-Banana(?:-|$)/i.test(model.trim())
@@ -187,5 +186,6 @@ export function normalizeFixedImageModel(value: unknown): string {
   ))
   if (fixedModel) return fixedModel.model
 
-  return FIXED_IMAGE_MODEL_VALUES.has(model) ? model : DEFAULT_IMAGES_MODEL
+  // 动态目录里的渠道模型名原样保存，不能选了官渠却提交默认模型。
+  return model || DEFAULT_IMAGES_MODEL
 }

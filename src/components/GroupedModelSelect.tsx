@@ -69,10 +69,10 @@ export default function GroupedModelSelect({ value, options, onChange, className
             {renderModels(currentCategory.models)}
           </> : categories.map(category => <DropdownMenu.Item key={category.label} className={itemClass}
             onSelect={event => { event.preventDefault(); setActiveCategory(category.label) }}>
-            <span className="flex-1">{category.label}</span><ChevronRight size={13} />
+            <span className="flex-1">{category.label}</span>{category.ratio !== undefined && <span className="text-xs text-gray-500">{category.ratio} 倍</span>}<ChevronRight size={13} />
           </DropdownMenu.Item>) : categories.map(category => <DropdownMenu.Sub key={category.label}>
             <DropdownMenu.SubTrigger className={itemClass}>
-              <span className="flex-1">{category.label}</span><ChevronRight size={13} />
+              <span className="flex-1">{category.label}</span>{category.ratio !== undefined && <span className="text-xs text-gray-500">{category.ratio} 倍</span>}<ChevronRight size={13} />
             </DropdownMenu.SubTrigger>
             <DropdownMenu.Portal>
               <DropdownMenu.SubContent data-canvas-no-zoom className={`${panelClass} max-w-[min(22rem,calc(100vw-24px))]`} sideOffset={2} collisionPadding={12}
