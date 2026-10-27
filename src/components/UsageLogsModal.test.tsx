@@ -9,6 +9,11 @@ import { DEFAULT_SETTINGS, LOCKED_WENYUN_PROFILE_ID } from '../lib/apiProfiles'
 import { useStore } from '../store'
 import { fetchAccountUsageLogs, fetchAccountUsageStats, fetchAccountLogGroups, type AccountUsageLog } from '../lib/newApiLogs'
 import { fetchNewApiSiteStatus } from '../lib/newApiAccount'
+import { fetchAccountTaskLogs, fetchAccountTaskDetails, type AccountTaskLog } from '../lib/newApiTaskLogs'
+
+vi.mock('../lib/newApiTaskLogs', async importOriginal => ({
+  ...(await importOriginal<typeof import('../lib/newApiTaskLogs')>()), fetchAccountTaskLogs: vi.fn(), fetchAccountTaskDetails: vi.fn(),
+}))
 
 vi.mock('../lib/newApiLogs', async importOriginal => ({
   ...(await importOriginal<typeof import('../lib/newApiLogs')>()), fetchAccountUsageLogs: vi.fn(), fetchAccountUsageStats: vi.fn(), fetchAccountLogGroups: vi.fn(),
@@ -23,6 +28,7 @@ const initial = useStore.getState().settings
 const log: AccountUsageLog = { id: 1, createdAt: 1793073600, type: 2, content: '生成完成 <img src=x onerror=alert(1)>', model: '测试模型', group: '图片官渠', tokenName: '媒体令牌', quota: 250000, promptTokens: 120, completionTokens: 320, seconds: 31, stream: false, requestId: 'req-123', upstreamRequestId: 'up-456' }
 let root: Root, host: HTMLDivElement, client: QueryClient
 const requireLogin = vi.fn()
+const task: AccountTaskLog = { id: 88, taskId: 'async_fixture', model: 'sd2.5-720p', group: '视频', status: 'FAILURE', progress: '100%', platform: 'video', action: 'GENERATE', quota: 125000, submitTime: 1793073600, startTime: 1793073601, finishTime: 1793073620, durationFinishTime: 1793073620, failReason: '上游测试错误', isAsync: true, mediaExpired: false, mediaSaving: false, requestPath: '/v1/videos' }
 
 async function settle() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)) }) }
 async function render(button = false) {
@@ -40,6 +46,8 @@ beforeEach(() => {
   vi.mocked(fetchAccountUsageLogs).mockResolvedValue({ items: [log], total: 25 })
   vi.mocked(fetchAccountUsageStats).mockResolvedValue({ quota: 4500000, rpm: 12, tpm: 24680 })
   vi.mocked(fetchAccountLogGroups).mockResolvedValue(['图片官渠', 'adobe-image', '视频'])
+  vi.mocked(fetchAccountTaskLogs).mockResolvedValue({ items: [task], total: 25 })
+  vi.mocked(fetchAccountTaskDetails).mockResolvedValue({ taskId: task.taskId, prompt: '测试提示词 <img src=x>', promptSource: 'request', error: '详情错误', responseStatusCode: 400, parameters: { duration: '5' } })
   useStore.setState({ settings: { ...DEFAULT_SETTINGS, newApiAccountSessions: { [LOCKED_WENYUN_PROFILE_ID]: session } } })
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
@@ -47,6 +55,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount()); client.clear(); host.remove()
   useStore.setState({ settings: initial }); vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 it('关闭时不读取日志，打开后自动读取当前账号和金额配置', async () => {
@@ -131,14 +140,15 @@ it('续期只更新认证字段，不覆盖同时更新的媒体Key', async () =
 })
 
 it('读取失败提供重试入口，不自动轮询或随窗口聚焦重复请求', async () => {
-  vi.mocked(fetchAccountUsageLogs).mockRejectedValue(new Error('429 请求过于频繁'))
-  await render()
-  expect(document.querySelector('[role=alert]')?.textContent).toContain('429')
   vi.useFakeTimers()
+  vi.mocked(fetchAccountUsageLogs).mockRejectedValue(new Error('429 请求过于频繁'))
+  await act(async () => root.render(<QueryClientProvider client={client}><UsageLogsModal profile={DEFAULT_SETTINGS.profiles[0]} session={session} onClose={() => {}} onRequireLogin={requireLogin} /></QueryClientProvider>))
+  await act(async () => { await vi.advanceTimersByTimeAsync(100) })
+  expect(document.querySelector('[role=alert]')?.textContent).toContain('429')
   await act(async () => { window.dispatchEvent(new Event('focus')); await vi.advanceTimersByTimeAsync(120000) })
   expect(fetchAccountUsageLogs).toHaveBeenCalledTimes(1)
-  vi.useRealTimers()
-  await click('重试')
+  expect(findButton('重试').disabled).toBe(false)
+  await act(async () => { findButton('重试').click(); await vi.advanceTimersByTimeAsync(100) })
   expect(fetchAccountUsageLogs).toHaveBeenCalledTimes(2)
 })
 
@@ -200,4 +210,110 @@ it('列表未返回时筛选仍可修改，新条件请求替代旧条件', asyn
   await click('搜索')
   expect(oldSignal?.aborted).toBe(true)
   expect(document.body.textContent).toContain('暂无符合条件的日志')
+})
+
+it('任务页签才读取本人任务，详情按点击读取并保留失败原因', async () => {
+  await render()
+  expect(fetchAccountTaskLogs).not.toHaveBeenCalled()
+  await click('任务日志')
+  expect(fetchAccountTaskLogs).toHaveBeenCalledTimes(1)
+  expect(vi.mocked(fetchAccountTaskLogs).mock.calls[0][1]).toEqual(session)
+  expect(document.body.textContent).toContain('sd2.5-720p')
+  expect(document.body.textContent).toContain('失败')
+  expect(document.body.textContent).toContain('HUHN 0.25')
+  expect(fetchAccountTaskDetails).not.toHaveBeenCalled()
+  await click('详情')
+  expect(fetchAccountTaskDetails).toHaveBeenCalledTimes(1)
+  expect(document.body.textContent).toContain('测试提示词 <img src=x>')
+  expect(document.body.textContent).toContain('400')
+  expect(document.querySelector('img')).toBeNull()
+  await click('收起'); await click('详情')
+  expect(fetchAccountTaskDetails).toHaveBeenCalledTimes(1)
+  await click('下一页')
+  expect(vi.mocked(fetchAccountTaskLogs).mock.calls.at(-1)?.[3]).toBe(2)
+  expect(fetchAccountTaskDetails).toHaveBeenCalledTimes(1)
+})
+
+it('任务状态筛选发送后端原值，不提前读取草稿', async () => {
+  await render(); await click('任务日志')
+  const select = document.querySelector<HTMLSelectElement>('select[aria-label="任务状态"]')!
+  await act(async () => { select.value = 'SUCCESS'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+  expect(fetchAccountTaskLogs).toHaveBeenCalledTimes(1)
+  await click('搜索')
+  expect(vi.mocked(fetchAccountTaskLogs).mock.calls.at(-1)?.[2].status).toBe('SUCCESS')
+})
+
+it('同条件搜索和刷新连点不重复查询，冷却后只发一次新请求', async () => {
+  await render()
+  for (let i = 0; i < 3; i++) { await click('刷新'); await click('搜索') }
+  expect(fetchAccountUsageLogs).toHaveBeenCalledTimes(1)
+  const realNow = Date.now()
+  vi.spyOn(Date, 'now').mockReturnValue(realNow + 6000)
+  await click('搜索')
+  expect(fetchAccountUsageLogs).toHaveBeenCalledTimes(2)
+  await click('搜索'); await click('搜索')
+  expect(fetchAccountUsageLogs).toHaveBeenCalledTimes(2)
+  vi.restoreAllMocks()
+  await click('任务日志')
+  for (let i = 0; i < 3; i++) { await click('刷新'); await click('搜索') }
+  expect(fetchAccountTaskLogs).toHaveBeenCalledTimes(1)
+})
+
+it('在途相同条件搜索不取消重发，切换页签才取消旧请求', async () => {
+  let usageSignal: AbortSignal | undefined, taskSignal: AbortSignal | undefined
+  vi.mocked(fetchAccountUsageLogs).mockImplementation((_p, _s, _f, _page, _size, signal) => { usageSignal = signal; return new Promise(() => {}) })
+  vi.mocked(fetchAccountTaskLogs).mockImplementation((_p, _s, _f, _page, _size, signal) => { taskSignal = signal; return new Promise(() => {}) })
+  await render(true); await click('使用日志'); await click('搜索')
+  expect(fetchAccountUsageLogs).toHaveBeenCalledTimes(1); expect(usageSignal?.aborted).toBe(false)
+  await click('任务日志')
+  expect(usageSignal?.aborted).toBe(true); expect(taskSignal?.aborted).toBe(false)
+  await click('关闭日志'); expect(taskSignal?.aborted).toBe(true)
+})
+
+it('快速来回切换页签和关闭重开复用短缓存，不同时请求两种日志', async () => {
+  await render(true); await click('使用日志'); await click('任务日志')
+  await act(async () => (document.querySelector('[role=tab][aria-selected=false]') as HTMLButtonElement).click()); await settle()
+  await click('任务日志')
+  expect(fetchAccountUsageLogs).toHaveBeenCalledTimes(1); expect(fetchAccountTaskLogs).toHaveBeenCalledTimes(1)
+  await click('关闭日志'); await click('使用日志'); await click('任务日志')
+  expect(fetchAccountUsageLogs).toHaveBeenCalledTimes(1); expect(fetchAccountTaskLogs).toHaveBeenCalledTimes(1)
+  vi.useFakeTimers()
+  await act(async () => { await vi.advanceTimersByTimeAsync(120000); window.dispatchEvent(new Event('focus')) })
+  expect(fetchAccountTaskLogs).toHaveBeenCalledTimes(1)
+})
+
+it('退出时移除本人日志缓存，普通任务不请求异步详情', async () => {
+  vi.mocked(fetchAccountTaskLogs).mockResolvedValue({ items: [{ ...task, isAsync: false, taskId: 'task_normal' }], total: 1 })
+  await render(true); await click('使用日志'); await click('任务日志'); await click('详情')
+  expect(fetchAccountTaskDetails).not.toHaveBeenCalled()
+  expect(document.body.textContent).toContain('上游测试错误')
+  await act(async () => useStore.getState().setSettings({ newApiAccountSessions: {} })); await settle()
+  expect(document.querySelector('[role=dialog]')).toBeNull()
+  expect(client.getQueryCache().getAll().some(q => q.queryKey[0] === 'wenyun-task-logs')).toBe(false)
+})
+
+it('任务详情收起会取消在途读取，任务列表本身不会下载结果文件', async () => {
+  let signal: AbortSignal | undefined
+  vi.mocked(fetchAccountTaskDetails).mockImplementation((_p, _s, _id, value) => { signal = value; return new Promise(() => {}) })
+  await render(); await click('任务日志'); await click('详情')
+  expect(signal?.aborted).toBe(false)
+  await click('收起'); expect(signal?.aborted).toBe(true)
+  expect(fetchAccountTaskLogs).toHaveBeenCalledTimes(1)
+  expect(document.querySelector('video,img')).toBeNull()
+})
+
+it('切换账号不会复用上一账号的任务缓存，旧详情请求被取消', async () => {
+  let signal: AbortSignal | undefined
+  vi.mocked(fetchAccountTaskDetails).mockImplementation((_p, _s, _id, value) => { signal = value; return new Promise(() => {}) })
+  await render(true); await click('使用日志'); await click('任务日志'); await click('详情')
+  const update = vi.mocked(fetchAccountTaskLogs).mock.calls[0][6]
+  vi.mocked(fetchAccountTaskLogs).mockResolvedValue({ items: [], total: 0 })
+  await act(async () => useStore.getState().setSettings({ newApiAccountSessions: { [LOCKED_WENYUN_PROFILE_ID]: { ...session, userId: 902, username: '其他用户', accessToken: 'other', authSessionId: 'other-sid' } } }))
+  await settle(); await click('任务日志')
+  expect(signal?.aborted).toBe(true)
+  expect(document.body.textContent).not.toContain(task.taskId)
+  expect(document.body.textContent).toContain('暂无符合条件的任务')
+  expect(vi.mocked(fetchAccountTaskLogs).mock.calls.at(-1)?.[1].userId).toBe(902)
+  update?.({ ...session, accessToken: 'late-access' })
+  expect(useStore.getState().settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]?.accessToken).toBe('other')
 })

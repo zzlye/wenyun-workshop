@@ -5,6 +5,26 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 日志弹窗的原生菜单独立绘制，必须同时指定配色方案和选项底色，避免暗色白底浅字。 */
+.account-logs select,
+.account-logs input[type='datetime-local'] {
+  color-scheme: light;
+}
+.account-logs option,
+.account-logs optgroup {
+  background-color: #ffffff;
+  color: #27272a;
+}
+.dark .account-logs select,
+.dark .account-logs input[type='datetime-local'] {
+  color-scheme: dark;
+}
+.dark .account-logs option,
+.dark .account-logs optgroup {
+  background-color: #27272a;
+  color: #f4f4f5;
+}
+
 :root {
   --background: 0 0% 100%;
   --foreground: 240 10% 10%;

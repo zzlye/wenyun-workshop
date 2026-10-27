@@ -22,6 +22,23 @@ test('桌面本人日志保留筛选和登录身份，响应不会改成全站�
   assert.deepEqual(await response.json(), { success: true, data: { items: [], total: 0 } });
 });
 
+test('桌面任务日志和按需详情保持本人身份且只读', async () => {
+  const calls = [];
+  const handler = createProtocolHandler({ webRoot: 'D:/tmp/unused-web', fetch: async (url, options) => {
+    calls.push({ url, options });
+    return Response.json({ success: true, data: { items: [], total: 0 } });
+  } });
+  for (const path of ['/api/task/self?p=1&page_size=20&status=FAILURE', '/api/task/async_fixture/details']) {
+    await handler(new Request(`wenyun://app/newapi-proxy/wenyun${path}`, { headers: { authorization: 'Bearer fixture-session', 'new-api-user': '35' } }));
+    const call = calls.at(-1);
+    assert.equal(call.url, `https://api.xn--v5z30ywuk.com${path}`);
+    assert.equal(call.options.method, 'GET');
+    assert.equal(call.options.headers.get('authorization'), 'Bearer fixture-session');
+    assert.equal(call.options.headers.get('new-api-user'), '35');
+  }
+  assert.equal(calls.length, 2);
+});
+
 test('本机任务提交和认领使用独立直连，系统代理只处理远端接口', async () => {
   const localCalls = [];
   const remoteCalls = [];

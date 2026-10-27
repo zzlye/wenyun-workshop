@@ -1,4 +1,5 @@
-import { lazy, Suspense, useCallback, useState, type CSSProperties } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState, type CSSProperties } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { ScrollText } from 'lucide-react'
 import { useStore } from '../store'
 import { LOCKED_WENYUN_PROFILE_ID, normalizeSettings } from '../lib/apiProfiles'
@@ -14,6 +15,18 @@ export default function UsageLogsButton({ onRequireLogin, className, style }: {
   const settings = useStore(state => state.settings)
   const session = settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]
   const profile = normalizeSettings(settings).profiles.find(item => item.id === LOCKED_WENYUN_PROFILE_ID)!
+  const queryClient = useQueryClient()
+  const accountId = session?.userId ?? session?.username
+  const authId = session?.authSessionId ?? session?.accessToken
+  useEffect(() => {
+    // 短时复用同一登录的列表；切换账号或退出后清掉旧账号的日志与详情缓存。
+    return () => {
+      queryClient.removeQueries({ predicate: query =>
+        ['wenyun-usage-logs', 'wenyun-usage-stats', 'wenyun-log-groups', 'wenyun-task-logs', 'wenyun-task-details'].includes(String(query.queryKey[0]))
+        && query.queryKey[1] === profile.baseUrl && query.queryKey[2] === accountId && query.queryKey[3] === authId,
+      })
+    }
+  }, [queryClient, profile.baseUrl, accountId, authId])
   const close = useCallback(() => setOpen(false), [])
   const login = useCallback(() => { setOpen(false); onRequireLogin() }, [onRequireLogin])
   return <>
