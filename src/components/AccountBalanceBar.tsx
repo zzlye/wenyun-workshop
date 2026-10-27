@@ -8,6 +8,7 @@ import type { ApiProfile } from '../types'
 import AccountLoginModal from './AccountLoginModal'
 import PriceTableButton from './PriceTableButton'
 import { LotteryButton } from './LotteryModal'
+import UsageLogsButton from './UsageLogsButton'
 
 type AccountBalanceBarProps = {
   activeProfile?: ApiProfile
@@ -159,6 +160,7 @@ export default function AccountBalanceBar({
           buttonStyle={priceButtonStyle || actionButtonStyle}
         />
         {isWenyunProfile && <LotteryButton className={actionClassName} style={actionButtonStyle} onRequireLogin={() => setShowAccountLogin(true)} />}
+        {isWenyunProfile && <UsageLogsButton className={actionClassName} style={actionButtonStyle} onRequireLogin={() => setShowAccountLogin(true)} />}
         {showLoginButton && isWenyunProfile && (
           <button
             type="button"

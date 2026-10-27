@@ -8,6 +8,20 @@ test('固定代理及本机异步任务不依赖网站部署', () => {
   assert.equal(resolveProxy(new URL('wenyun://app/image-tasks/one'), 'http://127.0.0.1:2345').url.href, 'http://127.0.0.1:2345/image-tasks/one');
 });
 
+test('桌面本人日志保留筛选和登录身份，响应不会改成全站数据', async () => {
+  let observed;
+  const handler = createProtocolHandler({ webRoot: 'D:/tmp/unused-web', fetch: async (url, options) => {
+    observed = { url, options };
+    return Response.json({ success: true, data: { items: [], total: 0 } });
+  } });
+  const response = await handler(new Request('wenyun://app/newapi-proxy/wenyun/api/log/self?p=2&page_size=20&group=%E5%AE%98%E6%B8%A0', { headers: { authorization: 'Bearer fixture-session', 'new-api-user': '35' } }));
+  assert.equal(observed.url, 'https://api.xn--v5z30ywuk.com/api/log/self?p=2&page_size=20&group=%E5%AE%98%E6%B8%A0');
+  assert.equal(observed.options.method, 'GET');
+  assert.equal(observed.options.headers.get('authorization'), 'Bearer fixture-session');
+  assert.equal(observed.options.headers.get('new-api-user'), '35');
+  assert.deepEqual(await response.json(), { success: true, data: { items: [], total: 0 } });
+});
+
 test('本机任务提交和认领使用独立直连，系统代理只处理远端接口', async () => {
   const localCalls = [];
   const remoteCalls = [];
