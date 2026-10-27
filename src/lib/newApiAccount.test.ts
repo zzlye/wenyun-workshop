@@ -12,6 +12,7 @@ import {
   fetchNewApiAccountRole,
   requestNewApiVideoProtocol,
   requestNewApiAccountResource,
+  requestNewApiAccountMedia,
   loginNewApiAccount,
   normalizeNewApiAccountErrorMessage,
   readAccessToken,
@@ -931,5 +932,52 @@ describe('视频渠道根用户配置', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ success: false, message: '仅根用户可以管理视频渠道协议' }), { status: 403 }))
     await expect(requestNewApiVideoProtocol(DEFAULT_SETTINGS.profiles[0], { siteProfileId: 'wenyun-site', username: 'admin', accessToken: 'admin-token', boundApiKey: 'generation-key' }, 8, {})).rejects.toThrow('仅根用户')
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+
+describe('本人任务媒体读取', () => {
+  const profile = DEFAULT_SETTINGS.profiles[0]
+  const session = { siteProfileId: 'wenyun-site', username: 'media-tests', userId: 93882, accessToken: 'media-manager', authSessionId: 'media-tests-sid', boundApiKey: 'never-use-generation-key' }
+  it('只携带本人管理会话访问固定入口，保留取消信号并禁止重定向', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('image', { headers: { 'Content-Type': 'image/png' } }))
+    const controller = new AbortController()
+    const result = await requestNewApiAccountMedia(profile, session, '/api/task/async_fixture/media/0', controller.signal)
+    expect(result.type).toBe('image/png')
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/task/async_fixture/media/0')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'GET', redirect: 'error', cache: 'no-store', signal: controller.signal, headers: { Authorization: 'Bearer media-manager', 'New-Api-User': '93882' } })
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain('never-use-generation-key')
+  })
+  it('外域、路径穿越和带查询参数入口不会发送凭证', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    for (const path of ['https://evil.invalid/a', '//evil.invalid/a', '/api/task/../media/0', '/api/task/async_a/media/0?redirect=evil', '/api/task/async_a/media/%30']) {
+      await expect(requestNewApiAccountMedia(profile, session, path)).rejects.toThrow('地址无效')
+    }
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+  it('拒绝HTML、SVG和伪造图片类型，不自动重试429或过期文件', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    for (const type of ['text/html', 'image/svg+xml', 'image/png-malicious']) {
+      fetchMock.mockResolvedValueOnce(new Response('test', { headers: { 'Content-Type': type } }))
+      await expect(requestNewApiAccountMedia(profile, session, '/api/task/async_a/media/0')).rejects.toThrow('类型不支持')
+    }
+    for (const status of [410, 429]) {
+      fetchMock.mockResolvedValueOnce(new Response('', { status }))
+      await expect(requestNewApiAccountMedia(profile, session, '/api/task/async_a/media/0')).rejects.toThrow(status === 410 ? '过期' : '频繁')
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+  })
+  it('取消后不发请求，401续期成功后只重放一次媒体读取', async () => {
+    const update = vi.fn(), controller = new AbortController(); controller.abort()
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input).endsWith('/auth/refresh')) return new Response(JSON.stringify({ success: true, data: { access_token: 'refreshed-media', session: { sid: 'media-tests-sid' } } }))
+      return (init?.headers as Record<string, string>).Authorization === 'Bearer refreshed-media'
+        ? new Response('image', { headers: { 'Content-Type': 'image/png' } }) : new Response('', { status: 401 })
+    })
+    await expect(requestNewApiAccountMedia(profile, session, '/api/task/async_a/media/0', controller.signal)).rejects.toThrow()
+    expect(fetchMock).not.toHaveBeenCalled()
+    await expect(requestNewApiAccountMedia(profile, session, '/api/task/async_a/media/0', undefined, update)).resolves.toBeInstanceOf(Blob)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ accessToken: 'refreshed-media' }))
   })
 })

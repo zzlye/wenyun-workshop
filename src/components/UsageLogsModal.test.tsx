@@ -8,7 +8,7 @@ import UsageLogsModal from './UsageLogsModal'
 import { DEFAULT_SETTINGS, LOCKED_WENYUN_PROFILE_ID } from '../lib/apiProfiles'
 import { useStore } from '../store'
 import { fetchAccountUsageLogs, fetchAccountUsageStats, fetchAccountLogGroups, type AccountUsageLog } from '../lib/newApiLogs'
-import { fetchNewApiSiteStatus } from '../lib/newApiAccount'
+import { fetchNewApiSiteStatus, requestNewApiAccountMedia } from '../lib/newApiAccount'
 import { fetchAccountTaskLogs, fetchAccountTaskDetails, type AccountTaskLog } from '../lib/newApiTaskLogs'
 
 vi.mock('../lib/newApiTaskLogs', async importOriginal => ({
@@ -20,6 +20,7 @@ vi.mock('../lib/newApiLogs', async importOriginal => ({
 }))
 vi.mock('../lib/newApiAccount', async importOriginal => ({
   ...(await importOriginal<typeof import('../lib/newApiAccount')>()),
+  requestNewApiAccountMedia: vi.fn(),
   fetchNewApiSiteStatus: vi.fn(async () => ({ quota_per_unit: 500000, quota_display_type: 'CUSTOM', custom_currency_symbol: 'HUHN', custom_currency_exchange_rate: 1 })),
 }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -220,27 +221,28 @@ it('任务页签才读取本人任务，详情按点击读取并保留失败原�
   expect(vi.mocked(fetchAccountTaskLogs).mock.calls[0][1]).toEqual(session)
   expect(document.body.textContent).toContain('sd2.5-720p')
   expect(document.body.textContent).toContain('失败')
-  expect(document.body.textContent).toContain('HUHN 0.25')
   expect(fetchAccountTaskDetails).not.toHaveBeenCalled()
-  await click('详情')
+  await click('查看任务详情')
   expect(fetchAccountTaskDetails).toHaveBeenCalledTimes(1)
+  expect(document.body.textContent).toContain('HUHN 0.25')
   expect(document.body.textContent).toContain('测试提示词 <img src=x>')
   expect(document.body.textContent).toContain('400')
   expect(document.querySelector('img')).toBeNull()
-  await click('收起'); await click('详情')
+  await click('关闭任务详情'); await click('查看任务详情')
   expect(fetchAccountTaskDetails).toHaveBeenCalledTimes(1)
   await click('下一页')
   expect(vi.mocked(fetchAccountTaskLogs).mock.calls.at(-1)?.[3]).toBe(2)
   expect(fetchAccountTaskDetails).toHaveBeenCalledTimes(1)
 })
 
-it('任务状态筛选发送后端原值，不提前读取草稿', async () => {
+it('任务模型筛选对齐本人页面，不提前读取草稿', async () => {
   await render(); await click('任务日志')
-  const select = document.querySelector<HTMLSelectElement>('select[aria-label="任务状态"]')!
-  await act(async () => { select.value = 'SUCCESS'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+  expect(document.querySelector('select[aria-label="任务状态"]')).toBeNull()
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="模型"]')!
+  await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'sd2.5-720p'); input.dispatchEvent(new Event('input', { bubbles: true })) })
   expect(fetchAccountTaskLogs).toHaveBeenCalledTimes(1)
   await click('搜索')
-  expect(vi.mocked(fetchAccountTaskLogs).mock.calls.at(-1)?.[2].status).toBe('SUCCESS')
+  expect(vi.mocked(fetchAccountTaskLogs).mock.calls.at(-1)?.[2].model).toBe('sd2.5-720p')
 })
 
 it('同条件搜索和刷新连点不重复查询，冷却后只发一次新请求', async () => {
@@ -284,7 +286,7 @@ it('快速来回切换页签和关闭重开复用短缓存，不同时请求两�
 
 it('退出时移除本人日志缓存，普通任务不请求异步详情', async () => {
   vi.mocked(fetchAccountTaskLogs).mockResolvedValue({ items: [{ ...task, isAsync: false, taskId: 'task_normal' }], total: 1 })
-  await render(true); await click('使用日志'); await click('任务日志'); await click('详情')
+  await render(true); await click('使用日志'); await click('任务日志'); await click('查看任务详情')
   expect(fetchAccountTaskDetails).not.toHaveBeenCalled()
   expect(document.body.textContent).toContain('上游测试错误')
   await act(async () => useStore.getState().setSettings({ newApiAccountSessions: {} })); await settle()
@@ -292,12 +294,12 @@ it('退出时移除本人日志缓存，普通任务不请求异步详情', asyn
   expect(client.getQueryCache().getAll().some(q => q.queryKey[0] === 'wenyun-task-logs')).toBe(false)
 })
 
-it('任务详情收起会取消在途读取，任务列表本身不会下载结果文件', async () => {
+it('任务详情关闭会取消在途读取，任务列表本身不会下载结果文件', async () => {
   let signal: AbortSignal | undefined
   vi.mocked(fetchAccountTaskDetails).mockImplementation((_p, _s, _id, value) => { signal = value; return new Promise(() => {}) })
-  await render(); await click('任务日志'); await click('详情')
+  await render(); await click('任务日志'); await click('查看任务详情')
   expect(signal?.aborted).toBe(false)
-  await click('收起'); expect(signal?.aborted).toBe(true)
+  await click('关闭任务详情'); expect(signal?.aborted).toBe(true)
   expect(fetchAccountTaskLogs).toHaveBeenCalledTimes(1)
   expect(document.querySelector('video,img')).toBeNull()
 })
@@ -305,7 +307,7 @@ it('任务详情收起会取消在途读取，任务列表本身不会下载结�
 it('切换账号不会复用上一账号的任务缓存，旧详情请求被取消', async () => {
   let signal: AbortSignal | undefined
   vi.mocked(fetchAccountTaskDetails).mockImplementation((_p, _s, _id, value) => { signal = value; return new Promise(() => {}) })
-  await render(true); await click('使用日志'); await click('任务日志'); await click('详情')
+  await render(true); await click('使用日志'); await click('任务日志'); await click('查看任务详情')
   const update = vi.mocked(fetchAccountTaskLogs).mock.calls[0][6]
   vi.mocked(fetchAccountTaskLogs).mockResolvedValue({ items: [], total: 0 })
   await act(async () => useStore.getState().setSettings({ newApiAccountSessions: { [LOCKED_WENYUN_PROFILE_ID]: { ...session, userId: 902, username: '其他用户', accessToken: 'other', authSessionId: 'other-sid' } } }))
@@ -316,4 +318,60 @@ it('切换账号不会复用上一账号的任务缓存，旧详情请求被取�
   expect(vi.mocked(fetchAccountTaskLogs).mock.calls.at(-1)?.[1].userId).toBe(902)
   update?.({ ...session, accessToken: 'late-access' })
   expect(useStore.getState().settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]?.accessToken).toBe('other')
+})
+
+
+it('合并时间范围确认后才更新筛选，ESC只关闭最上层', async () => {
+  await render(true); await click('使用日志'); await click('任务日志')
+  expect(document.querySelector('input[type="datetime-local"]')).toBeNull()
+  await click('时间范围')
+  expect(document.querySelectorAll('input[type="datetime-local"]')).toHaveLength(2)
+  await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+  expect(document.querySelector('[aria-label="选择时间范围"]')).toBeNull()
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+  await click('时间范围'); await click('近7天')
+  expect(fetchAccountTaskLogs).toHaveBeenCalledTimes(1)
+  await click('搜索'); expect(fetchAccountTaskLogs).toHaveBeenCalledTimes(2)
+  await click('查看任务详情')
+  await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+  expect(document.querySelector('[data-task-details-dialog]')).toBeNull()
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+})
+
+it('表格按本人任务列顺序展示并支持隐藏列，翻页不关闭详情', async () => {
+  await render(); await click('任务日志')
+  expect(Array.from(document.querySelectorAll('th')).map(node => node.textContent)).toEqual(['提交时间', '任务 ID', '接口 / 模型', '耗时', '状态', '进度', '详情'])
+  await click('显示列')
+  await act(async () => (document.querySelector('[aria-label="显示列选项"] input') as HTMLInputElement).click())
+  expect(document.querySelectorAll('th')).toHaveLength(6)
+  await click('查看任务详情'); await click('下一页')
+  expect(document.querySelector('[data-task-details-dialog]')).not.toBeNull()
+  expect(document.querySelector('[data-task-details-dialog]')?.textContent).toContain(task.taskId)
+})
+
+it('任务文件主动预览才读取，关闭详情取消读取并释放预览地址', async () => {
+  vi.mocked(fetchAccountTaskDetails).mockResolvedValue({ taskId: task.taskId, prompt: '', promptSource: 'request', error: '', responseStatusCode: 200, parameters: {}, media: [{ kind: 'image', contentType: 'image/png', name: '生成图片', role: '', url: '/api/task/async_fixture/media/0', error: '' }] })
+  const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:fixture-image')
+  const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  vi.mocked(requestNewApiAccountMedia).mockResolvedValue(new Blob(['fixture'], { type: 'image/png' }))
+  await render(); await click('任务日志'); await click('查看任务详情')
+  expect(requestNewApiAccountMedia).not.toHaveBeenCalled()
+  await click('预览图片')
+  expect(requestNewApiAccountMedia).toHaveBeenCalledTimes(1)
+  expect(create).toHaveBeenCalledTimes(1)
+  expect(document.querySelector('img')?.getAttribute('src')).toBe('blob:fixture-image')
+  await click('关闭任务详情'); expect(revoke).toHaveBeenCalledWith('blob:fixture-image')
+  let signal: AbortSignal | undefined
+  vi.mocked(requestNewApiAccountMedia).mockImplementation((_p, _s, _url, value) => { signal = value; return new Promise(() => {}) })
+  await click('查看任务详情'); await click('预览图片')
+  expect(signal?.aborted).toBe(false)
+  await click('关闭任务详情'); expect(signal?.aborted).toBe(true)
+})
+
+it('已过期素材不提供预览，也不发出媒体请求', async () => {
+  vi.mocked(fetchAccountTaskDetails).mockResolvedValue({ taskId: task.taskId, prompt: '', promptSource: '', error: '', responseStatusCode: 200, parameters: {}, expiresAt: Math.floor(Date.now() / 1000) - 1, media: [{ kind: 'image', contentType: 'image/png', name: '', role: '', url: '/api/task/async_fixture/media/0', error: '' }] })
+  await render(); await click('任务日志'); await click('查看任务详情')
+  expect(document.body.textContent).toContain('生成结果文件已过期')
+  expect(document.body.textContent).not.toContain('预览图片')
+  expect(requestNewApiAccountMedia).not.toHaveBeenCalled()
 })

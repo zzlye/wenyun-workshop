@@ -39,6 +39,27 @@ test('桌面任务日志和按需详情保持本人身份且只读', async () =>
   assert.equal(calls.length, 2);
 });
 
+test('桌面任务参考素材和结果保持身份及二进制内容', async () => {
+  const calls = [];
+  const bytes = Uint8Array.from([137, 80, 78, 71, 13, 10]);
+  const handler = createProtocolHandler({ webRoot: 'D:/tmp/unused-web', fetch: async (url, options) => {
+    calls.push({ url, options });
+    return new Response(bytes, { headers: { 'content-type': 'image/png' } });
+  } });
+  for (const kind of ['reference', 'media']) {
+    const path = `/api/task/async_fixture/${kind}/0`;
+    const response = await handler(new Request(`wenyun://app/newapi-proxy/wenyun${path}`, { headers: { authorization: 'Bearer fixture-session', 'new-api-user': '35' } }));
+    const call = calls.at(-1);
+    assert.equal(call.url, `https://api.xn--v5z30ywuk.com${path}`);
+    assert.equal(call.options.method, 'GET');
+    assert.equal(call.options.headers.get('authorization'), 'Bearer fixture-session');
+    assert.equal(call.options.headers.get('new-api-user'), '35');
+    assert.equal(response.headers.get('content-type'), 'image/png');
+    assert.deepEqual(new Uint8Array(await response.arrayBuffer()), bytes);
+  }
+  assert.equal(calls.length, 2);
+});
+
 test('本机任务提交和认领使用独立直连，系统代理只处理远端接口', async () => {
   const localCalls = [];
   const remoteCalls = [];

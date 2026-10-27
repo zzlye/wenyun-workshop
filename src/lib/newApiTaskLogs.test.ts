@@ -39,9 +39,9 @@ it('空切片可识别，畸形协议不冒充空列表', () => {
   for (const value of [{}, { items: null, total: 2 }, { items: [], total: -1 }, { items: [{}], total: 1 }]) expect(() => parseAccountTaskLogs(value)).toThrow('格式异常')
 })
 
-it('耗时使用后端展示结束时间，不把后台保存时间算成生图耗时', () => {
+it('耗时从提交开始包含排队，使用展示结束时间排除后台保存耗时', () => {
   const log = parseAccountTaskLogs({ items: [raw], total: 1 }).items[0]
-  expect(taskLogDuration(log)).toBe('25s')
+  expect(taskLogDuration(log)).toBe('30.0s')
   expect(taskLogDuration({ ...log, durationFinishTime: 0 })).toBe('—')
   expect(taskLogStatus('failed')).toBe('失败')
   expect(taskLogStatus('SUCCESS')).toBe('成功')
@@ -65,4 +65,24 @@ it('错误请求不自动重试或退回管理员接口，详情任务编号必�
   expect(requestNewApiAccountResource).toHaveBeenCalledTimes(1)
   vi.mocked(requestNewApiAccountResource).mockResolvedValueOnce({ task_id: 'async_other' })
   await expect(fetchAccountTaskDetails(profile, session, 'async_test')).rejects.toThrow('格式异常')
+})
+
+
+it('媒体只保留当前任务的站内入口，任务快照过滤内部字段', async () => {
+  vi.mocked(requestNewApiAccountResource).mockResolvedValue({ task_id: 'async_test', parameters: { duration: '5', secret: 'hidden' }, media: [
+    { kind: 'image', url: '/api/task/async_test/media/0' },
+    { kind: 'image', url: 'https://hidden.invalid/image' },
+    { kind: 'video', url: '/api/task/async_other/media/0' },
+    { kind: 'html', url: '/api/task/async_test/media/1' },
+  ], references: [{ kind: 'audio', url: '/api/task/async_test/reference/0' }], full_parameters: {
+    task_id: 'async_test', created_at: 100, request_content_type: 'application/json', request_conversion: ['Task'], request_body: '',
+    request_details: { prompt: '输入提示词', references: [{ role: 'reference', kind: 'audio', content_type: 'audio/wave', key: 'hidden' }] },
+    admin_info: { secret: 'hidden' },
+  } })
+  const result = await fetchAccountTaskDetails(profile, session, 'async_test')
+  expect(result.media?.map(item => item.url)).toEqual(['/api/task/async_test/media/0', '', ''])
+  expect(result.references?.[0].url).toBe('/api/task/async_test/reference/0')
+  expect(result.fullParameters).toMatchObject({ created_at: 100, request_content_type: 'application/json', request_conversion: ['Task'], request_body: '', request_details: { parameters: { duration: '5' }, prompt: '输入提示词' } })
+  expect(JSON.stringify(result)).not.toContain('hidden')
+  expect(taskLogStatus('SUBMITTED')).toBe('排队中')
 })

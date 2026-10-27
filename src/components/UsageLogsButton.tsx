@@ -22,7 +22,7 @@ export default function UsageLogsButton({ onRequireLogin, className, style }: {
     // 短时复用同一登录的列表；切换账号或退出后清掉旧账号的日志与详情缓存。
     return () => {
       queryClient.removeQueries({ predicate: query =>
-        ['wenyun-usage-logs', 'wenyun-usage-stats', 'wenyun-log-groups', 'wenyun-task-logs', 'wenyun-task-details'].includes(String(query.queryKey[0]))
+        ['wenyun-usage-logs', 'wenyun-usage-stats', 'wenyun-log-groups', 'wenyun-task-logs', 'wenyun-task-details', 'wenyun-task-media'].includes(String(query.queryKey[0]))
         && query.queryKey[1] === profile.baseUrl && query.queryKey[2] === accountId && query.queryKey[3] === authId,
       })
     }

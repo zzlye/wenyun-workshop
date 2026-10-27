@@ -32,7 +32,7 @@ export default function UsageLogsModal({ profile, session, onClose, onRequireLog
     const previous = document.activeElement as HTMLElement | null
     closeRef.current?.focus()
     const handleTab = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab') return
+      if (event.key !== 'Tab' || modalRef.current?.querySelector('[data-task-details-dialog]')) return
       const controls = Array.from(modalRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),a[href],[tabindex="0"]') ?? []).filter(element => element.getClientRects().length > 0)
       const first = controls[0], last = controls[controls.length - 1]
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
@@ -42,7 +42,7 @@ export default function UsageLogsModal({ profile, session, onClose, onRequireLog
     return () => { document.removeEventListener('keydown', handleTab); if (previous?.isConnected) previous.focus() }
   }, [])
   return createPortal(<div className="fixed inset-0 z-[180] flex items-center justify-center bg-slate-950/45 p-2 backdrop-blur-sm sm:p-4" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }} onPointerDown={event => event.stopPropagation()} onWheel={event => event.stopPropagation()}>
-    <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby={titleId} className="account-logs flex h-[88dvh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-gray-200 bg-white text-gray-800 shadow-2xl dark:border-white/10 dark:bg-gray-900 dark:text-gray-100" data-no-drag-select data-canvas-no-zoom>
+    <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby={titleId} className="account-logs relative flex h-[88dvh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-gray-200 bg-white text-gray-800 shadow-2xl dark:border-white/10 dark:bg-gray-900 dark:text-gray-100" data-no-drag-select data-canvas-no-zoom>
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-100 px-5 py-4 dark:border-white/10">
         <div className="flex min-w-0 items-center gap-3"><span className="rounded-xl bg-blue-50 p-2 text-blue-500 dark:bg-blue-500/10"><ScrollText size={20} /></span><div className="min-w-0"><h2 id={titleId} className="text-base font-semibold">使用日志</h2><p className="mt-0.5 truncate text-xs text-gray-500">{session.username}</p></div></div>
         <button ref={closeRef} type="button" className="rounded-xl border border-gray-200 p-2 hover:bg-gray-50 dark:border-white/10 dark:hover:bg-white/5" aria-label="关闭日志" onClick={onClose}><X size={16} /></button>

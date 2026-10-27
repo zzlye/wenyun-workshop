@@ -354,6 +354,29 @@ export function requestNewApiAccountResource<T>(
   }), onSessionUpdated)
 }
 
+// 任务文件使用管理会话读取，禁止将凭证带到外部链接；续期规则与本人日志保持一致。
+export function requestNewApiAccountMedia(
+  profile: ApiProfile, session: NewApiAccountSession, path: string, signal?: AbortSignal,
+  onSessionUpdated?: NewApiSessionUpdated,
+): Promise<Blob> {
+  if (!/^\/api\/task\/[A-Za-z0-9_-]+\/(?:media|reference)\/\d+$/.test(path)) return Promise.reject(new Error('任务文件地址无效'))
+  return requestWithNewApiSession(profile, session, async active => {
+    signal?.throwIfAborted()
+    const headers: Record<string, string> = { Authorization: `Bearer ${active.accessToken}` }
+    if (active.userId !== undefined) headers['New-Api-User'] = String(active.userId)
+    const response = await fetch(proxiedNewApiUrl(profile, path), { method: 'GET', headers, credentials: 'include', cache: 'no-store', redirect: 'error', signal })
+    if (!response.ok) {
+      await response.body?.cancel()
+      throw new NewApiAccountRequestError(response.status === 410 ? '结果文件已过期' : response.status === 429 ? '请求过于频繁，请稍后再试' : `文件读取失败：${response.status}`, response.status)
+    }
+    const contentType = (response.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase()
+    if (!/^(?:image\/(?:png|jpeg|webp|gif|avif)|(?:video|audio)\/[a-z0-9.+-]+)$/.test(contentType)) {
+      await response.body?.cancel(); throw new Error('任务文件类型不支持预览')
+    }
+    return response.blob()
+  }, onSessionUpdated)
+}
+
 export function isNewApiBusinessRejection(error: unknown): boolean {
   return error instanceof NewApiAccountRequestError && error.status < 500 && ![408, 429].includes(error.status)
 }
