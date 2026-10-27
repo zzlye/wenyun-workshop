@@ -28,6 +28,7 @@ import ReceiptPaymentDialog from './ReceiptPaymentDialog'
 import { LotteryButton } from './LotteryModal'
 import { useAccountVideoKey } from '../hooks/useAccountVideoKey'
 import { hasBoundMediaApiKey } from '../lib/videoAccount'
+import { openExternalLinkFromClick } from '../lib/externalLinks'
 
 function EyeIcon({ hidden, className }: { hidden: boolean; className?: string }) {
   return (
@@ -616,6 +617,12 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
                 {isRedeemingCode ? '兑换中...' : '兑换'}
               </button>
             </div>
+            {/* 小铺在新窗口打开，保留当前页面的任务与兑换输入。 */}
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              点击 <a href="https://catfk.com/shop/GOKNGSCL" target="_blank" rel="noopener noreferrer"
+                onClick={(event) => openExternalLinkFromClick(event, 'https://catfk.com/shop/GOKNGSCL')}
+                className="font-medium text-blue-600 hover:underline focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 dark:text-blue-400">前往小铺</a> 购买兑换码
+            </p>
           </div>
         ) : (
           <div className="space-y-3">
