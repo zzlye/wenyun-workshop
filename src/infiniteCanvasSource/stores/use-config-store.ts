@@ -13,6 +13,7 @@ export type AiConfig = {
     channelMode: "remote" | "local";
     baseUrl: string;
     apiKey: string;
+    imageApiProxy?: boolean;
     timeout: number;
     textVideoBaseUrl: string;
     textVideoApiKey: string;

@@ -52,7 +52,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     requests.push({ url, init })
-    if (url.endsWith('/models')) return new Response(JSON.stringify({ data: [{ id: modelName }] }))
+    if (url.endsWith('/models')) return new Response(JSON.stringify({ data: [{ id: modelName, supported_endpoint_types: ['openai-video'] }] }))
     if (expiredAccount && ((init?.headers as Record<string, string> | undefined)?.Authorization || url.endsWith('/auth/refresh'))) {
       return new Response(JSON.stringify({ success: false, message: '登录状态已过期' }), { status: 401 })
     }

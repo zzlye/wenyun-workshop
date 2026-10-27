@@ -137,7 +137,9 @@ export interface NewApiAccountSession {
   boundApiKey?: string
   boundApiKeyId?: number | string
   boundApiKeyName?: string
-  /** 视频凭据独立绑定视频分组，不能与图片或账号管理凭据混用。 */
+  /** 已核实的媒体专用密钥类别；旧会话没有此标记时自动迁移。 */
+  boundApiKeyPurpose?: 'media'
+  /** 保留旧视频字段用于会话兼容，媒体专用密钥同时用于图片与视频。 */
   boundVideoApiKey?: string
   boundVideoApiKeyId?: number | string
   boundVideoApiKeyName?: string

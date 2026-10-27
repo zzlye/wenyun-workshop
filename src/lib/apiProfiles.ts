@@ -529,6 +529,7 @@ function normalizeNewApiAccountSession(value: unknown, siteProfileId: string): N
     inviter: typeof value.inviter === 'string' && value.inviter.trim() ? value.inviter.trim() : undefined,
     inviterId: typeof value.inviterId === 'string' || typeof value.inviterId === 'number' ? value.inviterId : undefined,
     boundApiKey: typeof value.boundApiKey === 'string' ? value.boundApiKey.trim() : undefined,
+    boundApiKeyPurpose: value.boundApiKeyPurpose === 'media' ? 'media' : undefined,
     boundApiKeyId: typeof value.boundApiKeyId === 'string' || typeof value.boundApiKeyId === 'number' ? value.boundApiKeyId : undefined,
     boundApiKeyName: typeof value.boundApiKeyName === 'string' && value.boundApiKeyName.trim() ? value.boundApiKeyName.trim() : undefined,
     boundVideoApiKey: typeof value.boundVideoApiKey === 'string' ? value.boundVideoApiKey.trim() : undefined,

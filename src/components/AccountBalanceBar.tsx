@@ -87,6 +87,10 @@ export default function AccountBalanceBar({
             ...current.newApiAccountSessions,
             [LOCKED_WENYUN_PROFILE_ID]: {
               ...latest, ...session,
+              boundApiKey: latest.boundApiKey,
+              boundApiKeyId: latest.boundApiKeyId,
+              boundApiKeyName: latest.boundApiKeyName,
+              boundApiKeyPurpose: latest.boundApiKeyPurpose,
               boundVideoApiKey: latest.boundVideoApiKey,
               boundVideoApiKeyId: latest.boundVideoApiKeyId,
               boundVideoApiKeyName: latest.boundVideoApiKeyName,

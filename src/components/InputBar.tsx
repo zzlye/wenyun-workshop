@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import { useStore, submitTask, submitAgentMessage, stopAgentResponse, addImageFromFile, createInputImageFromFile, deleteImageIfUnreferenced, updateTaskInStore, removeMultipleTasks, getCachedImage, ensureImageCached, getActiveAgentRounds } from '../store'
 import { DEFAULT_PARAMS } from '../types'
 import { FIXED_IMAGE_MODEL_OPTIONS, allowsCustomImageRatioForProfile, getActiveApiProfile, getApiModelUnitCostText, getImageSizeTiersForProfile, normalizeImageSizeForProfile, normalizeSettings, supportsExtendedImageQuality } from '../lib/apiProfiles'
+import GroupedModelSelect from './GroupedModelSelect'
+import { useMediaModels } from '../hooks/useMediaModels'
 import { supportsTransparentImageBackground } from '../lib/modelPricing'
 import { getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
@@ -655,8 +657,9 @@ export default function InputBar() {
   const displaySize = isMidjourney ? normalizedDisplaySize : normalizedDisplaySize === 'auto' ? DEFAULT_PARAMS.size : normalizedDisplaySize || DEFAULT_PARAMS.size
   const imageSizeTiers = getImageSizeTiersForProfile(activeProfile.id, activeProfile.model)
   const allowCustomImageRatio = allowsCustomImageRatioForProfile(activeProfile.id)
-  const modelOptions = [...FIXED_IMAGE_MODEL_OPTIONS]
-  const selectedModelOption = modelOptions.find((option) => option.value === activeProfile.model)
+  const mediaModels = useMediaModels(effectiveActiveProfile.baseUrl, effectiveActiveProfile.apiKey, effectiveActiveProfile.apiProxy)
+  const modelOptions = effectiveActiveProfile.apiKey ? mediaModels.data?.images ?? [] : [...FIXED_IMAGE_MODEL_OPTIONS]
+  const selectedModelOption = modelOptions.find(option => option.value === activeProfile.model)
 
   useEffect(() => {
     const nextSize = normalizeImageSizeForProfile(params.size, activeProfile.id, activeProfile.model)
@@ -1760,12 +1763,12 @@ export default function InputBar() {
     <div className={`${mobile ? 'workshop-mobile-params grid grid-cols-2' : 'flex flex-wrap items-end'} gap-2 text-xs`}>
       <label className={`relative flex min-w-0 flex-col gap-0.5 ${mobile ? 'col-span-2' : 'flex-[2_1_15rem]'}`}>
         <span className="text-gray-400 dark:text-gray-500 ml-1">模型</span>
-        <Select
-          native={mobile}
-          ariaLabel="模型"
-          value={selectedModelOption?.value ?? FIXED_IMAGE_MODEL_OPTIONS[0].value}
+        <GroupedModelSelect
+          value={activeProfile.model}
           onChange={(model) => setSettings({ model: String(model) })}
           options={modelOptions}
+          loading={mediaModels.isFetching}
+          error={mediaModels.isError ? mediaModels.error.message : undefined}
           className="px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/[0.06] focus:outline-none text-xs transition-all duration-200 shadow-sm"
         />
       </label>

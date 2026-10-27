@@ -1,13 +1,13 @@
 import type { ApiProfile, NewApiAccountSession } from '../types'
 import { getLockedNewApiProxyUrl } from './devProxy'
 import { parseNewApiUserBalance, type NewApiStatusInfo } from './newApi'
-import { getBoundVideoApiKey, VIDEO_ACCOUNT_GROUP } from './videoAccount'
+import { hasBoundMediaApiKey } from './videoAccount'
 
 export const ACCOUNT_KEY_REFRESH_COOLDOWN_MS = 30 * 60 * 1000
 const ACCOUNT_BOUND_TOKEN_PREFIX = 'wy-bound'
 // 使用独立前缀，图片令牌查找和刷新不会误选或删除视频令牌。
 const VIDEO_BOUND_TOKEN_PREFIX = 'wy-video-'
-const videoKeyRequests = new Map<string, Promise<NewApiAccountSession>>()
+const mediaKeyRequests = new Map<string, Promise<NewApiAccountSession>>()
 // 保留旧品牌的绑定名称，已有账号仍能找回原来的生成密钥。
 const LEGACY_ACCOUNT_BOUND_TOKEN_PREFIX = '文运工坊绑定 Key'
 
@@ -655,10 +655,11 @@ export async function fetchNewApiTokens(
   profile: ApiProfile,
   accessToken: string,
   userId?: number | string,
+  purpose?: 'media',
 ): Promise<Record<string, unknown>[]> {
   const tokens: Record<string, unknown>[] = []
   for (let page = 1; ; page++) {
-    const payload = await newApiRequest<unknown>(profile, `/api/token/?p=${page}&size=100`, { accessToken, userId })
+    const payload = await newApiRequest<unknown>(profile, `/api/token/?p=${page}&size=100${purpose ? `&purpose=${purpose}` : ""}`, { accessToken, userId })
     const items = normalizeTokenList(payload)
     tokens.push(...items)
     const total = Number(getRecord(payload)?.total)
@@ -667,65 +668,54 @@ export async function fetchNewApiTokens(
   }
 }
 
-export async function ensureNewApiVideoBoundKey(profile: ApiProfile, session: NewApiAccountSession): Promise<NewApiAccountSession> {
-  if (getBoundVideoApiKey(session)) return session
+// 新版 NewAPI 为账号预建默认媒体密钥，图片与视频绑定同一把，不改动旧令牌。
+export async function ensureNewApiMediaBoundKey(profile: ApiProfile, session: NewApiAccountSession): Promise<NewApiAccountSession> {
+  if (hasBoundMediaApiKey(session)) return session
   const requestId = JSON.stringify([getApiRoot(profile), session.userId, session.accessToken])
-  const pending = videoKeyRequests.get(requestId)
+  const pending = mediaKeyRequests.get(requestId)
   if (pending) return pending
-
-  const ensureKey = async (): Promise<NewApiAccountSession> => {
+  const ensureKey = async () => {
     let activeSession = session
-    const bound = await requestWithNewApiSession(profile, session, async (current) => {
-      const groups = await newApiRequest<Record<string, unknown>>(profile, '/api/user/self/groups', {
-        accessToken: current.accessToken, userId: current.userId,
-      })
-      if (!groups || !Object.prototype.hasOwnProperty.call(groups, VIDEO_ACCOUNT_GROUP)) {
-        throw new Error('当前账号未开通视频分组，请联系管理员')
+    const bound = await requestWithNewApiSession(profile, session, async current => {
+      const tokens = await fetchNewApiTokens(profile, current.accessToken, current.userId, 'media')
+      const media = tokens.filter(token => token.purpose === 'media')
+      const isUsable = (token: Record<string, unknown>) => Number(token.status) === 1
+        && (Number(token.expired_time) === -1 || Number(token.expired_time) > Date.now() / 1000)
+      // 默认密钥被停用时直接报错，不能通过另建密钥绕过管理员的停用操作。
+      const defaultToken = media.find(token => token.is_default === true)
+      if (defaultToken && !isUsable(defaultToken)) throw new Error('账号默认生图和视频 Key 已停用或过期')
+      const existing = defaultToken ?? media.filter(token => isUsable(token) && token.unlimited_quota === true
+        && token.model_limits_enabled !== true && !getString(token.allow_ips)).sort((a, b) => Number(b.id) - Number(a.id))[0]
+      if (existing) {
+        const result = await toUsableBoundToken(profile, current, existing)
+        if (!result) throw new Error('账号生图和视频 Key 读取失败')
+        return result
       }
-      const matches = (token: Record<string, unknown>, name?: string) => {
-        const tokenName = readTokenName(token) ?? ''
-        const expires = Number(token.expired_time ?? -1)
-        return (name ? tokenName === name : tokenName.startsWith(VIDEO_BOUND_TOKEN_PREFIX))
-          && token.group === VIDEO_ACCOUNT_GROUP
-          && Number(token.status ?? 1) === 1
-          && (expires === -1 || expires > Date.now() / 1000)
-          && token.unlimited_quota === true
-          && token.model_limits_enabled !== true
-          && !getString(token.allow_ips)
-      }
-      const tokens = await fetchNewApiTokens(profile, current.accessToken, current.userId)
-      const existing = tokens.filter(token => matches(token)).sort((a, b) => Number(b.id) - Number(a.id))[0]
-      const reusable = await toUsableBoundToken(profile, current, existing ?? null)
-      if (reusable) return reusable
-      if (existing) throw new Error('账号视频 Key 读取失败，请重试')
-
-      const name = `${VIDEO_BOUND_TOKEN_PREFIX}${Date.now().toString(36)}`
-      await newApiRequest(profile, '/api/token/', {
-        method: 'POST', accessToken: current.accessToken, userId: current.userId,
-        body: { name, group: VIDEO_ACCOUNT_GROUP, expired_time: -1, unlimited_quota: true, model_limits_enabled: false, cross_group_retry: false },
-      })
-      // 创建后重新读取实际分组；提交成功但读回失败时，重试先查列表，不重复提交创建。
-      const updated = await fetchNewApiTokens(profile, current.accessToken, current.userId)
-      const created = await toUsableBoundToken(profile, current, updated.find(token => matches(token, name)) ?? null)
-      if (!created) throw new Error('视频 Key 已提交创建，但尚未确认绑定，请重试')
-      return created
+      return createNewApiBoundToken(profile, current)
     }, refreshed => { activeSession = refreshed })
-    return {
-      ...activeSession,
-      boundVideoApiKey: bound.key, boundVideoApiKeyId: bound.id,
-      boundVideoApiKeyName: bound.name, boundVideoApiKeyGroup: VIDEO_ACCOUNT_GROUP,
-    }
+    return bindMediaKey(activeSession, bound)
   }
-  // 同页并发共用请求；支持浏览器锁时，不同标签页也先复用服务器已有令牌。
+  // 同页请求合并，跨标签页通过浏览器锁复用服务端已经创建的媒体密钥。
   const request = (async () => {
     if (typeof navigator !== 'undefined' && navigator.locks) {
-      return await navigator.locks.request(`video-account-key:${getApiRoot(profile)}:${session.userId ?? session.username}`, ensureKey)
+      return await navigator.locks.request(`media-account-key:${getApiRoot(profile)}:${session.userId ?? session.username}`, ensureKey)
     }
     return ensureKey()
   })()
-  videoKeyRequests.set(requestId, request)
-  try { return await request } finally { videoKeyRequests.delete(requestId) }
+  mediaKeyRequests.set(requestId, request)
+  try { return await request } finally { mediaKeyRequests.delete(requestId) }
 }
+
+function bindMediaKey(session: NewApiAccountSession, bound: NewApiBoundKeyResult): NewApiAccountSession {
+  return {
+    ...session, boundApiKeyPurpose: 'media',
+    boundApiKey: bound.key, boundApiKeyId: bound.id, boundApiKeyName: bound.name,
+    boundVideoApiKey: bound.key, boundVideoApiKeyId: bound.id, boundVideoApiKeyName: bound.name, boundVideoApiKeyGroup: 'auto',
+  }
+}
+
+// 保留原导出供设置和账号同步入口使用，内部统一为媒体凭据。
+export const ensureNewApiVideoBoundKey = ensureNewApiMediaBoundKey
 
 export async function fetchNewApiTokenFullKey(
   profile: ApiProfile,
@@ -765,6 +755,7 @@ export async function createNewApiBoundToken(profile: ApiProfile, session: NewAp
     userId: session.userId,
     body: {
       name,
+      ...(profile.id === 'wenyun-site' ? { purpose: 'media' } : {}),
       expired_time: -1,
       unlimited_quota: true,
     },
@@ -772,7 +763,7 @@ export async function createNewApiBoundToken(profile: ApiProfile, session: NewAp
   const directKey = readTokenKey(result)
   if (directKey && !isMaskedTokenKey(directKey)) return { key: directKey, id: readTokenId(result), name: readTokenName(result) ?? name }
 
-  const tokens = await fetchNewApiTokens(profile, session.accessToken, session.userId)
+  const tokens = await fetchNewApiTokens(profile, session.accessToken, session.userId, profile.id === 'wenyun-site' ? 'media' : undefined)
   const created = await toUsableBoundToken(profile, session, pickLatestBoundTokenRecord(tokens, name))
   if (!created) throw new Error('已创建账号 Key，但无法读取 Key 内容')
   return created
@@ -793,6 +784,7 @@ export async function deleteNewApiToken(
 }
 
 export async function ensureNewApiBoundKey(profile: ApiProfile, session: NewApiAccountSession): Promise<NewApiAccountSession> {
+  if (profile.id === 'wenyun-site') return ensureNewApiMediaBoundKey(profile, session)
   if (session.boundApiKey) return session
 
   const tokens = await fetchNewApiTokens(profile, session.accessToken, session.userId)
@@ -826,7 +818,7 @@ export async function refreshNewApiBoundKey(
     onSessionUpdated?.(refreshedSession)
   })
   const previousId = activeSession.boundApiKeyId
-  if (previousId !== undefined && previousId !== created.id) {
+  if (previousId !== undefined && previousId !== created.id && activeSession.boundApiKeyName?.startsWith(ACCOUNT_BOUND_TOKEN_PREFIX)) {
     try {
       await deleteNewApiToken(profile, activeSession.accessToken, previousId, activeSession.userId)
     } catch {
@@ -835,7 +827,7 @@ export async function refreshNewApiBoundKey(
   }
 
   return {
-    ...activeSession,
+    ...(profile.id === 'wenyun-site' ? bindMediaKey(activeSession, created) : activeSession),
     boundApiKey: created.key,
     boundApiKeyId: created.id,
     boundApiKeyName: created.name,

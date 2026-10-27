@@ -16,6 +16,7 @@ export function syncInfiniteCanvasConfigFromSettings(settings: AppSettings) {
       channelMode: 'local',
       baseUrl: activeProfile.baseUrl,
       apiKey: activeProfile.apiKey,
+      imageApiProxy: activeProfile.apiProxy,
       timeout: activeProfile.timeout,
       model: activeProfile.model,
       imageModel: activeProfile.model,

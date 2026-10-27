@@ -6,7 +6,10 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { AiConfig } from "@/stores/use-config-store";
-import { useVideoModels } from "../../hooks/useVideoModels";
+import { useMediaModels } from "../../hooks/useMediaModels";
+import GroupedModelSelect from "../../components/GroupedModelSelect";
+import { FIXED_IMAGE_MODEL_OPTIONS } from "../../lib/modelPricing";
+import { CANVAS_VIDEO_BASE_URL } from "../../lib/videoModel";
 
 type ModelPickerProps = {
     config: AiConfig;
@@ -17,27 +20,25 @@ type ModelPickerProps = {
     fullWidth?: boolean;
     placeholder?: string;
     onMissingConfig?: () => void;
-    modelType?: "video";
+    modelType?: "image" | "video" | "text";
 };
 
 export function ModelPicker({ config, value, onChange, options: fixedOptions, className, fullWidth = false, placeholder = "选择模型", onMissingConfig, modelType }: ModelPickerProps) {
     const pickerId = useId();
     const [open, setOpen] = useState(false);
     const isVideo = modelType === "video";
-    const videoModels = useVideoModels(config.videoApiKey, config.videoApiProxy, isVideo);
+    const isMedia = modelType !== "text";
+    const mediaKey = isVideo ? config.videoApiKey : config.apiKey;
+    const mediaModels = useMediaModels(isVideo ? CANVAS_VIDEO_BASE_URL : config.baseUrl, mediaKey,
+        isVideo ? config.videoApiProxy : Boolean(config.imageApiProxy), isMedia);
     const options = useMemo(() => {
-        if (isVideo) {
-            // 接口成功时仅列出当前视频令牌可用的模型；旧节点值留在标题，不混入可选列表。
-            const models = !config.videoApiKey.trim() ? [] : videoModels.data ?? [];
-            return Array.from(new Set(models)).map((model) => ({ value: model, label: model }));
-        }
         if (fixedOptions?.length) {
             return fixedOptions
                 .map((item) => (typeof item === "string" ? { value: item, label: item } : item))
                 .filter((item) => item.value);
         }
         return Array.from(new Set([...(config.channelMode === "local" ? [value] : []), ...config.models].filter(Boolean))).map((model) => ({ value: model, label: model }));
-    }, [config.channelMode, config.models, config.videoApiKey, fixedOptions, value, isVideo, videoModels.data]);
+    }, [config.channelMode, config.models, config.videoApiKey, fixedOptions, value, isVideo]);
     const current = value || "";
     const currentLabel = options.find((item) => item.value === current)?.label || current;
 
@@ -48,6 +49,12 @@ export function ModelPicker({ config, value, onChange, options: fixedOptions, cl
         window.addEventListener("model-picker-open", closeOtherPicker);
         return () => window.removeEventListener("model-picker-open", closeOtherPicker);
     }, [pickerId]);
+
+    if (isMedia) return <GroupedModelSelect value={current} onChange={onChange}
+        options={mediaKey.trim() ? (isVideo ? mediaModels.data?.videos : mediaModels.data?.images) ?? [] : isVideo ? [] : FIXED_IMAGE_MODEL_OPTIONS}
+        loading={mediaModels.isFetching} error={mediaModels.isError ? mediaModels.error.message : undefined}
+        emptyText={mediaKey.trim() ? "暂无可用模型" : "请先登录或填写 Key"}
+        className={cn("canvas-composer-model-picker h-8 w-fit max-w-full rounded-full border border-input bg-transparent px-3 text-sm font-normal shadow-sm", fullWidth ? "w-full" : "min-w-[9rem]", className)} />;
 
     return (
         <Select
@@ -86,16 +93,6 @@ export function ModelPicker({ config, value, onChange, options: fixedOptions, cl
                 onPointerDown={(event) => event.stopPropagation()}
                 onMouseDown={(event) => event.stopPropagation()}
             >
-                {isVideo && (
-                    <div className="border-b border-border/60 p-2">
-                        <button type="button" className="w-full rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50" disabled={videoModels.isFetching || !config.videoApiKey.trim()} onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            void videoModels.refetch();
-                        }}>{videoModels.isFetching ? "获取中…" : "获取模型"}</button>
-                        {!config.videoApiKey.trim() ? <p className="mt-2 text-xs text-muted-foreground">请在设置中查看视频 Key 状态，或登录账号</p> : videoModels.isError ? <p role="alert" className="mt-2 text-xs text-red-500">{videoModels.error.message}</p> : null}
-                    </div>
-                )}
                 {options.length ? (
                     options.map((item) => (
                         <SelectItem key={item.value} value={item.value} textValue={item.label}>

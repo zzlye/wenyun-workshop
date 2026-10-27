@@ -1042,7 +1042,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                             <CanvasVideoSettingsPopover config={config} media={{ imageCount: mentionableReferences.length, videoCount: connectedReferenceVideos.length, audioCount: connectedReferenceAudios.length }} buttonClassName="canvas-node-control !max-w-[170px] !shrink-0 !justify-start !px-2.5" onConfigChange={(key, value) => onConfigChange(node.id, key === "videoSeconds" ? { seconds: String(value) } : { [key]: value })} />
                         </>
                     ) : (
-                        <ModelPicker config={config} value={config.model} options={modelOptions} className="canvas-node-control !min-w-[9rem] !max-w-[280px] shrink-0" onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
+                        <ModelPicker modelType="text" config={config} value={config.model} options={modelOptions} className="canvas-node-control !min-w-[9rem] !max-w-[280px] shrink-0" onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
                     )}
                 </div>
                 <Button type="primary" className="!h-10 !min-w-16 shrink-0 !rounded-full !px-3" disabled={isRunning || !canSubmitPrompt} onClick={submit} aria-label="生成">

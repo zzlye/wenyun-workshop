@@ -4,5 +4,10 @@ import type { NewApiAccountSession } from '../types'
 export const VIDEO_ACCOUNT_GROUP = '视频'
 
 export function getBoundVideoApiKey(session?: NewApiAccountSession | null): string {
+  if (hasBoundMediaApiKey(session)) return session!.boundApiKey!.trim()
   return session?.boundVideoApiKeyGroup === VIDEO_ACCOUNT_GROUP ? session.boundVideoApiKey?.trim() ?? '' : ''
+}
+
+export function hasBoundMediaApiKey(session?: NewApiAccountSession | null): boolean {
+  return session?.boundApiKeyPurpose === 'media' && Boolean(session.boundApiKey?.trim())
 }

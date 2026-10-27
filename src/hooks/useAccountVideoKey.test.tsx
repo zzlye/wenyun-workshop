@@ -23,6 +23,7 @@ let host: HTMLDivElement
 let root: Root
 let client: QueryClient
 const session = { siteProfileId: LOCKED_WENYUN_PROFILE_ID, username: 'demo', userId: 2, accessToken: 'manager', boundApiKey: 'image-key' }
+const mediaToken = { id: 9, name: '默认生图和视频 Key', purpose: 'media', is_default: true, status: 1, expired_time: -1, key: 'video-key' }
 const response = (data: unknown) => new Response(JSON.stringify({ success: true, data }))
 
 function Probe() {
@@ -66,13 +67,12 @@ describe('账号视频凭据自动补齐', () => {
         if (++refreshes === 1) return new Response(JSON.stringify({ success: false, message: '服务暂不可用' }), { status: 503 })
         return response({ access_token: 'renewed-manager', session: { sid: 'old-session' } })
       }
-      if (url.endsWith('/self/groups')) {
+      if (url.includes('/api/token/?')) {
         if ((init?.headers as Record<string, string>).Authorization === 'Bearer manager') {
           return new Response(JSON.stringify({ success: false, message: 'Access token invalid' }), { status: 401 })
         }
-        return response({ 视频: {} })
+        return response({ items: [mediaToken] })
       }
-      if (url.includes('/api/token/?')) return response({ items: [{ id: 9, name: 'wy-video-old', group: '视频', unlimited_quota: true, key: 'video-key' }] })
       if (url.endsWith('/models')) return response([{ id: 'wan' }])
       throw new Error('意外请求：' + url)
     })
@@ -81,7 +81,7 @@ describe('账号视频凭据自动补齐', () => {
     await settle()
     expect(refreshes).toBe(2)
     expect(useStore.getState().settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]).toMatchObject({
-      accessToken: 'renewed-manager', boundApiKey: 'image-key', boundVideoApiKey: 'video-key', boundVideoApiKeyGroup: '视频',
+      accessToken: 'renewed-manager', boundApiKey: 'video-key', boundApiKeyPurpose: 'media', boundVideoApiKey: 'video-key', boundVideoApiKeyGroup: 'auto',
     })
   })
 
@@ -100,11 +100,10 @@ describe('账号视频凭据自动补齐', () => {
     let attempts = 0
     vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
       const url = String(input)
-      if (url.endsWith('/self/groups')) {
+      if (url.includes('/api/token/?')) {
         if (++attempts === 1) throw new TypeError('Failed to fetch')
-        return response({ 视频: {} })
+        return response({ items: [mediaToken] })
       }
-      if (url.includes('/api/token/?')) return response({ items: [{ id: 9, name: 'wy-video-old', group: '视频', unlimited_quota: true, key: 'video-key' }] })
       if (url.endsWith('/models')) return response([{ id: 'wan' }])
       throw new Error('意外请求：' + url)
     })
@@ -121,12 +120,11 @@ describe('账号视频凭据自动补齐', () => {
     let attempts = 0
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
       const url = String(input)
-      if (url.endsWith('/self/groups')) {
+      if (url.includes('/api/token/?')) {
         attempts++
         if (!available) return new Response(JSON.stringify({ success: false, message: '服务暂不可用' }), { status: 503 })
-        return response({ 视频: {} })
+        return response({ items: [mediaToken] })
       }
-      if (url.includes('/api/token/?')) return response({ items: [{ id: 9, name: 'wy-video-old', group: '视频', unlimited_quota: true, key: 'video-key' }] })
       if (url.endsWith('/models')) return response([{ id: 'wan' }])
       throw new Error('意外请求：' + url)
     })
@@ -147,22 +145,21 @@ describe('账号视频凭据自动补齐', () => {
     let created: Record<string, unknown> | null = null
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
-      if (url.endsWith('/self/groups')) return response({ 视频: {} })
       if (url.includes('/api/token/?')) return response({ items: created ? [{ ...created, id: 9, status: 1, key: 'vid***key' }] : [] })
       if (url.endsWith('/api/token/')) { created = JSON.parse(String(init?.body)); return response(null) }
       if (url.endsWith('/9/key')) return response({ key: 'video-key' })
       if (url.endsWith('/models')) {
         expect(init?.headers).toMatchObject({ Authorization: 'Bearer video-key' })
-        return response([{ id: 'wan' }, { id: 'sd' }])
+        return response([{ id: 'wan' }, { id: 'sd2.5-720p' }])
       }
       throw new Error('意外请求：' + url)
     })
     await render()
     await settle()
     await settle()
-    expect(useStore.getState().settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]).toMatchObject({ boundApiKey: 'image-key', boundVideoApiKey: 'video-key', boundVideoApiKeyGroup: '视频' })
+    expect(useStore.getState().settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]).toMatchObject({ boundApiKey: 'video-key', boundApiKeyPurpose: 'media', boundVideoApiKey: 'video-key', boundVideoApiKeyGroup: 'auto' })
     expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/token/'))).toHaveLength(1)
-    expect(host.textContent).toContain('sd,wan')
+    expect(host.textContent).toContain('sd2.5-720p,wan')
     await act(async () => useStore.getState().setSettings({ newApiAccountSessions: {} }))
     expect(host.textContent).not.toContain('video-key')
     expect(host.textContent).not.toContain('wan')
@@ -172,13 +169,12 @@ describe('账号视频凭据自动补齐', () => {
     let resolveGroups!: (response: Response) => void
     const groups = new Promise<Response>(resolve => { resolveGroups = resolve })
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
-      if (String(input).endsWith('/self/groups')) return groups
-      if (String(input).includes('/api/token/?')) return response({ items: [{ id: 9, name: 'wy-video-old', group: '视频', unlimited_quota: true, key: 'video-key' }] })
+      if (String(input).includes('/api/token/?')) return groups
       throw new Error('意外请求')
     })
     await render()
     await act(async () => useStore.getState().setSettings({ newApiAccountSessions: {} }))
-    await act(async () => resolveGroups(response({ 视频: {} })))
+    await act(async () => resolveGroups(response({ items: [mediaToken] })))
     await settle()
     expect(useStore.getState().settings.newApiAccountSessions).toEqual({})
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/models'))).toBe(false)
@@ -188,20 +184,19 @@ describe('账号视频凭据自动补齐', () => {
     let allowed = false
     vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
       const url = String(input)
-      if (url.endsWith('/self/groups')) return response(allowed ? { 视频: {} } : { default: {} })
-      if (url.includes('/api/token/?')) return response({ items: [{ id: 9, name: 'wy-video-old', group: '视频', unlimited_quota: true, key: 'video-key' }] })
+      if (url.includes('/api/token/?')) return response({ items: [{ ...mediaToken, status: allowed ? 1 : 2 }] })
       if (url.endsWith('/models')) return response([{ id: 'wan' }])
       throw new Error('意外请求')
     })
     await render()
     await settle()
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain('未开通视频分组')
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('已停用或过期')
     expect(useStore.getState().settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID].boundApiKey).toBe('image-key')
     allowed = true
     await act(async () => host.querySelector('button')!.click())
     await settle()
     await settle()
     expect(host.textContent).toContain('video-key')
-    expect(host.textContent).not.toContain('未开通视频分组')
+    expect(host.textContent).not.toContain('已停用或过期')
   })
 })

@@ -57,12 +57,12 @@ describe('失效会话续期节流', () => {
   })
 })
 
-describe('独立账号视频Key', () => {
+describe('账号媒体专用Key', () => {
   const session = { siteProfileId: 'wenyun-site', username: 'demo', userId: 2, accessToken: 'manager', boundApiKey: 'image-key', boundApiKeyId: 1 }
-  const token = { id: 23, name: 'wy-video-existing', group: '视频', status: 1, expired_time: -1, unlimited_quota: true, key: 'vid***key' }
+  const token = { id: 23, name: 'wy-bound-existing', purpose: 'media', group: 'auto', status: 1, expired_time: -1, unlimited_quota: true, key: 'vid***key' }
   const response = (data: unknown) => new Response(JSON.stringify({ success: true, data }))
 
-  it('并发为老账号只创建一把固定视频分组Key，读回完整Key且不改图片凭据', async () => {
+  it('并发只创建一把媒体Key，图片和视频复用完整凭据', async () => {
     let created: Record<string, unknown> | null = null
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
@@ -77,20 +77,20 @@ describe('独立账号视频Key', () => {
     })
     const [a, b] = await Promise.all([ensureNewApiVideoBoundKey(DEFAULT_SETTINGS.profiles[0], session), ensureNewApiVideoBoundKey(DEFAULT_SETTINGS.profiles[0], session)])
     expect(a).toEqual(b)
-    expect(a).toMatchObject({ boundApiKey: 'image-key', boundApiKeyId: 1, boundVideoApiKey: 'video-full-key', boundVideoApiKeyId: 23, boundVideoApiKeyGroup: '视频' })
-    expect(created).toMatchObject({ group: '视频', unlimited_quota: true, expired_time: -1, cross_group_retry: false, model_limits_enabled: false })
+    expect(a).toMatchObject({ boundApiKey: 'video-full-key', boundApiKeyPurpose: 'media', boundApiKeyId: 23, boundVideoApiKey: 'video-full-key', boundVideoApiKeyId: 23, boundVideoApiKeyGroup: 'auto' })
+    expect(created).toMatchObject({ purpose: 'media', unlimited_quota: true, expired_time: -1 })
     expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith('/api/token/') && init?.method === 'POST')).toHaveLength(1)
     const count = fetchMock.mock.calls.length
     await expect(ensureNewApiVideoBoundKey(DEFAULT_SETTINGS.profiles[0], a)).resolves.toEqual(a)
     expect(fetchMock).toHaveBeenCalledTimes(count)
   })
 
-  it('跨页寻找已存在的视频Key，跳过其他分组、停用和限制模型的令牌', async () => {
+  it('跨页寻找已存在的媒体Key，跳过旧类型和停用令牌', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
       const url = String(input)
       if (url.endsWith('/api/user/self/groups')) return response({ 视频: {} })
       if (url.includes('p=1&')) return response({ items: [
-        { ...token, id: 24, group: 'default' }, { ...token, id: 25, status: 2 }, { ...token, id: 26, expired_time: 1 }, { ...token, id: 27, model_limits_enabled: true },
+        { ...token, id: 24, purpose: '', group: 'default' }, { ...token, id: 25, status: 2 }, { ...token, id: 26, expired_time: 1 }, { ...token, id: 27, model_limits_enabled: true },
       ], total: 5 })
       if (url.includes('p=2&')) return response({ items: [token], total: 5 })
       if (url.endsWith('/23/key')) return response({ key: 'reused-key' })
@@ -100,10 +100,10 @@ describe('独立账号视频Key', () => {
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
   })
 
-  it('没有视频权限时明确失败，不创建Key、不请求默认组', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({ default: {} }))
-    await expect(ensureNewApiVideoBoundKey(DEFAULT_SETTINGS.profiles[0], session)).rejects.toThrow('当前账号未开通视频分组')
-    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('/api/user/self/groups'), expect.objectContaining({ method: 'GET' }))
+  it('默认媒体Key停用时明确失败，不创建替代Key', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({ items: [{ ...token, is_default: true, status: 2 }] }))
+    await expect(ensureNewApiVideoBoundKey(DEFAULT_SETTINGS.profiles[0], session)).rejects.toThrow('已停用或过期')
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('&purpose=media'), expect.objectContaining({ method: 'GET' }))
   })
 
   it('创建结果读回中断后重试会复用已创建Key，不再创建', async () => {
@@ -126,11 +126,11 @@ describe('独立账号视频Key', () => {
     expect(posts).toBe(1)
   })
 
-  it('图片绑定不选择视频令牌', async () => {
+  it('图片绑定跳过普通令牌，复用媒体令牌', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({ items: [
       { id: 1, name: 'wy-bound-old', key: 'image-key' }, { ...token, key: 'video-key' },
     ] }))
-    await expect(ensureNewApiBoundKey(DEFAULT_SETTINGS.profiles[0], { ...session, boundApiKey: undefined })).resolves.toMatchObject({ boundApiKey: 'image-key', boundApiKeyId: 1 })
+    await expect(ensureNewApiBoundKey(DEFAULT_SETTINGS.profiles[0], { ...session, boundApiKey: undefined })).resolves.toMatchObject({ boundApiKey: 'video-key', boundApiKeyPurpose: 'media', boundApiKeyId: 23 })
   })
 })
 
@@ -168,7 +168,7 @@ describe('readAccessToken', () => {
               {
                 id: 8,
                 name: '文运工坊绑定 Key-1-1782934992',
-                key: 'abcd**********wxyz',
+                key: 'abcd**********wxyz', purpose: 'media', status: 1, expired_time: -1, is_default: true,
               },
             ],
           },
@@ -268,7 +268,7 @@ describe('readAccessToken', () => {
           data: {
             items: [{
               id: 18,
-              name: 'wy-bound-existing',
+              name: 'wy-bound-existing', purpose: 'media', status: 1, expired_time: -1, is_default: true,
               key: 'persistent-bound-api-key',
             }],
           },

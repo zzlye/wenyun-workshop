@@ -4,6 +4,15 @@ import { getEffectiveImageApiProfile, getEffectiveVideoApiKey, validateEffective
 import { DEFAULT_SETTINGS, LOCKED_WENYUN_PROFILE_ID, normalizeSettings } from './apiProfiles'
 
 describe('getEffectiveImageApiProfile', () => {
+  it('媒体专用Key经设置持久化后同时用于图片和视频，不使用旧视频Key', () => {
+    const settings = normalizeSettings({ ...DEFAULT_SETTINGS, accountApiKeyMode: 'account', newApiAccountSessions: {
+      [LOCKED_WENYUN_PROFILE_ID]: { siteProfileId: LOCKED_WENYUN_PROFILE_ID, username: 'demo', accessToken: 'manager',
+        boundApiKey: 'media-key', boundApiKeyPurpose: 'media', boundVideoApiKey: 'old-video', boundVideoApiKeyGroup: '视频' },
+    } })
+    expect(settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID].boundApiKeyPurpose).toBe('media')
+    expect(getEffectiveImageApiProfile(settings).apiKey).toBe('media-key')
+    expect(getEffectiveVideoApiKey(settings)).toBe('media-key')
+  })
   it('老账号没有视频凭据或绑定了其他分组时不回退到图片Key和手填Key', () => {
     for (const group of [undefined, 'default', 'auto']) {
       const settings = normalizeSettings({ ...DEFAULT_SETTINGS, accountApiKeyMode: 'account', videoApiKey: 'manual-key',

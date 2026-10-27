@@ -1,21 +1,8 @@
-import { buildApiUrl, readClientDevProxyConfig, shouldUseApiProxyForBaseUrl } from './devProxy'
-import { parseModelListPayload } from './modelList'
+import { fetchMediaModelCatalog } from './mediaModels'
 import { CANVAS_VIDEO_BASE_URL } from './videoModel'
 
-// 获取模型与视频生成使用同一站点、视频密钥和代理规则，不混用生图密钥。
+// 媒体专用 Key 同时可见多种模型，视频入口只接收视频目录。
 export async function fetchVideoModelList(apiKey: string, apiProxy: boolean, signal?: AbortSignal): Promise<string[]> {
-  const key = apiKey.trim()
-  if (!key) throw new Error('视频 Key 尚未就绪，请在设置中查看或登录账号')
-  const proxyConfig = readClientDevProxyConfig()
-  const useProxy = shouldUseApiProxyForBaseUrl(apiProxy, CANVAS_VIDEO_BASE_URL, proxyConfig)
-  const response = await fetch(buildApiUrl(CANVAS_VIDEO_BASE_URL, '/models', proxyConfig, useProxy), {
-    headers: { Authorization: `Bearer ${key}` },
-    cache: 'no-store',
-    signal,
-  })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) throw new Error(`获取视频模型失败：${response.status}`)
-  const models = parseModelListPayload(payload)
-  if (!models.length) throw new Error('接口没有返回模型列表')
-  return models
+  if (!apiKey.trim()) throw new Error('视频 Key 尚未就绪，请在设置中查看或登录账号')
+  return (await fetchMediaModelCatalog(CANVAS_VIDEO_BASE_URL, apiKey, apiProxy, signal)).videos.map(item => item.value)
 }

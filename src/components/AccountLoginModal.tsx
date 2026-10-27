@@ -154,14 +154,22 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
     // 后台余额、充值或刷新响应不恢复已退出的账号，也不覆盖刚切换的账号。
     if (session && preserveVideoKey && (!previousSession || previousSession.userId !== session.userId || previousSession.username !== session.username)) return
     if (session) {
-      // 同一会话的余额和图片 Key 更新可能晚于视频绑定完成，保留较新的独立视频凭据。
+      // 余额响应可能晚于密钥迁移完成，合并时保留当前账号较新的凭据。
       const sameAccount = preserveVideoKey && previousSession?.userId === session.userId && previousSession?.username === session.username
+      // 旧余额响应不能回滚已迁移的专用密钥，也不能覆盖刚刷新得到的新密钥。
+      if (sameAccount && previousSession?.boundApiKeyPurpose === 'media'
+        && (session.boundApiKeyPurpose !== 'media' || (previousSession.lastKeyRefreshAt ?? 0) > (session.lastKeyRefreshAt ?? 0))) {
+        session = { ...session, boundApiKeyPurpose: 'media', boundApiKey: previousSession.boundApiKey,
+          boundApiKeyId: previousSession.boundApiKeyId, boundApiKeyName: previousSession.boundApiKeyName,
+          boundVideoApiKey: previousSession.boundApiKey, boundVideoApiKeyId: previousSession.boundApiKeyId,
+          boundVideoApiKeyName: previousSession.boundApiKeyName, boundVideoApiKeyGroup: 'auto' }
+      }
       nextSessions[LOCKED_WENYUN_PROFILE_ID] = {
         ...session,
-        boundVideoApiKey: sameAccount ? previousSession?.boundVideoApiKey ?? session.boundVideoApiKey : session.boundVideoApiKey,
-        boundVideoApiKeyId: sameAccount ? previousSession?.boundVideoApiKeyId ?? session.boundVideoApiKeyId : session.boundVideoApiKeyId,
-        boundVideoApiKeyName: sameAccount ? previousSession?.boundVideoApiKeyName ?? session.boundVideoApiKeyName : session.boundVideoApiKeyName,
-        boundVideoApiKeyGroup: sameAccount ? previousSession?.boundVideoApiKeyGroup ?? session.boundVideoApiKeyGroup : session.boundVideoApiKeyGroup,
+        boundVideoApiKey: sameAccount && session.boundApiKeyPurpose !== 'media' ? previousSession?.boundVideoApiKey ?? session.boundVideoApiKey : session.boundVideoApiKey,
+        boundVideoApiKeyId: sameAccount && session.boundApiKeyPurpose !== 'media' ? previousSession?.boundVideoApiKeyId ?? session.boundVideoApiKeyId : session.boundVideoApiKeyId,
+        boundVideoApiKeyName: sameAccount && session.boundApiKeyPurpose !== 'media' ? previousSession?.boundVideoApiKeyName ?? session.boundVideoApiKeyName : session.boundVideoApiKeyName,
+        boundVideoApiKeyGroup: sameAccount && session.boundApiKeyPurpose !== 'media' ? previousSession?.boundVideoApiKeyGroup ?? session.boundVideoApiKeyGroup : session.boundVideoApiKeyGroup,
         siteProfileId: LOCKED_WENYUN_PROFILE_ID,
         lastKeyRefreshAt: session.lastKeyRefreshAt ?? previousSession?.lastKeyRefreshAt,
         registrationInviteCode: session.registrationInviteCode ?? previousSession?.registrationInviteCode,

@@ -121,7 +121,7 @@ export function AppConfigModal() {
                             <ModelPicker config={modelConfig} value={normalizeCanvasVideoModel(modelConfig.videoModel)} modelType="video" onChange={(model) => updateConfig("videoModel", normalizeCanvasVideoModel(model))} fullWidth />
                         </Form.Item>
                         <Form.Item label="默认文本模型" className="mb-4">
-                            <ModelPicker config={modelConfig} value={modelConfig.textModel} onChange={(model) => updateConfig("textModel", model)} fullWidth />
+                            <ModelPicker config={modelConfig} modelType="text" value={modelConfig.textModel} onChange={(model) => updateConfig("textModel", model)} fullWidth />
                         </Form.Item>
                     </div>
                     {effectiveMode === "local" ? (
