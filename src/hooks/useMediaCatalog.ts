@@ -44,13 +44,16 @@ export function useMediaCatalog(baseUrl: string, apiKey: string, apiProxy: boole
     queryFn: ({ signal }) => fetchMediaGroupDescriptions(baseUrl, signal),
     staleTime: 300000, gcTime: 600000, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
   })
-  const data = useMemo(() => !needsMigration && models.data && metadata
-    ? applyMediaCatalogMetadata(models.data, { ...metadata, group_description: { ...descriptions.data, ...metadata.group_description } })
-    : undefined, [models.data, metadata, descriptions.data, needsMigration])
+  const data = useMemo(() => {
+    if (needsMigration || !models.data) return undefined
+    // 普通 Key 的标准模型目录没有分组扩展，仍保留它已获授权的模型；不借用其他账号报价。
+    return metadata
+      ? applyMediaCatalogMetadata(models.data, { ...metadata, group_description: { ...descriptions.data, ...metadata.group_description } })
+      : models.data
+  }, [models.data, metadata, descriptions.data, needsMigration])
   const isFetching = models.isFetching || fallback.isFetching || (needsDescriptions && descriptions.isFetching) || needsMigration && migration.isFetching
-  const missingGroups = Boolean(apiKey.trim() && models.isSuccess && !metadata && !isFetching && !needsMigration)
   return { data, metadataReady: Boolean(metadata), isFetching,
-    error: needsMigration ? migration.error : models.error ?? (models.data?.metadata ? null : fallback.error) ?? (missingGroups ? new Error('此 Key 暂未返回可用分组，请登录账号或刷新重试') : null),
+    error: needsMigration ? migration.error : models.error ?? (models.data?.metadata ? null : fallback.error),
     descriptionError: needsDescriptions && descriptions.isError ? new Error('分组说明暂时加载失败，模型和计费不受影响') : null,
     updatedAt: Math.max(models.dataUpdatedAt, fallback.dataUpdatedAt),
     refetch: async () => {

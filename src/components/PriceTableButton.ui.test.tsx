@@ -58,6 +58,23 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); client.clear(); host.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('真实分类与倍率模型列表', () => {
+  it('普通自定义Key无需登录即可显示授权图片与视频，不虚构分组或报价', async () => {
+    fixture.embeddedCatalog = false
+    await open()
+    expect(panel().textContent).toContain('gpt-image-2')
+    expect(panel().textContent).toContain('官-gpt-image-2.5-flare')
+    expect(panel().textContent).toContain('暂无价格')
+    expect(panel().querySelector('[role="alert"]')).toBeNull()
+    expect(panel().textContent).not.toContain('HUHN')
+    await click(button('视频'))
+    expect(panel().textContent).toContain('sd2.5-720p')
+    expect(panel().textContent).not.toContain('gpt-image')
+    expect(requests.every(request => request.url.endsWith('/models'))).toBe(true)
+    expect(requests[0].headers).toMatchObject({ Authorization: 'Bearer media-key' })
+    expect(fetchNewApiAccountModelCatalog).not.toHaveBeenCalled()
+    expect(requestNewApiAccountResource).not.toHaveBeenCalled()
+    expect(fixture.setSettings).not.toHaveBeenCalled()
+  })
   it('图片显示实际分类、倍率、含倍率按次价格及Token分项价格', async () => {
     await open()
     expect(panel().textContent).toContain('adobe-image图像创作分组4 倍')
@@ -118,8 +135,9 @@ describe('真实分类与倍率模型列表', () => {
     await render(); await settle()
     expect(panel().textContent).not.toContain('HUHN 0.06 / 次')
     expect(panel().textContent).not.toContain('账号分组')
-    expect(panel().textContent).toContain('此 Key 暂未返回可用分组')
-    expect(panel().textContent).not.toContain('GPT Image')
+    expect(panel().querySelector('[role="alert"]')).toBeNull()
+    expect(panel().textContent).toContain('gpt-image-2')
+    expect(panel().textContent).toContain('暂无价格')
     expect(fetchNewApiAccountModelCatalog).toHaveBeenCalledTimes(1)
   })
   it('换Key后不沿用上一把Key的倍率与报价', async () => {

@@ -24,6 +24,8 @@ export default function GroupedModelSelect({ value, options, onChange, className
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const id = useId()
   const categories = groupMediaModels(options)
+  // 无分组的标准模型直接展示，不能伪造分类，也不能因缺少媒体扩展而隐藏有效模型。
+  const ungrouped = options.filter(model => !model.group)
   const title = options.find(item => item.value === value)?.label || value || '选择模型'
   const currentCategory = categories.find(category => category.label === activeCategory)
   useEffect(() => {
@@ -65,8 +67,9 @@ export default function GroupedModelSelect({ value, options, onChange, className
         style={{ maxHeight: 'min(28rem, var(--radix-dropdown-menu-content-available-height))' }}
         onPointerDown={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()} onWheel={event => event.stopPropagation()}>
         {error && <div role="alert" className="max-w-72 px-3 py-2 text-red-500">{error}</div>}
-        {!categories.length ? <div className="px-3 py-2 text-gray-500">{loading ? '正在获取模型…' : emptyText}</div>
-          : compact ? currentCategory ? <>
+        {!categories.length && !ungrouped.length && <div className="px-3 py-2 text-gray-500">{loading ? '正在获取模型…' : emptyText}</div>}
+        {(!compact || !currentCategory) && renderModels(ungrouped)}
+        {categories.length > 0 && (compact ? currentCategory ? <>
             {/* 窄屏在同一个浮层内逐级选择，避免侧边子菜单超出屏幕。 */}
             <DropdownMenu.Item className={itemClass} onSelect={event => { event.preventDefault(); setActiveCategory(null) }}>
               <ChevronLeft size={13} /><span>返回分类</span>
@@ -87,7 +90,7 @@ export default function GroupedModelSelect({ value, options, onChange, className
                 {renderModels(category.models)}
               </DropdownMenu.SubContent>
             </DropdownMenu.Portal>
-          </DropdownMenu.Sub>)}
+          </DropdownMenu.Sub>))}
         {onRefresh && <><DropdownMenu.Separator className="my-1 h-px bg-gray-100 dark:bg-gray-700" /><DropdownMenu.Item disabled={loading} className={`${itemClass} text-gray-500`} onSelect={event => { event.preventDefault(); void onRefresh() }}><RefreshCw size={12} className={loading ? 'animate-spin' : ''} />{loading ? '正在刷新…' : '刷新分组'}</DropdownMenu.Item></>}
       </DropdownMenu.Content>
     </DropdownMenu.Portal>
