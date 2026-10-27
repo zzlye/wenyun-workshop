@@ -529,11 +529,12 @@ it('画布图片恢复边界回归：任务已提交后不再读取素材或使�
 describe("画布官方输出参数", () => {
     const initialSettings = useStore.getState().settings;
     afterEach(() => { useStore.setState({ settings: initialSettings }); vi.restoreAllMocks(); vi.unstubAllEnvs(); });
-    it.each(["gpt-image-2", "AZ-gpt-image-2.5-flara"])("%s 保留自动尺寸、格式、零压缩和审核，原样路由", async model => {
+    it.each(["gpt-image-2", "AZ-gpt-image-2.5-flare", "官-gpt-image-2.5-sunburst"])("%s 保留自动尺寸、格式、零压缩和审核，原样路由", async model => {
         vi.stubEnv("VITE_IMAGE_TASKS_AVAILABLE", "disabled");
         const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ data: [{ b64_json: "ZmluYWw=" }] })));
         useStore.setState({ settings: { ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, model, apiKey: "fixture" })) } });
         await requestGeneration({ ...defaultConfig, model, imageModel: model, quality: model.includes("2.5") ? "max" : "high", size: "auto", imageBackground: "transparent", imageOutputFormat: "webp", imageOutputCompression: "0", imageModeration: "low" }, "测试参数");
-        expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ model, size: "auto", background: "transparent", output_format: "webp", output_compression: 0, moderation: "low", response_format: "url", quality: model.includes("2.5") ? "max" : "high" });
+        expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ model, size: "auto", background: "transparent", output_format: "webp", output_compression: 0, moderation: "low", quality: model.includes("2.5") ? "max" : "high" });
+        expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).response_format).toBe(model === "gpt-image-2" ? "url" : undefined);
     });
 });

@@ -31,7 +31,7 @@ describe('西米露 URL 结果传输', () => {
       const url = String(input)
       if (url.startsWith('/image-tasks?')) {
         const body = edit && !gemini ? Object.fromEntries((init?.body as FormData).entries()) : JSON.parse(String(init?.body))
-        expect(body.response_format).toBe('url')
+        expect(body.response_format).toBe(/^(AZ-|官-)/.test(model) ? undefined : 'url')
         if (gemini) {
           expect(body.generationConfig.imageConfig).toMatchObject({ imageSize: '4K', aspectRatio: '1:1' })
           if (edit) expect(body.contents[0].parts[1].inlineData.data).toBe('cmVm')
@@ -58,6 +58,30 @@ describe('西米露 URL 结果传输', () => {
     expect(result.rawImageUrls).toEqual([imageUrl])
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
     expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/task-media/'))).toHaveLength(1)
+  })
+
+  it.each(['官-gpt-image-2.5-sunburst', 'AZ-gpt-image-2.5-flare', 'provider/gpt-image-2.5-sunburst', 'gpt-image-3'].flatMap(model =>
+    [false, true].flatMap(asyncTask => [false, true].map(edit => ({ model, asyncTask, edit }))),
+  ))('$model 官方协议 async=$asyncTask edit=$edit 不带旧参数且只生成一次', async ({ model, asyncTask, edit }) => {
+    vi.stubEnv('VITE_IMAGE_TASKS_AVAILABLE', asyncTask ? 'enabled' : 'disabled')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (init?.method === 'POST') {
+        const body = edit ? Object.fromEntries((init.body as FormData).entries()) : JSON.parse(String(init.body))
+        // 模拟线上官渠：任何 response_format 值都会被拒绝，不能通过换成 b64_json 规避。
+        if ('response_format' in body) return Response.json({ error: { message: "Unknown parameter: 'response_format'." } }, { status: 400 })
+        expect(body).toMatchObject({ model, quality: 'high', background: 'transparent', output_format: 'webp', moderation: 'low' })
+        if (edit) expect(body.image).toBeInstanceOf(Blob)
+        return asyncTask
+          ? Response.json({ taskId: 'official-fixture', accessToken: 'fixture-token', status: 'pending' }, { status: 202 })
+          : Response.json({ data: [{ b64_json: 'cmVm' }], output_format: 'webp' })
+      }
+      if (String(input) === '/image-tasks/official-fixture') return Response.json({ status: 'succeeded' })
+      if (String(input).endsWith('/official-fixture/result')) return Response.json({ data: [{ b64_json: 'cmVm' }], output_format: 'webp' })
+      throw Error('未声明的测试请求：' + String(input))
+    })
+    const result = await callImageApi({ settings: settingsFor(model), prompt: '官方参数', params: { ...DEFAULT_PARAMS, quality: 'high', background: 'transparent', output_format: 'webp', moderation: 'low' }, inputImageDataUrls: edit ? [reference] : [] })
+    expect(result.images).toEqual(['data:image/webp;base64,cmVm'])
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
   })
 
   it('香蕉多图保留每张图的原始链接', async () => {

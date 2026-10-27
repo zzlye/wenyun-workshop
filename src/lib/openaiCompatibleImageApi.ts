@@ -5,7 +5,7 @@ import { buildApiUrl, getLockedNewApiProxyPrefix, isLockedApiProxyTarget, readCl
 import { fetchImageTask, hasImageTaskCredentials, shouldUseImageTasks } from './imageTasks'
 import { fetchResultResponse, ResultReadTimeoutError } from './resultRequest'
 import { formatImageRatio, normalizeImageSize, parseRatio } from './size'
-import { isGptImageModel, normalizeImageBackground, normalizeImageQuality, supportsTransparentImageBackground } from './modelPricing'
+import { normalizeImageBackground, normalizeImageQuality, supportsTransparentImageBackground } from './modelPricing'
 import { findBananaSizePreset, resolveBananaSizePreset } from './bananaImageSize'
 import { isMidjourneyModel } from './midjourney'
 import { callMidjourneyImageApi } from './midjourneyImageApi'
@@ -39,11 +39,20 @@ function shouldRequestImageStream(): boolean {
   return false
 }
 
+// URL 返回是既有站点渠道的扩展能力，与官方模型参数、价格目录分开维护。
+// 新增渠道默认遵循官方协议，不能仅凭名称包含 GPT Image 就发送 response_format。
+const LEGACY_IMAGE_URL_ROUTES = new Set([
+  'gpt-image-2', 'gpt-image-2-4k',
+  'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst',
+  'gpt-image-2.5-flare-4k', 'gpt-image-2.5-sunburst-4k',
+  'gpt-image-2.5-flare-满血', 'gpt-image-2.5-sunburst-满血',
+  'gpt-image-2.5-flare-官渠', 'gpt-image-2.5-sunburst-官渠',
+])
+
 function shouldRequestImageUrl(profile: ApiProfile): boolean {
-  // 西米露网关支持图片链接；自定义直连仍遵循各自协议，避免发送官方不接受的扩展字段。
-  // 渠道前缀只参与路由，不能让同一图片模型退回大体积的 Base64 结果。
+  // 自定义直连不注入扩展；香蕉扩展由本站网关处理，不会转发到官方接口。
   return getLockedNewApiProxyPrefix(profile.baseUrl) === '/newapi-proxy/wenyun'
-    && (isGptImageModel(profile.model) || isBananaImageModel(profile.model))
+    && (LEGACY_IMAGE_URL_ROUTES.has(getFixedImageRequestModel(profile.model).toLowerCase()) || isBananaImageModel(profile.model))
 }
 
 function getBananaImageSize(size: string, model: string): '512' | '1K' | '2K' | '4K' {
