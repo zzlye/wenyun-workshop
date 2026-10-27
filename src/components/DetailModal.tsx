@@ -11,6 +11,7 @@ import { dismissAllTooltips } from '../lib/tooltipDismiss'
 import { downloadImageIds } from '../lib/downloadImages'
 import { isAgentTaskPromptPending } from '../lib/taskPromptDisplay'
 import { getSafeImageDisplayUrl } from '../lib/imageApiShared'
+import { isMidjourneyModel } from '../lib/midjourney'
 import { CloseIcon, CodeIcon, CopyIcon, DownloadIcon, EditIcon, LinkIcon, TrashIcon } from './icons'
 
 import ViewportTooltip from './ViewportTooltip'
@@ -852,6 +853,20 @@ export default function DetailModal() {
                 <br />
                 <DetailParamValue task={task} paramKey="size" className="font-medium" actualParams={currentActualParams} />
               </div>
+              {/* 品质读取历史任务与当前图片的响应值，不能借用现在的生成设置。 */}
+              {isMidjourneyModel(task.apiModel || '') ? task.params.midjourney?.quality != null && (
+                <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
+                  <span className="text-gray-400 dark:text-gray-500">品质</span>
+                  <br />
+                  <span className="font-medium text-gray-700 dark:text-gray-300">{task.params.midjourney.quality}</span>
+                </div>
+              ) : (currentActualParams?.quality ?? task.actualParams?.quality ?? task.params.quality) != null && (
+                <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
+                  <span className="text-gray-400 dark:text-gray-500">品质</span>
+                  <br />
+                  <DetailParamValue task={task} paramKey="quality" className="font-medium" actualParams={{ ...task.actualParams, ...currentActualParams }} />
+                </div>
+              )}
               {!isAgentTask && (
                 <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
                   <span className="text-gray-400 dark:text-gray-500">数量</span>
