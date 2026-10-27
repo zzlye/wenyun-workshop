@@ -7,11 +7,11 @@ import UsageLogsButton from './UsageLogsButton'
 import UsageLogsModal from './UsageLogsModal'
 import { DEFAULT_SETTINGS, LOCKED_WENYUN_PROFILE_ID } from '../lib/apiProfiles'
 import { useStore } from '../store'
-import { fetchAccountUsageLogs, type AccountUsageLog } from '../lib/newApiLogs'
+import { fetchAccountUsageLogs, fetchAccountUsageStats, fetchAccountLogGroups, type AccountUsageLog } from '../lib/newApiLogs'
 import { fetchNewApiSiteStatus } from '../lib/newApiAccount'
 
 vi.mock('../lib/newApiLogs', async importOriginal => ({
-  ...(await importOriginal<typeof import('../lib/newApiLogs')>()), fetchAccountUsageLogs: vi.fn(),
+  ...(await importOriginal<typeof import('../lib/newApiLogs')>()), fetchAccountUsageLogs: vi.fn(), fetchAccountUsageStats: vi.fn(), fetchAccountLogGroups: vi.fn(),
 }))
 vi.mock('../lib/newApiAccount', async importOriginal => ({
   ...(await importOriginal<typeof import('../lib/newApiAccount')>()),
@@ -38,6 +38,8 @@ async function click(label: string) { await act(async () => findButton(label).cl
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(fetchAccountUsageLogs).mockResolvedValue({ items: [log], total: 25 })
+  vi.mocked(fetchAccountUsageStats).mockResolvedValue({ quota: 4500000, rpm: 12, tpm: 24680 })
+  vi.mocked(fetchAccountLogGroups).mockResolvedValue(['图片官渠', 'adobe-image', '视频'])
   useStore.setState({ settings: { ...DEFAULT_SETTINGS, newApiAccountSessions: { [LOCKED_WENYUN_PROFILE_ID]: session } } })
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
@@ -72,7 +74,7 @@ it('分页与刷新只请求当前页，筛选草稿输入不立即查询', asyn
   await click('刷新')
   expect(vi.mocked(fetchAccountUsageLogs).mock.calls.at(-1)?.[3]).toBe(2)
   const before = vi.mocked(fetchAccountUsageLogs).mock.calls.length
-  const input = document.querySelector<HTMLInputElement>('input[placeholder="全部模型"]')!
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="模型"]')!
   await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '新模型'); input.dispatchEvent(new Event('input', { bubbles: true })) })
   expect(fetchAccountUsageLogs).toHaveBeenCalledTimes(before)
   await act(async () => document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
@@ -154,10 +156,48 @@ it('成功读取后等待两分钟和切回窗口都不后台轮询', async () =
   expect(fetchAccountUsageLogs).toHaveBeenCalledTimes(1)
 })
 
-it('空结果有明确提示，不把本页统计冒充全部日期汇总', async () => {
+it('空结果有明确提示，汇总由后端而非本页计算', async () => {
   vi.mocked(fetchAccountUsageLogs).mockResolvedValue({ items: [], total: 0 })
   await render()
   expect(document.body.textContent).toContain('暂无符合条件的日志')
-  expect(document.body.textContent).toContain('本页消费')
+  expect(document.body.textContent).toContain('HUHN 9')
+  expect(document.body.textContent).not.toContain('本页消费')
   expect(findButton('下一页').disabled).toBe(true)
+})
+
+it('分组是后台下拉，筛选可收起，上游请求编号可以查询', async () => {
+  await render()
+  expect(document.querySelector('select[aria-label="分组"]')?.textContent).toContain('adobe-image')
+  expect(document.querySelector('input[aria-label="上游请求 ID"]')).not.toBeNull()
+  await click('收起')
+  expect(document.querySelector('input[aria-label="上游请求 ID"]')).toBeNull()
+  await click('展开')
+  expect(document.querySelector('input[aria-label="上游请求 ID"]')).not.toBeNull()
+  await click('隐藏用量')
+  expect(document.body.textContent).not.toContain('HUHN 9')
+})
+
+it('翻页不重复聚合统计，改筛选才拉取新的汇总', async () => {
+  await render(); await settle()
+  expect(fetchAccountUsageStats).toHaveBeenCalledTimes(1)
+  expect(document.body.textContent).toContain('HUHN 9')
+  vi.useFakeTimers()
+  await act(async () => { await vi.advanceTimersByTimeAsync(120000) })
+  vi.useRealTimers()
+  await click('下一页')
+  expect(fetchAccountUsageStats).toHaveBeenCalledTimes(1)
+})
+
+it('列表未返回时筛选仍可修改，新条件请求替代旧条件', async () => {
+  let oldSignal: AbortSignal | undefined
+  vi.mocked(fetchAccountUsageLogs).mockImplementation((_p, _s, f, _page, _size, signal) => {
+    if (f.model === '立即查询') return Promise.resolve({ items: [], total: 0 })
+    oldSignal = signal; return new Promise(() => {})
+  })
+  await render()
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="模型"]')!
+  await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '立即查询'); input.dispatchEvent(new Event('input', { bubbles: true })) })
+  await click('搜索')
+  expect(oldSignal?.aborted).toBe(true)
+  expect(document.body.textContent).toContain('暂无符合条件的日志')
 })

@@ -7,6 +7,14 @@ const status = { quota_display_type: 'CUSTOM', custom_currency_symbol: 'HUHN', c
 const expression = 'tier("base", p * 5 + c * 10 + cr * 1.25 + img * 8 + img_o * 30 + img_cr * 2)'
 
 describe('媒体分类和实际倍率报价', () => {
+  it('同一模型属于多个授权组时，每个组都保留，不能只显示第一组', () => {
+    const metadata = parseMediaCatalogMetadata({ groups: ['1k-image', 'adobe-image', '官key-image'], group_ratio: { '1k-image': 1, 'adobe-image': 2, '官key-image': 4.6 }, status,
+      data: [{ model_name: 'gpt-image-2', quota_type: 1, model_price: .02, enable_groups: ['1k-image', 'adobe-image'] }, { model_name: '官-gpt-image-2', quota_type: 1, model_price: .1, enable_groups: ['官key-image'] }] })!
+    const result = applyMediaCatalogMetadata(parseMediaModelCatalog({ data: [{ id: 'gpt-image-2' }, { id: '官-gpt-image-2' }] }), metadata)
+    expect(groupMediaModels(result.images).map(group => group.label)).toEqual(['1k-image', 'adobe-image', '官key-image'])
+    expect(result.images.filter(item => item.value === 'gpt-image-2')).toHaveLength(2)
+    expect(result.images.find(item => item.group === 'adobe-image')?.ratio).toBe(2)
+  })
   it('动态渠道模型原样保存、原样提交，不替换成默认图片模型', () => {
     for (const model of ['AZ-gpt-image-2.5-flare', '官-gpt-image-2', '官-gpt-image-2.5-sunburst']) {
       expect(normalizeFixedImageModel(model)).toBe(model)

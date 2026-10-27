@@ -1769,6 +1769,8 @@ export default function InputBar() {
           value={activeProfile.model}
           onChange={(model) => setSettings({ model: String(model) })}
           options={modelOptions}
+          onRefresh={mediaModels.refetch}
+          updatedAt={mediaModels.updatedAt}
           loading={mediaModels.isFetching}
           error={mediaModels.error?.message}
           className="px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/[0.06] focus:outline-none text-xs transition-all duration-200 shadow-sm"

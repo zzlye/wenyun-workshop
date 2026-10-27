@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS } from './apiProfiles'
 import { requestNewApiAccountResource } from './newApiAccount'
-import { defaultUsageLogFilters, fetchAccountUsageLogs, parseAccountUsageLogs, usageLogsQuery, usageLogTime, usageLogType } from './newApiLogs'
+import { defaultUsageLogFilters, fetchAccountUsageStats, fetchAccountLogGroups, canQueryUsageStats, fetchAccountUsageLogs, parseAccountUsageLogs, usageLogsQuery, usageLogTime, usageLogType } from './newApiLogs'
 import { formatLotteryQuota } from './newApiLottery'
 
 vi.mock('./newApiAccount', () => ({ requestNewApiAccountResource: vi.fn() }))
@@ -12,6 +12,30 @@ const raw = { id: 12, created_at: 1793073600, type: 2, content: '<img src=x oner
 beforeEach(() => vi.clearAllMocks())
 
 describe('本人日志读取', () => {
+  it('上游请求ID独立编码，分钟筛选不会扩大到全天', () => {
+    const query = new URLSearchParams(usageLogsQuery({ ...filters, startDate: '2026-10-27T15:33', endDate: '2026-10-27T15:34', upstreamRequestId: '上游&req=1' }, 1, 20))
+    expect(query.get('start_timestamp')).toBe(String(new Date(2026, 9, 27, 15, 33, 0).getTime() / 1000))
+    expect(query.get('end_timestamp')).toBe(String(new Date(2026, 9, 27, 15, 34, 59).getTime() / 1000))
+    expect(query.get('upstream_request_id')).toBe('上游&req=1')
+  })
+  it('统计读本人接口，不传分页，不忽略不支持的请求编号条件', async () => {
+    vi.mocked(requestNewApiAccountResource).mockResolvedValue({ quota: 123000, rpm: 12, tpm: 999 })
+    expect(await fetchAccountUsageStats(DEFAULT_SETTINGS.profiles[0], session, filters)).toEqual({ quota: 123000, rpm: 12, tpm: 999 })
+    const path = vi.mocked(requestNewApiAccountResource).mock.calls[0][2]
+    expect(path).toMatch(/^\/api\/log\/self\/stat\?/)
+    expect(path).not.toContain('page_size')
+    expect(canQueryUsageStats({ ...filters, requestId: 'req' })).toBe(false)
+    await expect(fetchAccountUsageStats(DEFAULT_SETTINGS.profiles[0], session, { ...filters, upstreamRequestId: 'up' })).rejects.toThrow('暂不支持')
+    expect(requestNewApiAccountResource).toHaveBeenCalledTimes(1)
+  })
+  it('日志分组整合普通账号和媒体授权，去重且不以模型品牌代替', async () => {
+    vi.mocked(requestNewApiAccountResource).mockImplementation(async (_p, _s, path) => path.includes('media-groups') ? { groups: ['adobe-image', '视频', '普通'] } : { 普通: { ratio: 1 }, auto: {} })
+    expect(await fetchAccountLogGroups(DEFAULT_SETTINGS.profiles[0], session)).toEqual(['普通', 'adobe-image', '视频'])
+  })
+  it('统计协议错误不能显示零用量', async () => {
+    vi.mocked(requestNewApiAccountResource).mockResolvedValue({})
+    await expect(fetchAccountUsageStats(DEFAULT_SETTINGS.profiles[0], session, filters)).rejects.toThrow('格式异常')
+  })
   it('固定使用本人只读接口，保留取消信号与会话续期回调', async () => {
     vi.mocked(requestNewApiAccountResource).mockResolvedValue({ items: [raw], total: 21 })
     const controller = new AbortController(), update = vi.fn()
@@ -29,10 +53,10 @@ describe('本人日志读取', () => {
     expect(result.items[0]).toMatchObject({ model: 'gpt-image-2', group: '图片官渠', quota: 125000, stream: true })
   })
 
-  it('日期按用户本地完整自然日编码，中文筛选和特殊符号保持原义', () => {
+  it('日期按用户本地精确到分钟编码，中文筛选和特殊符号保持原义', () => {
     const query = new URLSearchParams(usageLogsQuery({ ...filters, model: ' 图片&视频 ', group: '官渠+50x', requestId: 'req=a&b', type: 5 }, 1, 50))
     expect(query.get('start_timestamp')).toBe(String(new Date(2026, 9, 27).getTime() / 1000))
-    expect(query.get('end_timestamp')).toBe(String(new Date(2026, 9, 27, 23, 59, 59).getTime() / 1000))
+    expect(query.get('end_timestamp')).toBe(String(new Date(2026, 9, 27, 12, 0, 59).getTime() / 1000))
     expect(query.get('model_name')).toBe('图片&视频')
     expect(query.get('group')).toBe('官渠+50x')
     expect(query.get('request_id')).toBe('req=a&b')

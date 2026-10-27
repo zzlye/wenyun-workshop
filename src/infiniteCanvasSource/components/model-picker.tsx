@@ -53,6 +53,7 @@ export function ModelPicker({ config, value, onChange, options: fixedOptions, cl
     if (isMedia) return <GroupedModelSelect value={current} onChange={onChange}
         options={mediaKey.trim() ? (isVideo ? mediaModels.data?.videos : mediaModels.data?.images) ?? [] : isVideo ? [] : FIXED_IMAGE_MODEL_OPTIONS}
         loading={mediaModels.isFetching} error={mediaModels.error?.message}
+        onRefresh={mediaModels.refetch} updatedAt={mediaModels.updatedAt}
         emptyText={mediaKey.trim() ? "暂无可用模型" : "请先登录或填写 Key"}
         className={cn("canvas-composer-model-picker h-8 w-fit max-w-full rounded-full border border-input bg-transparent px-3 text-sm font-normal shadow-sm", fullWidth ? "w-full" : "min-w-[9rem]", className)} />;
 

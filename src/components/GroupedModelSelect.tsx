@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import { DropdownMenu } from 'radix-ui'
-import { Check, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
 import { groupMediaModels, type ModelOption } from '../lib/mediaModels'
 
 type Props = {
@@ -11,12 +11,14 @@ type Props = {
   loading?: boolean
   error?: string
   emptyText?: string
+  onRefresh?: () => Promise<unknown> | void
+  updatedAt?: number
 }
 
 const panelClass = 'z-[1600] min-w-40 max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 text-xs text-gray-800 shadow-xl dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100'
 const itemClass = 'flex cursor-pointer select-none items-center gap-3 rounded-lg px-3 py-2 outline-none data-[highlighted]:bg-gray-100 dark:data-[highlighted]:bg-gray-800'
 
-export default function GroupedModelSelect({ value, options, onChange, className, loading, error, emptyText = '暂无可用模型' }: Props) {
+export default function GroupedModelSelect({ value, options, onChange, className, loading, error, onRefresh, updatedAt = 0, emptyText = '暂无可用模型' }: Props) {
   const [open, setOpen] = useState(false)
   const [compact, setCompact] = useState(false)
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
@@ -44,7 +46,11 @@ export default function GroupedModelSelect({ value, options, onChange, className
   </DropdownMenu.RadioGroup>
   // Portal 避免画布缩放和浮层裁切；Radix 负责悬停、触屏点击与方向键展开。
   return <DropdownMenu.Root modal={false} open={open} onOpenChange={next => {
-    if (next) window.dispatchEvent(new CustomEvent('model-picker-open', { detail: id }))
+    if (next) {
+      window.dispatchEvent(new CustomEvent('model-picker-open', { detail: id }))
+      // 重新展开过期目录才刷新，避免后台配置变化后长期开着画布仍只看到旧分组。
+      if (!loading && onRefresh && Date.now() - updatedAt >= 60000) void onRefresh()
+    }
     else setActiveCategory(null)
     setOpen(next)
   }}>
@@ -82,6 +88,7 @@ export default function GroupedModelSelect({ value, options, onChange, className
               </DropdownMenu.SubContent>
             </DropdownMenu.Portal>
           </DropdownMenu.Sub>)}
+        {onRefresh && <><DropdownMenu.Separator className="my-1 h-px bg-gray-100 dark:bg-gray-700" /><DropdownMenu.Item disabled={loading} className={`${itemClass} text-gray-500`} onSelect={event => { event.preventDefault(); void onRefresh() }}><RefreshCw size={12} className={loading ? 'animate-spin' : ''} />{loading ? '正在刷新…' : '刷新分组'}</DropdownMenu.Item></>}
       </DropdownMenu.Content>
     </DropdownMenu.Portal>
   </DropdownMenu.Root>

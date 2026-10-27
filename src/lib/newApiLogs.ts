@@ -16,6 +16,7 @@ export interface UsageLogFilters {
   group: string
   tokenName: string
   requestId: string
+  upstreamRequestId?: string
   detail: string
 }
 
@@ -45,14 +46,15 @@ export interface AccountUsageLogPage {
 
 export function defaultUsageLogFilters(now = new Date()): UsageLogFilters {
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  return { startDate: date, endDate: date, type: 0, model: '', group: '', tokenName: '', requestId: '', detail: '' }
+  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+  return { startDate: `${date}T00:00`, endDate: `${date}T${time}`, type: 0, model: '', group: '', tokenName: '', requestId: '', upstreamRequestId: '', detail: '' }
 }
 
 function dateTimestamp(value: string, end: boolean): number {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error('请选择有效的日期')
-  const date = new Date(`${value}T${end ? '23:59:59' : '00:00:00'}`)
+  if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2})?$/.test(value)) throw new Error('请选择有效的日期')
+  const date = new Date(value.includes('T') ? `${value}:${end ? '59' : '00'}` : `${value}T${end ? '23:59:59' : '00:00:00'}`)
   const normalized = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-  if (!Number.isFinite(date.getTime()) || normalized !== value) throw new Error('请选择有效的日期')
+  if (!Number.isFinite(date.getTime()) || normalized !== value.slice(0, 10) || value.includes('T') && (date.getHours() !== Number(value.slice(11, 13)) || date.getMinutes() !== Number(value.slice(14, 16)))) throw new Error('请选择有效的日期')
   return Math.floor(date.getTime() / 1000)
 }
 
@@ -71,7 +73,7 @@ export function usageLogsQuery(filters: UsageLogFilters, page: number, pageSize:
   // 仅传本人接口支持的条件，不提供用户编号或管理端渠道筛选。
   for (const [key, value] of Object.entries({
     model_name: filters.model, group: filters.group, token_name: filters.tokenName,
-    request_id: filters.requestId, detail: filters.detail,
+    request_id: filters.requestId, upstream_request_id: filters.upstreamRequestId ?? '', detail: filters.detail,
   })) {
     if (value.trim()) query.set(key, value.trim())
   }
@@ -142,4 +144,42 @@ export function usageLogTime(timestamp: number): string {
   const date = new Date(timestamp * 1000)
   if (!Number.isFinite(date.getTime())) return '—'
   return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+export type AccountUsageStats = { quota: number; rpm: number; tpm: number }
+
+// 当前 NewAPI 统计接口尚未支持请求编号，不能把忽略编号后的总量冒充筛选结果。
+export function canQueryUsageStats(filters: UsageLogFilters): boolean {
+  return !filters.requestId.trim() && !filters.upstreamRequestId?.trim()
+}
+
+export async function fetchAccountUsageStats(
+  profile: ApiProfile, session: NewApiAccountSession, filters: UsageLogFilters, signal?: AbortSignal,
+  onSessionUpdated?: (session: NewApiAccountSession) => void,
+): Promise<AccountUsageStats> {
+  if (!canQueryUsageStats(filters)) throw new Error('请求编号筛选暂不支持汇总统计')
+  const query = new URLSearchParams(usageLogsQuery(filters, 1, 20))
+  query.delete('p'); query.delete('page_size')
+  // NewAPI 用量固定统计消费记录，RPM/TPM固定统计最近60秒，直接沿用后端结果。
+  const timeout = AbortSignal.timeout(30000)
+  const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout
+  const data = record(await requestNewApiAccountResource<unknown>(profile, session, `/api/log/self/stat?${query}`, { method: 'GET', signal: requestSignal }, onSessionUpdated))
+  if (![data.quota, data.rpm, data.tpm].every(value => typeof value === 'number' && Number.isFinite(value))) throw new Error('日志统计格式异常')
+  return { quota: data.quota as number, rpm: data.rpm as number, tpm: data.tpm as number }
+}
+
+export async function fetchAccountLogGroups(
+  profile: ApiProfile, session: NewApiAccountSession, signal?: AbortSignal,
+  onSessionUpdated?: (session: NewApiAccountSession) => void,
+): Promise<string[]> {
+  const timeout = AbortSignal.timeout(30000)
+  const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout
+  const request = (path: string) => requestNewApiAccountResource<unknown>(profile, session, path, { method: 'GET', signal: requestSignal }, onSessionUpdated)
+  // 普通账号分组与媒体专用授权是独立来源，日志筛选必须合并而不是漏掉其中一种。
+  const [user, media] = await Promise.allSettled([request('/api/user/self/groups'), request('/api/token/media-groups')])
+  if (user.status === 'rejected' && media.status === 'rejected') throw user.reason
+  const groups = user.status === 'fulfilled' ? Object.keys(record(user.value)) : []
+  const extras = media.status === 'fulfilled' ? record(media.value).groups : []
+  if (Array.isArray(extras)) groups.push(...extras.filter((value): value is string => typeof value === 'string'))
+  return [...new Set(groups.filter(value => value && value !== 'auto'))]
 }

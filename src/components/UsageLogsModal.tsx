@@ -7,12 +7,12 @@ import { useStore } from '../store'
 import { LOCKED_WENYUN_PROFILE_ID } from '../lib/apiProfiles'
 import { fetchNewApiSiteStatus, isNewApiAuthenticationError } from '../lib/newApiAccount'
 import { formatLotteryQuota } from '../lib/newApiLottery'
-import { defaultUsageLogFilters, fetchAccountUsageLogs, USAGE_LOG_TYPES, usageLogsQuery, usageLogTime, usageLogType, type AccountUsageLog } from '../lib/newApiLogs'
+import { defaultUsageLogFilters, fetchAccountUsageLogs, fetchAccountUsageStats, fetchAccountLogGroups, canQueryUsageStats, usageLogsQuery, usageLogTime, usageLogType, type AccountUsageLog } from '../lib/newApiLogs'
 import { useCloseOnEscape } from '../hooks/useCloseOnEscape'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
+import UsageLogsFilters from './UsageLogsFilters'
 
 const buttonClass = 'inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-xs transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5'
-const inputClass = 'mt-1 block w-full min-w-0 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-800 outline-none focus:border-blue-400 dark:border-white/10 dark:bg-gray-950 dark:text-gray-100'
 
 function LogBadge({ type }: { type: number }) {
   const color = type === 5 ? 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-300'
@@ -47,6 +47,7 @@ export default function UsageLogsModal({ profile, session, onClose, onRequireLog
   const [pageSize, setPageSize] = useState(20)
   const [selected, setSelected] = useState<number | null>(null)
   const [filterError, setFilterError] = useState('')
+  const [visible, setVisible] = useState(true)
   const accountId = session.userId ?? session.username
   usePreventBackgroundScroll(true, modalRef)
   useCloseOnEscape(true, onClose)
@@ -73,12 +74,23 @@ export default function UsageLogsModal({ profile, session, onClose, onRequireLog
     queryFn: ({ signal }) => fetchNewApiSiteStatus(profile, signal),
     retry: false, staleTime: 60000, refetchInterval: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
   })
-  const money = (quota: number) => formatLotteryQuota(quota, site.data ?? null)
+  const statsSupported = canQueryUsageStats(filters)
+  const stats = useQuery({
+    queryKey: ['wenyun-usage-stats', profile.baseUrl, accountId, session.authSessionId ?? session.accessToken, filters],
+    queryFn: ({ signal }) => fetchAccountUsageStats(profile, session, filters, signal, onSessionUpdated),
+    enabled: statsSupported && logs.isSuccess,
+    // 汇总不随翻页重复查询，不轮询；只有筛选变化或主动刷新才重新获取。
+    retry: false, staleTime: Infinity, gcTime: 0, refetchInterval: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
+  })
+  const groups = useQuery({
+    queryKey: ['wenyun-log-groups', profile.baseUrl, accountId, session.authSessionId ?? session.accessToken],
+    queryFn: ({ signal }) => fetchAccountLogGroups(profile, session, signal, onSessionUpdated),
+    retry: false, staleTime: 60000, gcTime: 0, refetchInterval: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
+  })
+  const money = (quota: number) => visible ? formatLotteryQuota(quota, site.data ?? null) : '••••'
   const items = logs.isError ? [] : logs.data?.items ?? []
   const total = logs.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / pageSize))
-  const pageCost = items.filter(item => item.type === 2).reduce((sum, item) => sum + (item.subscriptionQuota ?? item.quota), 0)
-  const pageRefund = items.filter(item => item.type === 6).reduce((sum, item) => sum + item.quota, 0)
   const hasExpired = isNewApiAuthenticationError(logs.error)
 
   useEffect(() => { setSelected(null) }, [page, pageSize, filters])
@@ -100,7 +112,19 @@ export default function UsageLogsModal({ profile, session, onClose, onRequireLog
     return () => { document.removeEventListener('keydown', handleTab); if (previous?.isConnected) previous.focus() }
   }, [])
 
-  const refresh = () => { setSelected(null); void logs.refetch(); if (site.isError) void site.refetch() }
+  const refresh = () => {
+    setSelected(null)
+    void logs.refetch()
+    if (statsSupported && !stats.isFetching && logs.isSuccess) void stats.refetch()
+    if (groups.isError) void groups.refetch()
+    if (site.isError) void site.refetch()
+  }
+  const reset = () => {
+    const next = defaultUsageLogFilters()
+    setDraft(next); setFilterError(''); setSelected(null)
+    if (page === 1 && JSON.stringify(next) === JSON.stringify(filters)) refresh()
+    else { setFilters(next); setPage(1) }
+  }
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
     try {
@@ -117,27 +141,14 @@ export default function UsageLogsModal({ profile, session, onClose, onRequireLog
         <div className="flex min-w-0 items-center gap-3"><span className="rounded-xl bg-blue-50 p-2 text-blue-500 dark:bg-blue-500/10"><ScrollText size={20} /></span><div className="min-w-0"><h2 id={titleId} className="text-base font-semibold">使用日志</h2><p className="mt-0.5 truncate text-xs text-gray-500">{session.username}</p></div></div>
         <div className="flex shrink-0 items-center gap-2"><button type="button" className={buttonClass} disabled={logs.isFetching || hasExpired} onClick={refresh}><RefreshCw size={14} className={logs.isFetching ? 'animate-spin' : ''} />刷新</button><button ref={closeRef} type="button" className={buttonClass} aria-label="关闭日志" onClick={onClose}><X size={16} /></button></div>
       </header>
-      <div className="min-h-0 flex-1 overflow-auto">
-        <form className="border-b border-gray-100 p-4 dark:border-white/10 sm:p-5" onSubmit={submit}>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <label className="min-w-0 text-xs text-gray-500">开始日期<input required type="date" className={inputClass} value={draft.startDate} onChange={event => setDraft({ ...draft, startDate: event.target.value })} /></label>
-            <label className="min-w-0 text-xs text-gray-500">结束日期<input required type="date" className={inputClass} value={draft.endDate} onChange={event => setDraft({ ...draft, endDate: event.target.value })} /></label>
-            <label className="min-w-0 text-xs text-gray-500">日志类型<select className={inputClass} value={draft.type} onChange={event => setDraft({ ...draft, type: Number(event.target.value) })}>{USAGE_LOG_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select></label>
-            <label className="min-w-0 text-xs text-gray-500">模型<input className={inputClass} placeholder="全部模型" value={draft.model} onChange={event => setDraft({ ...draft, model: event.target.value })} /></label>
-            <label className="min-w-0 text-xs text-gray-500">分组<input className={inputClass} placeholder="全部分组" value={draft.group} onChange={event => setDraft({ ...draft, group: event.target.value })} /></label>
-            <label className="min-w-0 text-xs text-gray-500">令牌名称<input className={inputClass} placeholder="全部令牌" value={draft.tokenName} onChange={event => setDraft({ ...draft, tokenName: event.target.value })} /></label>
-            <label className="min-w-0 text-xs text-gray-500">请求 ID<input className={inputClass} value={draft.requestId} onChange={event => setDraft({ ...draft, requestId: event.target.value })} /></label>
-            <label className="min-w-0 text-xs text-gray-500">详情关键词<input className={inputClass} value={draft.detail} onChange={event => setDraft({ ...draft, detail: event.target.value })} /></label>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button type="submit" disabled={logs.isFetching || hasExpired} className="rounded-xl bg-blue-500 px-4 py-2 text-xs text-white hover:bg-blue-600 disabled:opacity-40">查询</button>
-            <button type="button" className={buttonClass} disabled={logs.isFetching} onClick={() => { const next = defaultUsageLogFilters(); setDraft(next); setFilters(next); setPage(1); setFilterError('') }}>重置</button>
-            {filterError && <span role="alert" className="text-xs text-red-500">{filterError}</span>}
-          </div>
-        </form>
-        <div className="grid grid-cols-3 gap-3 px-4 py-4 sm:px-5">
-          {[['匹配记录', logs.data && !logs.isError ? `${total.toLocaleString('zh-CN')} 条` : '—'], ['本页消费', logs.data && !logs.isError ? money(pageCost) : '—'], ['本页退款', logs.data && !logs.isError ? money(pageRefund) : '—']].map(([label, value]) => <div key={label} className="min-w-0 rounded-2xl border border-gray-100 p-3 dark:border-white/10"><p className="text-xs text-gray-500">{label}</p><p className="mt-1.5 break-words text-sm font-semibold sm:text-base">{value}</p></div>)}
-        </div>
+      <div className="min-h-0 flex-1 overflow-auto pt-4">
+        <UsageLogsFilters draft={draft} setDraft={setDraft}
+          groups={[...new Set([...(groups.data ?? []), ...items.map(item => item.group).filter(Boolean)])]}
+          groupsError={groups.error?.message} models={[...new Set(items.map(item => item.model).filter(Boolean))]}
+          fetching={logs.isFetching} error={filterError} stats={statsSupported ? stats.data : undefined}
+          statsError={statsSupported ? stats.error?.message : undefined} statsSupported={statsSupported}
+          money={money} visible={visible} setVisible={setVisible} onSubmit={submit} onReset={reset}
+          onRetryStats={() => { if (statsSupported) void stats.refetch() }} />
         {logs.isError ? <div role="alert" className="px-5 py-12 text-center"><p className="mb-4 break-words text-sm text-red-500">{logs.error instanceof Error ? logs.error.message : '日志读取失败，请稍后重试'}</p><button type="button" className={buttonClass} disabled={logs.isFetching} onClick={hasExpired ? onRequireLogin : refresh}>{hasExpired ? '重新登录' : '重试'}</button></div>
           : logs.isPending ? <p role="status" className="px-5 py-12 text-center text-sm text-gray-500">正在读取日志…</p>
             : items.length === 0 ? <p className="px-5 py-12 text-center text-sm text-gray-500">暂无符合条件的日志</p>
@@ -157,7 +168,7 @@ export default function UsageLogsModal({ profile, session, onClose, onRequireLog
               </div>}
       </div>
       <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-4 py-3 text-xs dark:border-white/10 sm:px-5">
-        <label className="flex items-center gap-2 text-gray-500">每页<select className="rounded-lg border border-gray-200 bg-transparent px-2 py-1 dark:border-white/10 dark:bg-gray-900" value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1) }}><option value={20}>20 条</option><option value={50}>50 条</option></select></label>
+        <div className="flex items-center gap-3 text-gray-500"><label className="flex items-center gap-2">每页<select className="rounded-lg border border-gray-200 bg-transparent px-2 py-1 dark:border-white/10 dark:bg-gray-900" value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1) }}><option value={20}>20 条</option><option value={50}>50 条</option></select></label>{logs.data && !logs.isError && <span>共 {total.toLocaleString('zh-CN')} 条</span>}</div>
         <div className="flex items-center gap-2"><button type="button" aria-label="上一页" className={buttonClass} disabled={page <= 1 || logs.isFetching} onClick={() => setPage(page - 1)}><ChevronLeft size={14} /></button><span className="text-gray-500">{page} / {pages}</span><button type="button" aria-label="下一页" className={buttonClass} disabled={page >= pages || logs.isFetching || logs.isError} onClick={() => setPage(page + 1)}><ChevronRight size={14} /></button></div>
       </footer>
     </div>

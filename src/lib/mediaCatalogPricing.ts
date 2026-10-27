@@ -85,14 +85,19 @@ export function applyMediaCatalogMetadata(catalog: MediaModelCatalog, metadata: 
     if (!row || !Array.isArray(enabled)) return []
     const groups = metadata.groups.filter(group => enabled.includes(group) || enabled.includes('all'))
     if (!groups.length) return []
-    const group = groups[0]
-    const ratio = metadata.group_ratio[group]
-    let billing = buildMediaBilling(row, ratio, metadata.status)
-    // 同模型可跨组重试时不能把第一组价格承诺为最终扣费价格。
-    if (groups.some(item => metadata.group_ratio[item] !== ratio)) {
-      billing = { summary: '按实际分组计费', lines: groups.map(item => ({ label: item, text: buildMediaBilling(row, metadata.group_ratio[item], metadata.status).summary })) }
-    }
-    return [{ ...option, group, ratio, billing, description: typeof row.description === 'string' ? row.description : undefined }]
+    // 一个模型可以属于多个授权组，逐组展开，不能用首组吞掉后面的分类。
+    return groups.map(group => {
+      const ratio = metadata.group_ratio[group]
+      let billing = buildMediaBilling(row, ratio, metadata.status)
+      // 当前媒体 Key 由 NewAPI 跨组路由，菜单分类不能承诺固定在点击组扣费。
+      if (groups.some(item => metadata.group_ratio[item] !== ratio)) {
+        billing = { summary: '按实际分组计费', lines: groups.flatMap(item => {
+          const price = buildMediaBilling(row, metadata.group_ratio[item], metadata.status)
+          return price.lines.length ? price.lines.map(line => ({ label: `${item} · ${line.label}`, text: line.text })) : [{ label: item, text: price.summary }]
+        }) }
+      }
+      return { ...option, group, ratio, billing, description: typeof row.description === 'string' ? row.description : undefined }
+    })
   })
   const sorted = (options: ModelOption[]) => decorate(options).sort((a, b) => metadata.groups.indexOf(a.group) - metadata.groups.indexOf(b.group))
   return { ...catalog, images: sorted(catalog.images), videos: sorted(catalog.videos), metadata }
