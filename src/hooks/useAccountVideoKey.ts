@@ -28,7 +28,10 @@ export function useAccountVideoKey() {
       const current = store.settings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID]
       // 退出或切换账号后丢弃迟到结果，不能恢复旧会话或覆盖用户刚刷新的 Key。
       if (!current || current.accessToken !== session.accessToken || current.userId !== session.userId || current.boundApiKey !== session.boundApiKey) return false
+      const currentManualKey = store.settings.profiles.find(item => item.id === LOCKED_WENYUN_PROFILE_ID)?.apiKey.trim()
       store.setSettings({
+        // 老版本曾把绑定 Key 写入手填项；仅迁移同一旧 Key，不覆盖用户另选的自定义 Key。
+        ...(currentManualKey && currentManualKey === current.boundApiKey?.trim() ? { accountApiKeyMode: 'account' as const } : {}),
         newApiAccountSessions: {
           ...store.settings.newApiAccountSessions,
           [LOCKED_WENYUN_PROFILE_ID]: {

@@ -5,9 +5,11 @@ import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useStore } from '../store'
 import { DEFAULT_SETTINGS, LOCKED_WENYUN_PROFILE_ID, normalizeSettings } from '../lib/apiProfiles'
-import { getEffectiveVideoApiKey } from '../lib/accountApiKey'
+import { getEffectiveVideoApiKey, getEffectiveImageApiProfile } from '../lib/accountApiKey'
 import { AccountVideoKeySync, useAccountVideoKey } from './useAccountVideoKey'
 import { useVideoModels } from './useVideoModels'
+import { useMediaCatalog } from './useMediaCatalog'
+import { groupMediaModels } from '../lib/mediaModels'
 import type { AppSettings } from '../types'
 
 vi.mock('../store', async () => {
@@ -58,6 +60,50 @@ afterEach(async () => {
 })
 
 describe('账号视频凭据自动补齐', () => {
+  it.each([['image-key', 'account'], ['other-custom-key', 'manual']])('迁移旧手填配置%s时，使用正确Key模式%s', async (manualKey, expectedMode) => {
+    useStore.getState().setSettings({ accountApiKeyMode: 'manual', profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, apiKey: manualKey })) })
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async input => String(input).includes('/api/token/?') ? response({ items: [mediaToken] }) : response([]))
+    await render(); await settle(); await settle()
+    const current = useStore.getState().settings
+    expect(current.accountApiKeyMode).toBe(expectedMode)
+    expect(getEffectiveImageApiProfile(current).apiKey).toBe(expectedMode === 'account' ? 'video-key' : manualKey)
+  })
+  it('恢复旧账号后先续期并换媒体Key，再用真实分组和倍率展示工坊与画布', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url.endsWith('/auth/refresh')) return response({ id: 2, username: 'demo', access_token: 'catalog-renewed-manager' })
+      if (url.includes('/api/token/?')) {
+        if ((init?.headers as Record<string, string>).Authorization === 'Bearer manager') return new Response('{"message":"Unauthorized"}', { status: 401 })
+        return response({ items: [mediaToken] })
+      }
+      if (url.endsWith('/models')) {
+        expect(init?.headers).toMatchObject({ Authorization: 'Bearer video-key' })
+        return new Response(JSON.stringify({ data: [{ id: 'gpt-image-2' }, { id: 'sd2.5-720p' }], media_catalog: {
+          groups: ['后台图片分组', '后台视频分组'], group_ratio: { 后台图片分组: 4, 后台视频分组: 2 },
+          status: { quota_display_type: 'CUSTOM', custom_currency_symbol: 'HUHN', custom_currency_exchange_rate: 1 },
+          data: [{ model_name: 'gpt-image-2', enable_groups: ['后台图片分组'], quota_type: 1, model_price: .02 },
+            { model_name: 'sd2.5-720p', enable_groups: ['后台视频分组'], quota_type: 1, model_price: .1, billing_mode: 'per_second' }],
+        } }))
+      }
+      throw new Error('不应发送其他请求：' + url)
+    })
+    function CatalogProbe() {
+      const settings = useStore(state => state.settings)
+      const profile = getEffectiveImageApiProfile(settings)
+      const catalog = useMediaCatalog(profile.baseUrl, profile.apiKey, false)
+      return <span>{JSON.stringify({ groups: groupMediaModels([...(catalog.data?.images ?? []), ...(catalog.data?.videos ?? [])]), error: catalog.error?.message })}</span>
+    }
+    await act(async () => root.render(<QueryClientProvider client={client}><AccountVideoKeySync /><CatalogProbe /><CatalogProbe /></QueryClientProvider>))
+    await settle(); await settle()
+    expect(host.textContent).toContain('后台图片分组')
+    expect(host.textContent).toContain('后台视频分组')
+    expect(host.textContent).toContain('HUHN 0.08 / 次')
+    expect(host.textContent).not.toContain('GPT Image')
+    expect(getEffectiveImageApiProfile(useStore.getState().settings).apiKey).toBe('video-key')
+    expect(getEffectiveVideoApiKey(useStore.getState().settings)).toBe('video-key')
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/models'))).toHaveLength(1)
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/auth/refresh'))).toHaveLength(1)
+  })
   it('旧登录续期短暂失败后自动恢复，保存新会话并补齐视频Key', async () => {
     let refreshes = 0
     useStore.getState().setSettings({ newApiAccountSessions: { [LOCKED_WENYUN_PROFILE_ID]: { ...session, authSessionId: 'old-session' } } })

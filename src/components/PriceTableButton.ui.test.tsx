@@ -115,7 +115,8 @@ describe('真实分类与倍率模型列表', () => {
     await render(); await settle()
     expect(panel().textContent).not.toContain('HUHN 0.06 / 次')
     expect(panel().textContent).not.toContain('账号分组')
-    expect(panel().textContent).toContain('暂无价格')
+    expect(panel().textContent).toContain('此 Key 暂未返回可用分组')
+    expect(panel().textContent).not.toContain('GPT Image')
     expect(fetchNewApiAccountModelCatalog).toHaveBeenCalledTimes(1)
   })
   it('换Key后不沿用上一把Key的倍率与报价', async () => {

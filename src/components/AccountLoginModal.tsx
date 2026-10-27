@@ -10,6 +10,7 @@ import {
   fetchNewApiRegistrationSettings,
   fetchNewApiTopupInfo,
   loginNewApiAccount,
+  isNewApiAuthenticationError,
   maskApiKey,
   redeemNewApiCode,
   refreshNewApiBoundKey,
@@ -25,6 +26,8 @@ import { CloseIcon } from './icons'
 import { getDesktopBridge } from '../lib/desktop'
 import ReceiptPaymentDialog from './ReceiptPaymentDialog'
 import { LotteryButton } from './LotteryModal'
+import { useAccountVideoKey } from '../hooks/useAccountVideoKey'
+import { hasBoundMediaApiKey } from '../lib/videoAccount'
 
 function EyeIcon({ hidden, className }: { hidden: boolean; className?: string }) {
   return (
@@ -114,6 +117,8 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
   const [accountPassword, setAccountPassword] = useState('')
   const [passwordVisible, setPasswordVisible] = useState(false)
   const [accountKeyVisible, setAccountKeyVisible] = useState(false)
+  const [reauthenticating, setReauthenticating] = useState(false)
+  const mediaBinding = useAccountVideoKey()
   const [accountInviteCode, setAccountInviteCode] = useState('')
   const [inviteCodeRequired, setInviteCodeRequired] = useState(true)
   const [accountRedeemCode, setAccountRedeemCode] = useState('')
@@ -134,6 +139,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
   const normalizedSettings = normalizeSettings(settings)
   const wenyunProfile = normalizedSettings.profiles.find((profile) => profile.id === LOCKED_WENYUN_PROFILE_ID) ?? getActiveApiProfile(normalizedSettings)
   const accountSession = normalizedSettings.newApiAccountSessions[LOCKED_WENYUN_PROFILE_ID] ?? null
+  const needsMediaBinding = Boolean(accountSession && !hasBoundMediaApiKey(accountSession))
   const accountKeyCooldownRemainingMs = Math.max(0, ACCOUNT_KEY_REFRESH_COOLDOWN_MS - (Date.now() - (accountSession?.lastKeyRefreshAt ?? 0)))
 
   useEffect(() => {
@@ -274,6 +280,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
       })
       updateAccountSession(session, getAccountKeyModePatch(session), false)
       setAccountPassword('')
+      setReauthenticating(false)
       showToast('登录成功', 'success')
     } catch (err) {
       showToast(err instanceof Error ? err.message : '登录失败', 'error')
@@ -339,6 +346,8 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
 
   const handleRefreshAccountKey = async () => {
     if (!accountSession) return
+    // 升级迁移只复用默认媒体 Key，不能通过“刷新”绕过迁移失败而另建一把。
+    if (needsMediaBinding) { await mediaBinding.refetch(); return }
     setIsRefreshingAccountKey(true)
     try {
       const session = await refreshNewApiBoundKey(wenyunProfile, accountSession, persistRefreshedSession)
@@ -470,7 +479,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
           </button>
         </div>
 
-        {accountSession ? (
+        {accountSession && !reauthenticating ? (
           <div className="space-y-3">
             <div className="grid gap-3 rounded-xl border border-gray-200/70 bg-white/70 p-3 text-sm dark:border-white/[0.08] dark:bg-white/[0.03]">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -480,10 +489,11 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-gray-500 dark:text-gray-400">绑定 Key</span>
                 <span className="flex min-w-0 items-center justify-end gap-1">
-                  <span className="min-w-0 truncate font-mono text-xs text-gray-700 dark:text-gray-200">{accountKeyVisible ? accountSession.boundApiKey || '未创建' : maskApiKey(accountSession.boundApiKey)}</span>
+                  <span className="min-w-0 truncate font-mono text-xs text-gray-700 dark:text-gray-200">{needsMediaBinding ? mediaBinding.isFetching ? '正在切换媒体 Key…' : '待切换媒体 Key' : accountKeyVisible ? accountSession.boundApiKey || '未创建' : maskApiKey(accountSession.boundApiKey)}</span>
                   <button
                     type="button"
                     onClick={() => setAccountKeyVisible((value) => !value)}
+                    disabled={needsMediaBinding}
                     className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-white/[0.08] dark:hover:text-gray-100"
                     aria-label={accountKeyVisible ? '隐藏账号 Key' : '显示账号 Key'}
                     title={accountKeyVisible ? '隐藏账号 Key' : '显示账号 Key'}
@@ -493,6 +503,7 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
                   <button
                     type="button"
                     onClick={() => void copyAccountKey()}
+                    disabled={needsMediaBinding}
                     className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-white/[0.08] dark:hover:text-gray-100"
                     aria-label="复制账号 Key"
                     title="复制账号 Key"
@@ -516,6 +527,14 @@ export default function AccountLoginModal({ open, onClose }: AccountLoginModalPr
                 <span className="text-gray-700 dark:text-gray-200">{accountSession.inviter || (accountSession.inviterId !== undefined ? `ID ${accountSession.inviterId}` : '无')}</span>
               </div>
             </div>
+            {needsMediaBinding && mediaBinding.isError && <div role="alert" className="flex items-center justify-between gap-3 rounded-xl bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">
+              <span>{mediaBinding.error.message}</span>
+              <button type="button" className="shrink-0 font-medium text-blue-500" onClick={() => {
+                // 失效会话必须重新认证，不能拿旧生成 Key 换取管理权限或默默新建密钥。
+                if (isNewApiAuthenticationError(mediaBinding.error)) { setAccountUsername(accountSession.username); setAccountPassword(''); setAccountMode('login'); setReauthenticating(true) }
+                else void mediaBinding.refetch()
+              }}>{isNewApiAuthenticationError(mediaBinding.error) ? '重新登录' : '重试'}</button>
+            </div>}
             <div className="flex flex-wrap gap-2">
               <LotteryButton />
               <button type="button" onClick={handleRefreshAccountBalance} disabled={isQueryingBalance} className="rounded-xl border border-gray-200/70 bg-white/70 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:border-blue-400/30 dark:hover:bg-blue-500/15 dark:hover:text-blue-200">

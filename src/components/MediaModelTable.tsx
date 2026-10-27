@@ -31,6 +31,6 @@ export default function MediaModelTable({ options, video, loading, error, metada
         })}
       </div>
     </section>)}
-    {!options.length && <div role="status" className="py-10 text-center text-sm text-gray-500">{loading ? '正在获取模型…' : metadataReady ? '暂无可用模型' : '登录或填写媒体 Key 后查看模型'}</div>}
+    {!options.length && !error && <div role="status" className="py-10 text-center text-sm text-gray-500">{loading ? '正在获取模型…' : metadataReady ? '暂无可用模型' : '登录或填写媒体 Key 后查看模型'}</div>}
   </div>
 }

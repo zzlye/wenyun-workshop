@@ -11,16 +11,9 @@ export type MediaModelCatalog = { images: ModelOption[]; videos: ModelOption[]; 
 export function groupMediaModels(models: ModelOption[]): ModelCategory[] {
   const categories = new Map<string, ModelOption[]>()
   for (const model of models) {
-    const name = model.value.toLowerCase()
-    const label = model.group || (/^gpt-image/.test(name) ? 'GPT Image'
-      : /banana/.test(name) ? '香蕉'
-      : /seedream/.test(name) ? 'Seedream'
-      : /^(mj|midjourney)(?:-|$)/.test(name) ? 'Midjourney'
-      : /^(sd-?\d|seedance|doubao-seedance)/.test(name) ? 'Seedance'
-      : /^sora/.test(name) ? 'Sora'
-      : /^(veo|google-veo)/.test(name) ? 'Veo'
-      : /^(kling|keling)/.test(name) ? '可灵'
-      : /^wan/.test(name) ? '万相' : '其他模型')
+    // 分组只接受当前 Key 的后端授权目录，不能用品牌名伪装成后台分组。
+    const label = model.group
+    if (!label) continue
     const items = categories.get(label) ?? []
     if (!items.some(item => item.value === model.value)) items.push(model)
     categories.set(label, items)

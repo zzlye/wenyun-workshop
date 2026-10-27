@@ -8,6 +8,7 @@ import { pipeline } from 'node:stream/promises'
 import { fileURLToPath, URL } from 'node:url'
 import { ASSET_PROXY_PREFIX, normalizeDevProxyConfig } from './src/lib/devProxy'
 import { CANVAS_VIDEO_TIMEOUT } from './src/lib/videoModel'
+import { writeResponseHeaders } from './server/dev-proxy-headers'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
@@ -152,15 +153,6 @@ function toFetchHeaders(headers: Record<string, string | string[] | undefined>):
     result.set(name, Array.isArray(value) ? value.join(', ') : value)
   }
   return result
-}
-
-function writeResponseHeaders(response: Response, res: import('node:http').ServerResponse) {
-  response.headers.forEach((value, name) => {
-    const normalizedName = name.toLowerCase()
-    if (HOP_BY_HOP_HEADERS.has(normalizedName)) return
-    if (normalizedName === 'content-encoding') return
-    res.setHeader(name, value)
-  })
 }
 
 function toNodeRequestHeaders(headers: Record<string, string | string[] | undefined>) {

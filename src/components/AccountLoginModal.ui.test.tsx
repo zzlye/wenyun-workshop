@@ -6,9 +6,11 @@ import AccountLoginModal from './AccountLoginModal'
 import { DEFAULT_SETTINGS, LOCKED_WENYUN_PROFILE_ID, normalizeSettings } from '../lib/apiProfiles'
 import type { AppSettings } from '../types'
 
-const fixture = vi.hoisted(() => ({ settings: {} as AppSettings, setSettings: vi.fn(), showToast: vi.fn() }))
+const fixture = vi.hoisted(() => ({ settings: {} as AppSettings, setSettings: vi.fn(), showToast: vi.fn(), binding: { isFetching: false, isError: false, error: null as Error | null, refetch: vi.fn() } }))
+vi.mock('../hooks/useAccountVideoKey', () => ({ useAccountVideoKey: () => fixture.binding }))
 vi.mock('../store', () => ({ useStore: Object.assign((selector: (state: typeof fixture) => unknown) => selector(fixture), { getState: () => fixture }) }))
 vi.mock('./ReceiptPaymentDialog', () => ({ default: () => null }))
+vi.mock('./LotteryModal', () => ({ LotteryButton: () => null }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 let root: Root
@@ -51,6 +53,7 @@ beforeEach(() => {
   fixture.settings = normalizeSettings({ ...DEFAULT_SETTINGS, newApiAccountSessions: {} })
   fixture.setSettings.mockReset()
   fixture.showToast.mockReset()
+  fixture.binding = { isFetching: false, isError: false, error: null, refetch: vi.fn() }
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = String(input)
     requests.push({ url, init })
@@ -82,6 +85,24 @@ afterEach(async () => {
 })
 
 describe('注册跟随 NewAPI 邀请码设置', () => {
+  it('旧账号迁移失败不展示旧Key为媒体Key，重新登录后自动绑定媒体Key', async () => {
+    fixture.settings = normalizeSettings({ ...DEFAULT_SETTINGS, accountApiKeyMode: 'account', newApiAccountSessions: { [LOCKED_WENYUN_PROFILE_ID]: {
+      siteProfileId: LOCKED_WENYUN_PROFILE_ID, username: 'new-user', userId: 42, accessToken: 'expired-manager', boundApiKey: 'legacy-secret-key',
+    } } })
+    fixture.binding = { ...fixture.binding, isError: true, error: new Error('登录状态已过期，请退出账号后重新登录') }
+    await render()
+    expect(document.body.textContent).toContain('待切换媒体 Key')
+    expect(document.body.textContent).not.toContain('legacy-secret-key')
+    const reauth = Array.from(document.querySelectorAll('button')).find(item => item.textContent === '重新登录')!
+    await act(async () => reauth.click())
+    expect((document.querySelector('input[placeholder="账号"]') as HTMLInputElement).value).toBe('new-user')
+    await fill('密码', 'password123')
+    const login = Array.from(document.querySelectorAll('button')).filter(item => item.textContent === '登录').at(-1)!
+    await act(async () => login.click())
+    expect(fixture.setSettings).toHaveBeenCalledWith(expect.objectContaining({ accountApiKeyMode: 'account', newApiAccountSessions: expect.objectContaining({
+      [LOCKED_WENYUN_PROFILE_ID]: expect.objectContaining({ boundApiKeyPurpose: 'media', boundApiKey: 'test-bound-key', boundVideoApiKey: 'test-bound-key' }),
+    }) }))
+  })
   it('关闭必填后留空可完成注册、登录与绑定，不要求存在邀请人', async () => {
     await openRegistration()
     expect(inviteInput().placeholder).toBe('邀请码（选填）')
