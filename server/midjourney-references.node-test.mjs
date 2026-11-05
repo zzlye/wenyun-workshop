@@ -30,9 +30,10 @@ function freshGet(url) {
   }).on('error',reject))
 }
 async function fixture(options = {}) {
-  let submissions = 0, received
+  let submissions = 0, received, validationHeaders
   const upstream = await listen(createServer(async (req, res) => {
     if (req.url === '/v1/models') {
+      validationHeaders = req.headers
       res.writeHead(req.headers.authorization === 'Bearer fixture-key' ? 200 : 401, { 'content-type': 'application/json' })
       return res.end(JSON.stringify({ data: [] }))
     }
@@ -52,7 +53,7 @@ async function fixture(options = {}) {
   const base = `http://127.0.0.1:${port}`
   const server = createImageTaskServer({ upstreamBaseUrl: upstream+'/v1', storageDirectory, referencePublicBaseUrl: base, logger: () => {}, ...options })
   server.listen(port, '127.0.0.1'); await once(server, 'listening'); resources.push(server)
-  return { base, upstream, storageDirectory, server, submissions: () => submissions, received: () => received }
+  return { base, upstream, storageDirectory, server, submissions: () => submissions, received: () => received, validationHeaders: () => validationHeaders }
 }
 async function submit(base, body, key = 'fixture-key') {
   const r = await fetch(base+'/image-tasks?endpoint=/midjourney/generations', { method: 'POST', headers: { Authorization: 'Bearer '+key, 'Content-Type': 'application/json', 'X-Wenyun-Task-Client-Version': '2', 'X-Wenyun-Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify(body) })
@@ -137,4 +138,13 @@ test('无效或超量参考图在提交前失败，模板没有参考图时不�
   assert.equal(f.submissions(),0)
   const ok=await submit(f.base,{model:'mj-v8.2',prompt:'文生图'})
   assert.equal(ok.result.status,200);assert.equal(f.submissions(),1)
+})
+
+test('上传鉴权保留真实客户端 IP，配置 IP 白名单的 Key 与生成请求行为一致',async()=>{
+  const f=await fixture()
+  const response=await fetch(f.base+'/image-tasks/reference-uploads',{method:'POST',headers:{Authorization:'Bearer fixture-key','X-Real-IP':'203.0.113.8','X-Forwarded-For':'203.0.113.8, 172.19.0.2',Cookie:'must-not-forward'},body:png})
+  assert.equal(response.status,201)
+  assert.equal(f.validationHeaders()['x-real-ip'],'203.0.113.8')
+  assert.equal(f.validationHeaders()['x-forwarded-for'],'203.0.113.8, 172.19.0.2')
+  assert.equal(f.validationHeaders().cookie,undefined)
 })

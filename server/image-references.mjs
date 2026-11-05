@@ -49,10 +49,16 @@ export function createImageReferenceService({ storageDirectory, publicBaseUrl, u
   }
   const cleanup = () => { const next = writing.then(sweep); writing = next.catch(() => {}); return next }
   const authenticate = async (headers, signal) => {
-    const authorization = new Headers(headers).get('authorization') || ''
+    const originalHeaders = new Headers(headers)
+    const authorization = originalHeaders.get('authorization') || ''
     if (!/^Bearer\s+\S+$/i.test(authorization)) throw fail('参考图上传需要有效的 API Key', 401)
     // 仅向固定 NewAPI 读取模型权限，不创建生成任务，也不把凭据写入图片链接。
-    const response = await fetch(upstreamBaseUrl+'/models', { headers: { Authorization: authorization }, signal: AbortSignal.any([signal ?? new AbortController().signal, AbortSignal.timeout(15000)]), redirect: 'error' })
+    const validationHeaders = new Headers({ Authorization: authorization })
+    // 与生成请求保留同一条真实 IP 链路，避免设置 IP 白名单的 Key 被当作服务器地址拒绝。
+    for (const name of ['x-real-ip', 'x-forwarded-for', 'x-forwarded-proto']) {
+      if (originalHeaders.has(name)) validationHeaders.set(name, originalHeaders.get(name))
+    }
+    const response = await fetch(upstreamBaseUrl+'/models', { headers: validationHeaders, signal: AbortSignal.any([signal ?? new AbortController().signal, AbortSignal.timeout(15000)]), redirect: 'error' })
     const ok = response.ok && response.headers.get('content-type')?.includes('application/json')
     await response.body?.cancel()
     if (!ok) throw fail(response.status === 429 ? '参考图上传验证频繁，请稍后重试' : '参考图上传验证失败，请检查 API Key', response.status === 429 ? 429 : 401)
