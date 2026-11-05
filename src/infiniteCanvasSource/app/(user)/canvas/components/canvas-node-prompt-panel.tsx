@@ -635,9 +635,9 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
             const cachedImages = cachedReferences.filter((image): image is InputImage => Boolean(image));
             setInputImages(cachedImages);
             pendingMaskEditRef.current = { index, id: imageId, startedAt: Date.now() };
-            setMaskEditorImageId(targetImage.id);
+            setMaskEditorImageId(targetImage.id, config.imageModel || config.model);
         },
-        [setInputImages, setMaskEditorImageId, showToast],
+        [setInputImages, setMaskEditorImageId, showToast, config.imageModel, config.model],
     );
 
     const commitReferenceEditChoice = useCallback(
@@ -697,16 +697,22 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
         const previous = previousReferences[targetIndex];
         if (!previous || !sharedImage) return;
         pendingMaskEditRef.current = null;
-        void uploadImage(maskDraft.maskDataUrl)
-            .then((storedMask) => {
+        // 编辑器可能调整主图尺寸，主图和图层必须一起保存，恢复后才能保持像素对齐。
+        void Promise.all([uploadImage(maskDraft.maskDataUrl), uploadImage(sharedImage.dataUrl)])
+            .then(([storedMask, storedTarget]) => {
                 const nextReference: CanvasReferenceImage = {
                     ...previous,
                     id: sharedImage.id,
                     dataUrl: sharedImage.dataUrl,
-                    type: previous.type || "image/png",
-                    mimeType: previous.mimeType || "image/png",
+                    storageKey: storedTarget.storageKey,
+                    url: storedTarget.url,
+                    type: storedTarget.mimeType,
+                    mimeType: storedTarget.mimeType,
+                    width: storedTarget.width,
+                    height: storedTarget.height,
                     maskDataUrl: storedMask.url,
                     maskStorageKey: storedMask.storageKey,
+                    editLayerKind: maskDraft.kind,
                     isMaskTarget: true,
                 };
                 const nextReferences = [nextReference, ...previousReferences.filter((_, index) => index !== targetIndex).map((image) => ({ ...image, isMaskTarget: false, maskDataUrl: undefined, maskStorageKey: undefined }))];
@@ -1031,6 +1037,7 @@ export function CanvasNodePromptPanel({ node, canvasNodes, inputs = EMPTY_NODE_I
                             <ModelPicker config={config} value={config.model} options={modelOptions} className="canvas-node-control !min-w-[9rem] !max-w-[280px] shrink-0" onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
                             <CanvasImageSettingsPopover
                                 config={config}
+                                hasInputImages={mentionableReferences.length > 0}
                                 placement="topLeft"
                                 buttonClassName="canvas-node-control !max-w-[170px] !shrink-0 !justify-start !px-2.5"
                                 onConfigChange={(key, value) => onConfigChange(node.id, key === "count" ? { count: Number(value) || 1 } : { [key]: value })}
@@ -1353,6 +1360,9 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         quality: node.metadata?.quality || globalConfig.quality || defaultConfig.quality,
         imageBackground: node.metadata?.imageBackground || globalConfig.imageBackground || defaultConfig.imageBackground,
         imageOutputFormat: node.metadata?.imageOutputFormat ?? globalConfig.imageOutputFormat ?? defaultConfig.imageOutputFormat,
+        imageComplexity: node.metadata?.imageComplexity ?? globalConfig.imageComplexity ?? defaultConfig.imageComplexity,
+        imageFrameCount: node.metadata?.imageFrameCount ?? globalConfig.imageFrameCount ?? defaultConfig.imageFrameCount,
+        imageFrameDurationMs: node.metadata?.imageFrameDurationMs ?? globalConfig.imageFrameDurationMs ?? defaultConfig.imageFrameDurationMs,
         imageOutputCompression: node.metadata?.imageOutputCompression ?? globalConfig.imageOutputCompression ?? defaultConfig.imageOutputCompression,
         imageModeration: node.metadata?.imageModeration ?? globalConfig.imageModeration ?? defaultConfig.imageModeration,
         mjRaw: node.metadata?.mjRaw ?? globalConfig.mjRaw,

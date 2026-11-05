@@ -13,7 +13,7 @@ import type { AiConfig } from "@/stores/use-config-store";
 import { allowsCustomImageRatioForProfile, getActiveApiProfile, getImageSizeTiersForProfile, normalizeImageSizeForProfile, normalizeSettings, supportsExtendedImageQuality } from "../../../../../lib/apiProfiles";
 import { calculateImageSize, normalizeImageSize, parseRatio, type SizeTier } from "../../../../../lib/size";
 import { useStore } from "../../../../../store";
-import { normalizeImageBackground, supportsTransparentImageBackground } from "../../../../../lib/modelPricing";
+import { isGptImage26Model, normalizeImageBackground, supportsTransparentImageBackground } from "../../../../../lib/modelPricing";
 import { getBananaSizeConfig, resolveBananaSizePreset, type BananaSizeTier } from "../../../../../lib/bananaImageSize";
 import { isMidjourneyModel, normalizeMidjourneyRatio, readMidjourneyConfig } from "../../../../../lib/midjourney";
 import { MidjourneySettingsPanel, MidjourneyRatioOptions } from "../../../../../components/MidjourneyControls";
@@ -38,6 +38,7 @@ const RATIOS = [
 
 type CanvasImageSettingsPopoverProps = {
     config: AiConfig;
+    hasInputImages?: boolean;
     onConfigChange: (key: keyof AiConfig, value: string) => void;
     onMissingConfig?: () => void;
     onOpenChange?: (open: boolean) => void;
@@ -47,7 +48,7 @@ type CanvasImageSettingsPopoverProps = {
     autoAdjustOverflow?: boolean;
 };
 
-export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChange, buttonClassName, placement = "topLeft" }: CanvasImageSettingsPopoverProps) {
+export function CanvasImageSettingsPopover({ hasInputImages = false, config, onConfigChange, onOpenChange, buttonClassName, placement = "topLeft" }: CanvasImageSettingsPopoverProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const settings = useStore((state) => state.settings);
     const activeProfile = useMemo(() => getActiveApiProfile(normalizeSettings(settings)), [settings]);
@@ -63,7 +64,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = config.quality || "auto";
-    const activeSize = normalizeImageSizeForProfile(config.size || "1024x1024", activeProfile.id, imageModel);
+    const activeSize = config.imageOutputFormat === "gif" ? config.size || "auto" : normalizeImageSizeForProfile(config.size || "1024x1024", activeProfile.id, imageModel);
     const normalizedConfig = useMemo(() => activeSize === config.size ? config : { ...config, size: activeSize }, [activeSize, config]);
 
     useEffect(() => {
@@ -72,6 +73,12 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
             onConfigChange("quality", "auto");
         }
     }, [config.quality, imageModel, onConfigChange, qualityOptions]);
+
+    useEffect(() => {
+        // 生成专属格式不能留在编辑节点或其他模型中，界面与实际发送保持一致。
+        if ((!isGptImage26Model(imageModel) || hasInputImages) && ["svg", "gif"].includes(config.imageOutputFormat || "")) onConfigChange("imageOutputFormat", "png");
+        if (config.imageOutputFormat === "svg" && count !== 1) onConfigChange("count", "1");
+    }, [imageModel, hasInputImages, config.imageOutputFormat, count, onConfigChange]);
 
     const updateOpen = (nextOpen: boolean) => {
         setOpen(nextOpen);
@@ -99,7 +106,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
         };
     }, [open]);
 
-    const panel = open && buttonRect ? <ImageSizePortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={normalizedConfig} allowedTiers={allowedTiers} qualityOptions={qualityOptions} allowCustomRatio={allowCustomRatio} onConfigChange={onConfigChange} /> : null;
+    const panel = open && buttonRect ? <ImageSizePortal hasInputImages={hasInputImages} buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={normalizedConfig} allowedTiers={allowedTiers} qualityOptions={qualityOptions} allowCustomRatio={allowCustomRatio} onConfigChange={onConfigChange} /> : null;
 
     return (
         <>
@@ -117,6 +124,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
 
 function ImageSizePortal({
     buttonRect,
+    hasInputImages,
     panelRef,
     placement,
     theme,
@@ -131,6 +139,7 @@ function ImageSizePortal({
     placement: CanvasImageSettingsPopoverProps["placement"];
     theme: CanvasTheme;
     config: AiConfig;
+    hasInputImages?: boolean;
     allowedTiers: SizeTier[];
     qualityOptions: Array<{ value: string; label: string }>;
     allowCustomRatio: boolean;
@@ -167,22 +176,22 @@ function ImageSizePortal({
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
         >
-            <CanvasImageSizePanel config={config} allowedTiers={allowedTiers} qualityOptions={qualityOptions} allowCustomRatio={allowCustomRatio} onConfigChange={onConfigChange} theme={theme} />
+            <CanvasImageSizePanel hasInputImages={hasInputImages} config={config} allowedTiers={allowedTiers} qualityOptions={qualityOptions} allowCustomRatio={allowCustomRatio} onConfigChange={onConfigChange} theme={theme} />
         </div>,
         document.body,
     );
 }
 
-export function CanvasImageSizePanel({ config, allowedTiers, qualityOptions, allowCustomRatio, onConfigChange, theme }: { config: AiConfig; allowedTiers: SizeTier[]; qualityOptions: Array<{ value: string; label: string }>; allowCustomRatio: boolean; onConfigChange: (key: keyof AiConfig, value: string) => void; theme: CanvasTheme }) {
+export function CanvasImageSizePanel({ hasInputImages = false, config, allowedTiers, qualityOptions, allowCustomRatio, onConfigChange, theme }: { hasInputImages?: boolean; config: AiConfig; allowedTiers: SizeTier[]; qualityOptions: Array<{ value: string; label: string }>; allowCustomRatio: boolean; onConfigChange: (key: keyof AiConfig, value: string) => void; theme: CanvasTheme }) {
     if (isMidjourneyModel(config.imageModel || config.model)) return <div className="space-y-4" style={{ color: theme.node.text }}>
         <div className="text-lg font-semibold">图像设置</div>
         <SettingGroup title="图像比例" color={theme.node.muted}><MidjourneyRatioOptions value={normalizeMidjourneyRatio(config.size)} onChange={value => onConfigChange("size", value)} /></SettingGroup>
         <MidjourneySettingsPanel value={readMidjourneyConfig(config)} onChange={value => onConfigChange("mjParameters", JSON.stringify(value))} />
     </div>;
-    return <PixelImageSizePanel config={config} allowedTiers={allowedTiers} qualityOptions={qualityOptions} allowCustomRatio={allowCustomRatio} onConfigChange={onConfigChange} theme={theme} />;
+    return <PixelImageSizePanel hasInputImages={hasInputImages} config={config} allowedTiers={allowedTiers} qualityOptions={qualityOptions} allowCustomRatio={allowCustomRatio} onConfigChange={onConfigChange} theme={theme} />;
 }
 
-function PixelImageSizePanel({ config, allowedTiers, qualityOptions, allowCustomRatio, onConfigChange, theme }: { config: AiConfig; allowedTiers: SizeTier[]; qualityOptions: Array<{ value: string; label: string }>; allowCustomRatio: boolean; onConfigChange: (key: keyof AiConfig, value: string) => void; theme: CanvasTheme }) {
+function PixelImageSizePanel({ hasInputImages = false, config, allowedTiers, qualityOptions, allowCustomRatio, onConfigChange, theme }: { hasInputImages?: boolean; config: AiConfig; allowedTiers: SizeTier[]; qualityOptions: Array<{ value: string; label: string }>; allowCustomRatio: boolean; onConfigChange: (key: keyof AiConfig, value: string) => void; theme: CanvasTheme }) {
     const imageModel = config.imageModel || config.model;
     const bananaConfig = getBananaSizeConfig(imageModel);
     const tiers = bananaConfig?.tiers ?? (allowedTiers.length ? allowedTiers : ALL_TIERS);
@@ -318,9 +327,14 @@ function PixelImageSizePanel({ config, allowedTiers, qualityOptions, allowCustom
                     </SettingGroup>
                 ) : null}
                 {supportsTransparentImageBackground(imageModel) && <ImageOutputSettings
-                    style={{ color: theme.node.text }}
-                    value={{ output_format: config.imageOutputFormat === "jpeg" || config.imageOutputFormat === "webp" ? config.imageOutputFormat : "png", output_compression: config.imageOutputCompression?.trim() ? Number(config.imageOutputCompression) : null, moderation: config.imageModeration === "low" ? "low" : "auto", background: normalizeImageBackground(imageModel, config.imageBackground) }}
+                    style={{ color: theme.node.text }} model={imageModel} hasInputImages={hasInputImages}
+                    value={{ size: config.size, output_format: config.imageOutputFormat === "jpeg" || config.imageOutputFormat === "webp" || config.imageOutputFormat === "svg" || config.imageOutputFormat === "gif" ? config.imageOutputFormat : "png", output_compression: config.imageOutputCompression?.trim() ? Number(config.imageOutputCompression) : null, moderation: config.imageModeration === "low" ? "low" : "auto", background: normalizeImageBackground(imageModel, config.imageBackground), complexity: config.imageComplexity === "low" || config.imageComplexity === "medium" || config.imageComplexity === "high" ? config.imageComplexity : undefined, frame_count: config.imageFrameCount ? Number(config.imageFrameCount) : undefined, frame_duration_ms: config.imageFrameDurationMs ? Number(config.imageFrameDurationMs) : undefined }}
                     onChange={patch => {
+                        if ("complexity" in patch) onConfigChange("imageComplexity", patch.complexity || "");
+                        if ("frame_count" in patch) onConfigChange("imageFrameCount", patch.frame_count == null ? "" : String(patch.frame_count));
+                        if ("frame_duration_ms" in patch) onConfigChange("imageFrameDurationMs", patch.frame_duration_ms == null ? "" : String(patch.frame_duration_ms));
+                        if (patch.n !== undefined) onConfigChange("count", String(patch.n));
+                        if (patch.size !== undefined) onConfigChange("size", patch.size);
                         if (patch.output_format !== undefined) onConfigChange("imageOutputFormat", patch.output_format);
                         if (patch.output_compression !== undefined) onConfigChange("imageOutputCompression", patch.output_compression === null ? "" : String(patch.output_compression));
                         if (patch.moderation !== undefined) onConfigChange("imageModeration", patch.moderation);
@@ -328,19 +342,19 @@ function PixelImageSizePanel({ config, allowedTiers, qualityOptions, allowCustom
                 />}
                 <SettingGroup title="生成张数" color={theme.node.muted}>
                     <div className="grid grid-cols-5 gap-2">
-                        {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
+                        {Array.from({ length: config.imageOutputFormat === "svg" ? 1 : 10 }, (_, index) => index + 1).map((value) => (
                             <OptionPill key={value} selected={count === value} theme={theme} onClick={() => onConfigChange("count", String(value))}>
                                 {value} 张
                             </OptionPill>
                         ))}
                     </div>
-                    <CountInput value={count} max={15} theme={theme} onChange={(value) => onConfigChange("count", String(value || 1))} />
+                    <CountInput value={count} max={config.imageOutputFormat === "svg" ? 1 : 15} theme={theme} onChange={(value) => onConfigChange("count", String(value || 1))} />
                 </SettingGroup>
                 <div className="rounded-2xl px-4 py-3" style={{ background: theme.node.fill, color: theme.node.text }}>
                     <div className="text-xs" style={{ color: theme.node.muted }}>
                         将使用
                     </div>
-                    <div className="mt-1 font-mono text-lg font-semibold">{config.size === "auto" ? "自动" : previewSize || "尺寸无效"}</div>
+                    <div className="mt-1 font-mono text-lg font-semibold">{config.size === "auto" ? "自动" : (config.imageOutputFormat === "gif" ? config.size : previewSize) || "尺寸无效"}</div>
                 </div>
             </div>
         </ImageSettingsTheme>

@@ -56,7 +56,7 @@ import { getImageRequestTimeoutSeconds, IMAGE_FETCH_CORS_HINT } from './lib/imag
 import { getFalErrorMessage, getFalQueuedImageResult } from './lib/falAiImageApi'
 import { getCustomQueuedImageResult } from './lib/openaiCompatibleImageApi'
 import { createImageTaskIdempotencyKey, hasImageTaskCredentials, isRecoverableImageTaskError, shouldUseImageTasks, type ImageTaskReference } from './lib/imageTasks'
-import { validateMaskMatchesImage } from './lib/canvasImage'
+import { validateMarkupMatchesImage, validateMaskMatchesImage } from './lib/canvasImage'
 import { orderInputImagesForMask } from './lib/mask'
 import { getChangedParams, normalizeParamsForSettings } from './lib/paramCompatibility'
 import { isMidjourneyModel } from './lib/midjourney'
@@ -737,7 +737,8 @@ interface AppState {
   setMaskDraft: (draft: MaskDraft | null) => void
   clearMaskDraft: () => void
   maskEditorImageId: string | null
-  setMaskEditorImageId: (id: string | null) => void
+  maskEditorModel: string | null
+  setMaskEditorImageId: (id: string | null, model?: string) => void
   galleryInputDraft: AgentInputDraft | null
 
   // 参数
@@ -899,6 +900,7 @@ function normalizeMaskDraft(value: unknown): MaskDraft | null {
   if (typeof value.targetImageId !== 'string' || typeof value.maskDataUrl !== 'string') return null
   return {
     targetImageId: value.targetImageId,
+    kind: value.kind === 'markup' ? 'markup' : 'mask',
     maskDataUrl: value.maskDataUrl,
     updatedAt: typeof value.updatedAt === 'number' ? value.updatedAt : Date.now(),
   }
@@ -1263,9 +1265,10 @@ export const useStore = create<AppState>()(
         }),
       clearMaskDraft: () => set((s) => syncActiveInputDraft(s, { maskDraft: null })),
       maskEditorImageId: null,
-      setMaskEditorImageId: (maskEditorImageId) => {
+      maskEditorModel: null,
+      setMaskEditorImageId: (maskEditorImageId, model) => {
         if (maskEditorImageId) dismissAllTooltips()
-        set((s) => syncActiveInputDraft(s, { maskEditorImageId }))
+        set((s) => ({ ...syncActiveInputDraft(s, { maskEditorImageId }), maskEditorModel: model ?? null }))
       },
       galleryInputDraft: null,
 
@@ -2302,7 +2305,9 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
   if (maskDraft) {
     try {
       orderedInputImages = orderInputImagesForMask(inputImages, maskDraft.targetImageId)
-      const coverage = await validateMaskMatchesImage(maskDraft.maskDataUrl, orderedInputImages[0].dataUrl)
+      const coverage = maskDraft.kind === 'markup'
+        ? (await validateMarkupMatchesImage(maskDraft.maskDataUrl, orderedInputImages[0].dataUrl), 'partial')
+        : await validateMaskMatchesImage(maskDraft.maskDataUrl, orderedInputImages[0].dataUrl)
       if (coverage === 'full' && !options.allowFullMask) {
         setConfirmDialog({
           title: '确认编辑整张图片？',
@@ -2356,6 +2361,7 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
       inputImageIds: orderedInputImages.map((i) => i.id),
       maskTargetImageId,
       maskImageId,
+      editLayerKind: maskDraft?.kind,
       outputImages: [],
       status: 'running',
       error: null,
@@ -3103,6 +3109,10 @@ async function buildAgentApiInput(conversation: AgentConversation, currentRound:
 export async function submitAgentMessage() {
   const state = useStore.getState()
   const { settings, prompt, inputImages, maskDraft, params, showToast } = state
+  if (maskDraft?.kind === 'markup') {
+    showToast('请在生图工坊提交标注编辑', 'error')
+    return
+  }
   const normalizedSettings = normalizeSettings(settings)
   const activeProfile = getEffectiveImageApiProfile(normalizedSettings, getActiveApiProfile(normalizedSettings))
 
@@ -4033,7 +4043,8 @@ async function executeTask(taskId: string) {
       prompt: replaceImageMentionsForApi(task.prompt, inputDataUrls.length),
       params: task.params,
       inputImageDataUrls: inputDataUrls,
-      maskDataUrl,
+      maskDataUrl: task.editLayerKind === 'markup' ? undefined : maskDataUrl,
+      markupDataUrl: task.editLayerKind === 'markup' ? maskDataUrl : undefined,
       imageTask: storedImageTask ?? undefined,
       // 生成已返回后，由结果读取层管理超时；并发子请求仍各自保留生成超时。
       onResultReceived: () => clearOpenAIWatchdogTimer(taskId),
@@ -4280,6 +4291,7 @@ export async function retryTask(task: TaskRecord) {
     inputImageIds: [...task.inputImageIds],
     maskTargetImageId: task.maskTargetImageId ?? null,
     maskImageId: task.maskImageId ?? null,
+    editLayerKind: task.editLayerKind,
     outputImages: [],
     status: 'running',
     error: null,
@@ -4330,7 +4342,7 @@ export async function reuseConfig(task: TaskRecord) {
       const maskDataUrl = await ensureImageCached(task.maskImageId)
       if (!isCurrent()) return
       if (!maskDataUrl) throw new Error('遮罩图片已不存在，请重新编辑遮罩后再复用。')
-      restoredMask = { targetImageId: maskTargetImageId, maskDataUrl, updatedAt: Date.now() }
+      restoredMask = { targetImageId: maskTargetImageId, maskDataUrl, kind: task.editLayerKind, updatedAt: Date.now() }
     }
   } catch (error) {
     if (isCurrent()) showToast(error instanceof Error ? error.message : '读取参考图片失败，请重试。', 'error')

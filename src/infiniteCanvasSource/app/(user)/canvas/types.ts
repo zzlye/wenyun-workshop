@@ -31,6 +31,7 @@ export type CanvasReferenceImage = {
     storageKey?: string;
     maskDataUrl?: string;
     maskStorageKey?: string;
+    editLayerKind?: "mask" | "markup";
     isMaskTarget?: boolean;
     width?: number;
     height?: number;
@@ -53,6 +54,10 @@ export type CanvasNodeMetadata = {
     quality?: string;
     imageBackground?: string;
     imageOutputFormat?: string;
+    // 二点六生成选项随节点与全局设置保存。
+    imageComplexity?: string;
+    imageFrameCount?: string;
+    imageFrameDurationMs?: string;
     imageOutputCompression?: string;
     imageModeration?: string;
     // 保存专属参数，节点重试和刷新恢复沿用本次生成设置。

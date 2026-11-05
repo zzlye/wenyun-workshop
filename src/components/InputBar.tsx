@@ -617,7 +617,7 @@ export default function InputBar() {
   const submitButtonAriaLabel = activeAgentIsRunning
     ? '停止生成'
     : hasSubmitApiConfig
-    ? maskDraft ? '遮罩编辑' : '生成图像'
+    ? maskDraft ? maskDraft.kind === 'markup' ? '标注编辑' : '遮罩编辑' : '生成图像'
     : '请先配置 API'
   const submitTooltipText = activeAgentIsRunning ? '停止生成' : '尚未完成 API 配置，请在右上角设置中进行'
   const promptPlaceholder = '描述你想生成的图片，可输入 @ 来指定参考图...'
@@ -645,7 +645,7 @@ export default function InputBar() {
   const activeProvider = activeProfile.provider
   const isFalProvider = activeProvider === 'fal'
   const agentAutoImageCount = appMode === 'agent' && activeProfile.provider === 'openai' && activeProfile.apiMode === 'responses'
-  const outputImageLimit = getOutputImageLimitForSettings(effectiveSettings)
+  const outputImageLimit = params.output_format === 'svg' ? 1 : getOutputImageLimitForSettings(effectiveSettings)
   const nDraftValue = Number(nInput)
   const effectiveNValue = Number.isNaN(nDraftValue) ? params.n : nDraftValue
   // Midjourney 的四图属于一次生成，切换模型后也不能沿用旧数量拆成多次付费提交。
@@ -655,8 +655,8 @@ export default function InputBar() {
     : isFalProvider
     ? `fal.ai 最大请求数量为 ${outputImageLimit}`
     : `OpenAI 最大请求数量为 ${outputImageLimit}`
-  const normalizedDisplaySize = normalizeImageSizeForProfile(params.size, activeProfile.id, activeProfile.model)
-  const displaySize = isMidjourney ? normalizedDisplaySize : normalizedDisplaySize === 'auto' ? DEFAULT_PARAMS.size : normalizedDisplaySize || DEFAULT_PARAMS.size
+  const normalizedDisplaySize = params.output_format === 'gif' ? params.size : normalizeImageSizeForProfile(params.size, activeProfile.id, activeProfile.model)
+  const displaySize = normalizedDisplaySize || DEFAULT_PARAMS.size
   const imageSizeTiers = getImageSizeTiersForProfile(activeProfile.id, activeProfile.model)
   const allowCustomImageRatio = allowsCustomImageRatioForProfile(activeProfile.id)
   const mediaModels = useMediaCatalog(effectiveActiveProfile.baseUrl, effectiveActiveProfile.apiKey, effectiveActiveProfile.apiProxy)
@@ -665,9 +665,10 @@ export default function InputBar() {
   const modelUnitCostText = effectiveActiveProfile.apiKey ? selectedModelOption?.billing?.summary ?? '暂无价格' : 'HUHN --'
 
   useEffect(() => {
+    if (params.output_format === 'gif') return
     const nextSize = normalizeImageSizeForProfile(params.size, activeProfile.id, activeProfile.model)
     if (nextSize && nextSize !== params.size) setParams({ size: nextSize })
-  }, [activeProfile.id, activeProfile.model, params.size, setParams])
+  }, [activeProfile.id, activeProfile.model, params.size, params.output_format, setParams])
 
   const referenceImageLimit = isMidjourney ? MIDJOURNEY_MAX_REFERENCES : API_MAX_IMAGES
   const atImageLimit = inputImages.length >= referenceImageLimit
@@ -817,7 +818,7 @@ export default function InputBar() {
       return
     }
 
-    createMaskPreviewDataUrl(maskTargetImage.dataUrl, maskDraft.maskDataUrl)
+    createMaskPreviewDataUrl(maskTargetImage.dataUrl, maskDraft.maskDataUrl, maskDraft.kind)
       .then((url) => {
         if (!cancelled) setMaskPreviewUrl(url)
       })
@@ -1682,7 +1683,7 @@ export default function InputBar() {
           )}
           {isMaskTarget && (
             <span className="absolute left-1 top-1 rounded bg-blue-500/90 px-1.5 py-0.5 text-[8px] leading-none text-white font-bold tracking-wider backdrop-blur-sm z-10 pointer-events-none">
-              MASK
+              {maskDraft?.kind === 'markup' ? '标注' : 'MASK'}
             </span>
           )}
           <span className="absolute bottom-1 left-1 flex h-4 w-4 items-center justify-center rounded-full bg-black/55 text-[9px] font-semibold text-white backdrop-blur-sm z-10 pointer-events-none">
@@ -1861,7 +1862,7 @@ export default function InputBar() {
         <ButtonTooltip visible={nLimitHint.visible} text={nLimitHintText} />
         <ButtonTooltip visible={splitIntoIndependentTasks && !nLimitHint.visible} text="数量大于 1 时会创建多个独立任务，完成一张显示一张" />
       </label>}
-      {supportsTransparentImageBackground(activeProfile.model) && <ImageOutputSettings value={params} onChange={setParams} />}
+      {supportsTransparentImageBackground(activeProfile.model) && <ImageOutputSettings value={params} onChange={setParams} model={activeProfile.model} hasInputImages={inputImages.length > 0} />}
     </div>
   )
 
@@ -2034,7 +2035,7 @@ export default function InputBar() {
                 </div>
                 {mobileCollapsed && (
                   <div className="text-xs text-gray-400 dark:text-gray-500 mb-2 ml-1">
-                    {maskDraft ? `1 张遮罩主图 · ${referenceImages.length} 张参考图` : `${inputImages.length} 张参考图`}
+                    {maskDraft ? `1 张${maskDraft.kind === 'markup' ? '标注' : '遮罩'}主图 · ${referenceImages.length} 张参考图` : `${inputImages.length} 张参考图`}
                   </div>
                 )}
               </>
@@ -2326,7 +2327,7 @@ export default function InputBar() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                       </svg>
                     )}
-                    {activeAgentIsRunning ? '停止生成' : maskDraft ? '遮罩编辑' : '生成图像'}
+                    {activeAgentIsRunning ? '停止生成' : maskDraft ? maskDraft.kind === 'markup' ? '标注编辑' : '遮罩编辑' : '生成图像'}
                   </button>
                 </div>
               </div>

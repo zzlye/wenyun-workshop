@@ -57,14 +57,19 @@ export const FIXED_IMAGE_MODEL_PRICING: FixedImageModelPricing[] = [
   { model: 'mj-v8.2', label: 'mj-v8.2', requestModel: 'mj-v8.2', unitCostText: 'HUHN --', resolutionText: '自动' },
 ]
 
-// 渠道前缀和后缀只负责路由，参数能力跟随官方模型版本，不能依赖固定名称白名单。
-export function isGptImageModel(model: string): boolean {
-  return /(?:^|[^a-z0-9])gpt-image-\d+(?:\.\d+)?(?=$|[^a-z0-9.])/i.test(model.trim())
+// 二点六按完整核心名称识别，前后可以直接拼接渠道名，无需分隔符；请求仍保留原名。
+export function isGptImage26Model(model: string): boolean {
+  return /gpt-image-2\.6-(?:flare|sunburst)/i.test(model)
 }
 
-// 图片二点五支持扩展品质；图片二仍只允许 auto/low/medium/high。
+// 渠道前缀和后缀只负责路由，参数能力跟随官方模型版本，不能依赖固定名称白名单。
+export function isGptImageModel(model: string): boolean {
+  return isGptImage26Model(model) || /(?:^|[^a-z0-9])gpt-image-\d+(?:\.\d+)?(?=$|[^a-z0-9.])/i.test(model.trim())
+}
+
+// 二点五和二点六支持扩展品质；图片二仍只允许 auto/low/medium/high。
 export function supportsExtendedImageQuality(model: string): boolean {
-  return /(?:^|[^a-z0-9])gpt-image-2\.5(?=$|[^a-z0-9.])/i.test(model.trim())
+  return isGptImage26Model(model) || /(?:^|[^a-z0-9])gpt-image-2\.5(?=$|[^a-z0-9.])/i.test(model.trim())
 }
 
 // 旧配置和历史任务重试都使用同一规则，防止界面隐藏后仍然发送不支持的品质。

@@ -184,7 +184,7 @@ export default function DetailModal() {
     setMaskPreviewSrc('')
     if (!maskTargetSrc || !maskSrc) return
 
-    createMaskPreviewDataUrl(maskTargetSrc, maskSrc)
+    createMaskPreviewDataUrl(maskTargetSrc, maskSrc, task?.editLayerKind)
       .then((url) => {
         if (!cancelled) setMaskPreviewSrc(url)
       })
@@ -195,7 +195,7 @@ export default function DetailModal() {
     return () => {
       cancelled = true
     }
-  }, [maskTargetSrc, maskSrc])
+  }, [maskTargetSrc, maskSrc, task?.editLayerKind])
 
   if (!task) return null
 
@@ -867,7 +867,14 @@ export default function DetailModal() {
                   <DetailParamValue task={task} paramKey="quality" className="font-medium" actualParams={{ ...task.actualParams, ...currentActualParams }} />
                 </div>
               )}
-              {!isAgentTask && (
+                {(['output_format', 'complexity', 'frame_count', 'frame_duration_ms'] as const).map(key => {
+                  const value = currentActualParams?.[key] ?? task.actualParams?.[key] ?? task.params[key]
+                  if (value == null) return null
+                  const labels = { output_format: '输出格式', complexity: '复杂度', frame_count: '动画帧数', frame_duration_ms: '每帧时长' }
+                  const display = key === 'complexity' ? ({ low: '低', medium: '中', high: '高' }[value as 'low' | 'medium' | 'high'] || value) : key === 'output_format' ? String(value).toUpperCase() : key === 'frame_duration_ms' ? `${value} 毫秒` : value
+                  return <div key={key} className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2"><span className="text-gray-400 dark:text-gray-500">{labels[key]}</span><br /><span className="font-medium text-gray-700 dark:text-gray-300">{display}</span></div>
+                })}
+                {!isAgentTask && (
                 <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
                   <span className="text-gray-400 dark:text-gray-500">数量</span>
                   <br />

@@ -1,6 +1,7 @@
 import { DEFAULT_PARAMS, type AppSettings, type TaskParams } from '../types'
 import { getActiveApiProfile, normalizeImageSizeForProfile } from './apiProfiles'
-import { isGptImageModel, normalizeImageBackground, normalizeImageQuality } from './modelPricing'
+import { isGptImage26Model, isGptImageModel, normalizeImageBackground, normalizeImageQuality } from './modelPricing'
+import { normalizeImage26Params } from './image26'
 import { isMidjourneyModel, normalizeMidjourneyRatio } from './midjourney'
 
 export const DEFAULT_FAL_IMAGE_SIZE = '1360x1024'
@@ -28,7 +29,7 @@ export function normalizeParamsForSettings(
     ...params,
     size: normalizedSize || DEFAULT_PARAMS.size,
     quality: normalizeImageQuality(activeProfile.model, params.quality),
-    output_format: isGptImageModel(activeProfile.model) && ['png', 'jpeg', 'webp'].includes(params.output_format) ? params.output_format : 'png',
+    output_format: isGptImage26Model(activeProfile.model) || (isGptImageModel(activeProfile.model) && ['png', 'jpeg', 'webp'].includes(params.output_format)) ? params.output_format : 'png',
     output_compression: isGptImageModel(activeProfile.model) && params.output_format !== 'png' ? params.output_compression : DEFAULT_PARAMS.output_compression,
     n: Math.min(outputImageLimit, Math.max(1, params.n || DEFAULT_PARAMS.n)),
   }
@@ -54,12 +55,14 @@ export function normalizeParamsForSettings(
     nextParams.output_compression = DEFAULT_PARAMS.output_compression
   }
 
-  return nextParams
+  // 动画逐帧尺寸不套用静态图片的最小像素限制。
+  if (isGptImage26Model(activeProfile.model) && params.output_format === 'gif') nextParams.size = params.size
+  return normalizeImage26Params(activeProfile.model, nextParams, Boolean(options.hasInputImages))
 }
 
 export function getChangedParams(current: TaskParams, next: TaskParams): Partial<TaskParams> {
   const patch: Partial<TaskParams> = {}
-  for (const key of Object.keys(next) as Array<keyof TaskParams>) {
+  for (const key of new Set([...Object.keys(current), ...Object.keys(next)]) as Set<keyof TaskParams>) {
     if (current[key] !== next[key]) {
       ;(patch as Record<keyof TaskParams, TaskParams[keyof TaskParams]>)[key] = next[key]
     }

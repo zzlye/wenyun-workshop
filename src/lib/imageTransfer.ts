@@ -7,6 +7,7 @@ const IMAGE_MIME_EXTENSIONS: Record<string, string> = {
   'image/jpg': 'jpg',
   'image/webp': 'webp',
   'image/gif': 'gif',
+  'image/svg+xml': 'svg',
 }
 
 const IMAGE_EXTENSION_MIME: Record<string, string> = {
@@ -15,6 +16,7 @@ const IMAGE_EXTENSION_MIME: Record<string, string> = {
   jpeg: 'image/jpeg',
   webp: 'image/webp',
   gif: 'image/gif',
+  svg: 'image/svg+xml',
 }
 
 export async function getImageSourceBlob(src: string): Promise<Blob> {

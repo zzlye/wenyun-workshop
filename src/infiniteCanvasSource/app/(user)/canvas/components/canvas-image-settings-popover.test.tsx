@@ -111,3 +111,15 @@ it("新增渠道显示输出设置并可选自动尺寸", async () => {
     await act(async () => auto.click());
     expect(onConfigChange).toHaveBeenCalledWith("size", "auto");
 });
+
+it("二点六渠道显示 SVG、GIF 与复杂度，并同步动画默认参数", async () => {
+    const { onConfigChange } = await renderModel("官渠gpt-image-2.6-flare测试");
+    const select = host.querySelector<HTMLSelectElement>('select[aria-label="输出格式"]')!;
+    expect(Array.from(select.options).map(item => item.value)).toEqual(["png", "jpeg", "webp", "svg", "gif"]);
+    expect(host.querySelector('select[aria-label="复杂度"]')).not.toBeNull();
+    await act(async () => { select.value = "gif"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(onConfigChange).toHaveBeenCalledWith("imageOutputFormat", "gif");
+    expect(onConfigChange).toHaveBeenCalledWith("imageFrameCount", "9");
+    expect(onConfigChange).toHaveBeenCalledWith("imageFrameDurationMs", "200");
+    expect(onConfigChange).toHaveBeenCalledWith("size", "auto");
+});

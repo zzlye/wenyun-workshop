@@ -104,7 +104,7 @@ export default function Lightbox() {
       return
     }
 
-    createMaskPreviewDataUrl(src, maskImageSrc)
+    createMaskPreviewDataUrl(src, maskImageSrc, maskDraft?.targetImageId === lightboxImageId ? maskDraft.kind : tasks.find(t => t.maskTargetImageId === lightboxImageId && t.maskImageId)?.editLayerKind)
       .then((url) => {
         if (!cancelled) setMaskPreviewSrc(url)
       })
@@ -115,7 +115,7 @@ export default function Lightbox() {
     return () => {
       cancelled = true
     }
-  }, [src, maskImageSrc])
+  }, [src, maskImageSrc, maskDraft, lightboxImageId, tasks])
 
   // 导航
   const currentIndex = lightboxImageId ? lightboxImageList.indexOf(lightboxImageId) : -1

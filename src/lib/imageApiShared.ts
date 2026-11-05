@@ -8,6 +8,8 @@ export const MIME_MAP: Record<string, string> = {
   png: 'image/png',
   jpeg: 'image/jpeg',
   webp: 'image/webp',
+  gif: 'image/gif',
+  svg: 'image/svg+xml',
 }
 
 export const MAX_MASK_EDIT_FILE_BYTES = 50 * 1024 * 1024
@@ -24,6 +26,8 @@ export interface CallApiOptions {
   /** 输入图片的 data URL 列表 */
   inputImageDataUrls: string[]
   maskDataUrl?: string
+  /** 标注必须是与第一张参考图等尺寸的透明 PNG，不与遮罩同时使用。 */
+  markupDataUrl?: string
   /** 已收到生成响应，后续读取使用独立预算；仅内部使用，不增加前端阶段。 */
   onResultReceived?: () => void
   onFalRequestEnqueued?: (request: { requestId: string; endpoint: string }) => void
@@ -240,7 +244,10 @@ export function pickActualParams(source: unknown): Partial<TaskParams> {
   if (record.quality === 'auto' || record.quality === 'low' || record.quality === 'medium' || record.quality === 'high' || record.quality === 'xhigh' || record.quality === 'max') {
     actualParams.quality = record.quality
   }
-  if (record.output_format === 'png' || record.output_format === 'jpeg' || record.output_format === 'webp') {
+  if (record.complexity === 'low' || record.complexity === 'medium' || record.complexity === 'high') actualParams.complexity = record.complexity
+  if (typeof record.frame_count === 'number') actualParams.frame_count = record.frame_count
+  if (typeof record.frame_duration_ms === 'number') actualParams.frame_duration_ms = record.frame_duration_ms
+  if (record.output_format === 'png' || record.output_format === 'jpeg' || record.output_format === 'webp' || record.output_format === 'svg' || record.output_format === 'gif') {
     actualParams.output_format = record.output_format
   }
   if (record.background === 'auto' || record.background === 'opaque' || record.background === 'transparent') {

@@ -42,6 +42,10 @@ export type AiConfig = {
     imageBackground: string;
     // 保留为字符串以兼容画布的节点参数编辑与旧配置存储。
     imageOutputFormat?: string;
+    // 二点六生成选项随节点与全局设置保存。
+    imageComplexity?: string;
+    imageFrameCount?: string;
+    imageFrameDurationMs?: string;
     imageOutputCompression?: string;
     imageModeration?: string;
     mjRaw?: string;

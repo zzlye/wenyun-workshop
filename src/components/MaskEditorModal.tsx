@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { ensureImageCached, useStore } from '../store'
-import { canvasToBlob, loadImage } from '../lib/canvasImage'
+import { canvasToBlob, loadImage, validateMarkupMatchesImage } from '../lib/canvasImage'
+import { getActiveApiProfile } from '../lib/apiProfiles'
+import { isGptImage26Model } from '../lib/modelPricing'
 import { storeImage } from '../lib/db'
 import { prepareMaskTargetDataUrl, replaceMaskTargetImage } from '../lib/maskPreprocess'
 import { useCloseOnEscape } from '../hooks/useCloseOnEscape'
@@ -108,6 +110,13 @@ export default function MaskEditorModal() {
   const clearMaskDraft = useStore((s) => s.clearMaskDraft)
   const setConfirmDialog = useStore((s) => s.setConfirmDialog)
   const showToast = useStore((s) => s.showToast)
+  const editorModel = useStore((s) => s.maskEditorModel || getActiveApiProfile(s.settings).model)
+  const appMode = useStore((s) => s.appMode)
+  const supportsMarkup = isGptImage26Model(editorModel) && appMode !== 'agent'
+  const [editKind, setEditKind] = useState<'mask' | 'markup'>('mask')
+  // 绘制回调与动画帧读取同一模式，切换时同步更新，防止透明图层被遮罩预览覆盖。
+  const editKindRef = useRef<'mask' | 'markup'>('mask')
+  const [inkColor, setInkColor] = useState('#ef4444')
 
   const imageCanvasRef = useRef<HTMLCanvasElement>(null)
   const previewCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -287,6 +296,11 @@ export default function MaskEditorModal() {
     previewCtx.save()
     previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height)
     previewCtx.globalCompositeOperation = 'source-over'
+    if (editKindRef.current === 'markup') {
+      previewCtx.drawImage(maskCanvas, 0, 0)
+      previewCtx.restore()
+      return
+    }
     previewCtx.fillStyle = 'rgba(59, 130, 246, 0.58)'
     previewCtx.fillRect(0, 0, previewCanvas.width, previewCanvas.height)
     previewCtx.globalCompositeOperation = 'destination-out'
@@ -381,7 +395,9 @@ export default function MaskEditorModal() {
     if (!canvas || !ctx) return
 
     undoStackRef.current.push(ctx.getImageData(0, 0, canvas.width, canvas.height))
-    if (undoStackRef.current.length > 40) undoStackRef.current.shift()
+    // 大图按字节预算保留撤销记录，避免四 K 标注积累数十份完整像素。
+    const historyLimit = Math.max(1, Math.min(40, Math.floor(96 * 1024 * 1024 / (canvas.width * canvas.height * 4))))
+    if (undoStackRef.current.length > historyLimit) undoStackRef.current.shift()
     redoStackRef.current = []
     syncHistoryState()
   }
@@ -401,8 +417,8 @@ export default function MaskEditorModal() {
     if (!canvas || !ctx) return
 
     ctx.save()
-    ctx.globalCompositeOperation = nextTool === 'brush' ? 'destination-out' : 'source-over'
-    ctx.fillStyle = '#fff'
+    ctx.globalCompositeOperation = editKindRef.current === 'markup' ? (nextTool === 'brush' ? 'source-over' : 'destination-out') : (nextTool === 'brush' ? 'destination-out' : 'source-over')
+    ctx.fillStyle = editKindRef.current === 'markup' ? inkColor : '#fff'
     ctx.beginPath()
     ctx.arc(point.x, point.y, brushSize / 2, 0, Math.PI * 2)
     ctx.fill()
@@ -416,8 +432,8 @@ export default function MaskEditorModal() {
     if (!canvas || !ctx) return
 
     ctx.save()
-    ctx.globalCompositeOperation = nextTool === 'brush' ? 'destination-out' : 'source-over'
-    ctx.strokeStyle = '#fff'
+    ctx.globalCompositeOperation = editKindRef.current === 'markup' ? (nextTool === 'brush' ? 'source-over' : 'destination-out') : (nextTool === 'brush' ? 'destination-out' : 'source-over')
+    ctx.strokeStyle = editKindRef.current === 'markup' ? inkColor : '#fff'
     ctx.lineWidth = brushSize
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
@@ -486,7 +502,7 @@ export default function MaskEditorModal() {
           return
         }
 
-        const preparedTarget = await prepareMaskTargetDataUrl(dataUrl)
+        const preparedTarget = await prepareMaskTargetDataUrl(dataUrl, supportsMarkup ? 4096 : undefined)
         const image = await loadImage(preparedTarget.dataUrl)
         if (cancelled) return
 
@@ -506,7 +522,11 @@ export default function MaskEditorModal() {
         imageCtx.clearRect(0, 0, imageCanvas.width, imageCanvas.height)
         imageCtx.drawImage(image, 0, 0)
 
-        fillWhiteMask(maskCanvas)
+        const initialKind = maskDraft?.targetImageId === targetImageId && maskDraft.kind === 'markup' ? 'markup' : 'mask'
+        editKindRef.current = initialKind
+        setEditKind(initialKind)
+        if (initialKind === 'mask') fillWhiteMask(maskCanvas)
+        else maskCanvas.getContext('2d')?.clearRect(0, 0, maskCanvas.width, maskCanvas.height)
 
         if (maskDraft?.targetImageId === targetImageId) {
           try {
@@ -514,7 +534,8 @@ export default function MaskEditorModal() {
             if (cancelled) return
             drawMaskImageToCanvas(draftImage, maskCanvas)
           } catch (err) {
-            fillWhiteMask(maskCanvas)
+            if (initialKind === 'mask') fillWhiteMask(maskCanvas)
+            else maskCanvas.getContext('2d')?.clearRect(0, 0, maskCanvas.width, maskCanvas.height)
             showToast(
               `遮罩草稿加载失败，已重置为空白遮罩：${err instanceof Error ? err.message : String(err)}`,
               'error',
@@ -557,7 +578,7 @@ export default function MaskEditorModal() {
       panGestureRef.current = null
       setIsPanning(false)
     }
-  }, [imageId, maskDraft, setMaskEditorImageId, showToast])
+  }, [imageId, maskDraft, setMaskEditorImageId, showToast, supportsMarkup])
 
   useEffect(() => {
     if (isAltKeyPressed) {
@@ -776,7 +797,23 @@ export default function MaskEditorModal() {
     if (!canvas || !isReady || isSaving) return
 
     pushUndoSnapshot()
-    fillWhiteMask(canvas)
+    if (editKindRef.current === 'mask') fillWhiteMask(canvas)
+    else canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
+    renderPreview()
+  }
+
+  const switchEditKind = (kind: 'mask' | 'markup') => {
+    const canvas = maskCanvasRef.current
+    if (!canvas || !isReady || isSaving || kind === editKindRef.current) return
+    // 遮罩和标注的透明度语义相反，不能复用像素或撤销历史。
+    editKindRef.current = kind
+    setEditKind(kind)
+    if (kind === 'markup') setBrushSize(12)
+    if (kind === 'mask') fillWhiteMask(canvas)
+    else canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
+    undoStackRef.current = []
+    redoStackRef.current = []
+    syncHistoryState()
     renderPreview()
   }
 
@@ -791,6 +828,7 @@ export default function MaskEditorModal() {
       setIsSaving(true)
       const blob = await canvasToBlob(canvas, 'image/png')
       const maskDataUrl = await blobToDataUrl(blob)
+      if (editKindRef.current === 'markup') await validateMarkupMatchesImage(maskDataUrl, sourceDataUrl)
       const workingTargetId = await storeImage(sourceDataUrl, 'upload')
       if (
         saveTokenRef.current !== token ||
@@ -807,12 +845,13 @@ export default function MaskEditorModal() {
         { equivalentImageIds: { [savingImageId]: workingTargetId } },
       )
       setMaskDraft({
+        kind: editKindRef.current,
         targetImageId: workingTargetId,
         maskDataUrl,
         updatedAt: Date.now(),
       })
       setMaskEditorImageId(null)
-      showToast('遮罩已保存', 'success')
+      showToast(editKindRef.current === 'markup' ? '标注已保存' : '遮罩已保存', 'success')
     } catch (err) {
       if (
         saveTokenRef.current !== token ||
@@ -850,7 +889,11 @@ export default function MaskEditorModal() {
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
           </button>
           <div className="relative flex items-center gap-1.5">
-            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-200" id="mask-editor-title">编辑遮罩</h2>
+            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-200" id="mask-editor-title">{editKind === 'markup' ? '标注编辑' : '编辑遮罩'}</h2>
+            {supportsMarkup && <div className="flex gap-1 rounded-lg bg-gray-100 p-1 dark:bg-gray-800">
+              {(['mask', 'markup'] as const).map(kind => <button key={kind} type="button" disabled={!isReady || isSaving} aria-pressed={editKind === kind} onClick={() => switchEditKind(kind)} className={`rounded-md px-2 py-1 text-xs ${editKind === kind ? 'bg-blue-500 text-white' : 'text-gray-600 dark:text-gray-300'}`}>{kind === 'mask' ? '遮罩' : '标注'}</button>)}
+            </div>}
+            {editKind === 'markup' && <input aria-label="标注颜色" type="color" value={inkColor} onChange={event => setInkColor(event.target.value)} className="h-7 w-8 cursor-pointer rounded border-0 bg-transparent" />}
             <button
               type="button"
               onClick={showMaskInfoPopover}
@@ -866,7 +909,7 @@ export default function MaskEditorModal() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </button>
-            {showMaskInfo && (
+            {showMaskInfo && editKind === 'mask' && (
               <div className="absolute left-0 top-full mt-2 w-64 rounded-xl border border-gray-200/80 bg-white px-3 py-2 text-xs leading-5 text-gray-600 shadow-lg dark:border-white/[0.08] dark:bg-gray-900 dark:text-gray-300">
                 <div className="absolute -top-1.5 left-16 h-3 w-3 rotate-45 border-l border-t border-gray-200/80 bg-white dark:border-white/[0.08] dark:bg-gray-900" />
                 <p>根据官方文档说明，此功能仅基于提示词，无法完全控制模型编辑区域。</p>
@@ -878,7 +921,7 @@ export default function MaskEditorModal() {
         <div className="flex items-center gap-2">
           {maskDraft?.targetImageId === imageId && (
             <button onClick={handleRemoveMask} className="flex h-8 items-center gap-1.5 px-4 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition">
-              移除遮罩
+              {editKind === 'markup' ? '移除标注' : '移除遮罩'}
             </button>
           )}
           <button onClick={handleSave} disabled={!isReady || isSaving} className="flex h-8 items-center gap-1.5 px-4 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-lg disabled:opacity-50 transition">

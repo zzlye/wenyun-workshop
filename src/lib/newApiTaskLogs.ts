@@ -83,7 +83,7 @@ export async function fetchAccountTaskDetails(profile: ApiProfile, session: NewA
   if (data.task_id !== taskId) throw new Error('任务详情格式异常')
   // 参数使用公开字段白名单，避免未来接口新增凭证或内部配置时被直接渲染。
   const parameters = record(data.parameters), allowed: Record<string, string> = {}
-  for (const key of ['model', 'size', 'resolution', 'aspect_ratio', 'duration', 'seconds', 'quality', 'background', 'output_format', 'output_compression', 'n', 'seed', 'response_format', 'negative_prompt', 'stream', 'moderation', 'fps', 'watermark', 'generate_audio']) {
+  for (const key of ['model', 'size', 'resolution', 'aspect_ratio', 'duration', 'seconds', 'quality', 'complexity', 'frame_count', 'frame_duration_ms', 'background', 'output_format', 'output_compression', 'n', 'seed', 'response_format', 'negative_prompt', 'stream', 'moderation', 'fps', 'watermark', 'generate_audio']) {
     if (typeof parameters[key] === 'string') allowed[key] = parameters[key]
   }
   const media = (value: unknown, role: 'media' | 'reference'): AccountTaskMedia[] => Array.isArray(value) ? value.map(value => {

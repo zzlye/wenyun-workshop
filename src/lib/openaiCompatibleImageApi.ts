@@ -5,7 +5,9 @@ import { buildApiUrl, getLockedNewApiProxyPrefix, isLockedApiProxyTarget, readCl
 import { fetchImageTask, hasImageTaskCredentials, shouldUseImageTasks } from './imageTasks'
 import { fetchResultResponse, ResultReadTimeoutError } from './resultRequest'
 import { formatImageRatio, normalizeImageSize, parseRatio } from './size'
-import { normalizeImageBackground, normalizeImageQuality, supportsTransparentImageBackground } from './modelPricing'
+import { isGptImage26Model, normalizeImageBackground, normalizeImageQuality, supportsTransparentImageBackground } from './modelPricing'
+import { normalizeImage26Params } from './image26'
+import { validateMarkupMatchesImage } from './canvasImage'
 import { findBananaSizePreset, resolveBananaSizePreset } from './bananaImageSize'
 import { isMidjourneyModel } from './midjourney'
 import { callMidjourneyImageApi } from './midjourneyImageApi'
@@ -875,7 +877,13 @@ async function callOpenAIImageApi(opts: CallApiOptions, profile: ApiProfile): Pr
   const background = normalizeImageBackground(profile.model, opts.params.background)
   // 提交边界独立校验品质与透明格式，直接调用和历史任务重试也不能绕过模型能力。
   const quality = normalizeImageQuality(profile.model, opts.params.quality)
-  opts = { ...opts, params: { ...opts.params, quality, background, ...(background === 'transparent' && opts.params.output_format === 'jpeg' ? { output_format: 'png' as const, output_compression: null } : {}) } }
+  opts = { ...opts, params: normalizeImage26Params(profile.model, { ...opts.params, quality, background, ...(background === 'transparent' && opts.params.output_format === 'jpeg' ? { output_format: 'png' as const, output_compression: null } : {}) }, opts.inputImageDataUrls.length > 0) }
+  if (opts.markupDataUrl) {
+    if (!isGptImage26Model(profile.model)) throw new Error('请选择 GPT Image 2.6 模型进行标注编辑')
+    if (opts.maskDataUrl) throw new Error('标注和遮罩不能同时使用')
+    if (!opts.inputImageDataUrls[0]) throw new Error('请先添加标注主图')
+    await validateMarkupMatchesImage(opts.markupDataUrl, opts.inputImageDataUrls[0])
+  }
   const requestModel = getFixedImageRequestModel(profile.model)
   if (profile.provider === 'openai' && requestModel !== profile.model) {
     return callImagesApi(opts, {
@@ -884,7 +892,8 @@ async function callOpenAIImageApi(opts: CallApiOptions, profile: ApiProfile): Pr
     })
   }
 
-  return profile.apiMode === 'responses'
+  // 二点六仅开放 Images 接口，旧配置中的 Responses 选项不能改变协议。
+  return profile.apiMode === 'responses' && !isGptImage26Model(profile.model)
     ? callResponsesImageApi(opts, profile)
     : callImagesApi(opts, profile)
 }
@@ -949,7 +958,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
     ? `${PROMPT_REWRITE_GUARD_PREFIX}\n${originalPrompt}`
     : originalPrompt
   const isEdit = inputImageDataUrls.length > 0
-  const shouldStreamImages = Boolean(shouldRequestImageStream() && !isEdit)
+  const shouldStreamImages = Boolean(shouldRequestImageStream() && !isEdit && params.output_format !== 'svg' && params.output_format !== 'gif')
   const mime = MIME_MAP[params.output_format] || 'image/png'
   const proxyConfig = readClientDevProxyConfig()
   const isLockedImageApi = isLockedApiProxyTarget(profile.baseUrl)
@@ -992,6 +1001,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
 
       // 品质是图生图与文生图共用的请求参数，不能被旧站点的输出格式过滤规则丢弃。
       if (!profile.codexCli) formData.append('quality', params.quality)
+      if (params.complexity) formData.append('complexity', params.complexity)
 
       if (!isLockedImageApi || usesOfficialImageParams) {
         formData.append('output_format', params.output_format)
@@ -1015,7 +1025,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       const imageBlobs: Blob[] = []
       for (let i = 0; i < inputImageDataUrls.length; i++) {
         const dataUrl = inputImageDataUrls[i]
-        const blob = (!isLockedImageApi || usesOfficialImageParams) && opts.maskDataUrl && i === 0
+        const blob = (!isLockedImageApi || usesOfficialImageParams) && (opts.maskDataUrl || opts.markupDataUrl) && i === 0
           ? await imageDataUrlToPngBlob(dataUrl)
           : await dataUrlToBlob(dataUrl)
         imageBlobs.push(blob)
@@ -1023,12 +1033,17 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
 
       // 旧渠道不发送 mask；已开放全参数的模型按图生图协议支持遮罩。
       const maskBlob = (!isLockedImageApi || usesOfficialImageParams) && opts.maskDataUrl ? await maskDataUrlToPngBlob(opts.maskDataUrl) : null
+      const markupBlob = opts.markupDataUrl ? await dataUrlToBlob(opts.markupDataUrl) : null
+      if (markupBlob) {
+        assertMaskEditFileSize('标注主图文件', imageBlobs[0]?.size ?? 0)
+        assertMaskEditFileSize('标注文件', markupBlob.size)
+      }
       if (maskBlob) {
         assertMaskEditFileSize('遮罩主图文件', imageBlobs[0]?.size ?? 0)
         assertMaskEditFileSize('遮罩文件', maskBlob.size)
       }
       assertImageInputPayloadSize(
-        imageBlobs.reduce((sum, blob) => sum + blob.size, 0) + (maskBlob?.size ?? 0),
+        imageBlobs.reduce((sum, blob) => sum + blob.size, 0) + (maskBlob?.size ?? 0) + (markupBlob?.size ?? 0),
       )
 
       const imageField = isLockedImageApi && imageBlobs.length === 1 ? 'image' : 'image[]'
@@ -1041,6 +1056,8 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       if (maskBlob) {
         formData.append('mask', maskBlob, 'mask.png')
       }
+      // 透明标注单独上传，不能合并到原图或误写成遮罩。
+      if (markupBlob) formData.append('markup', markupBlob, 'markup.png')
 
       response = await requestImageEndpoint(paths.editPath, {
         method: 'POST',
@@ -1058,6 +1075,12 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
         moderation: params.moderation,
       }
       if (params.background) body.background = params.background
+      if (params.complexity) body.complexity = params.complexity
+      if (params.output_format === 'gif') {
+        body.frame_count = params.frame_count
+        body.frame_duration_ms = params.frame_duration_ms
+      }
+      if (params.output_format === 'svg') body.n = 1
 
       if (!profile.codexCli) {
         body.quality = params.quality

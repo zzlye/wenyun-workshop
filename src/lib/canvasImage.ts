@@ -73,7 +73,30 @@ export async function validateMaskMatchesImage(maskDataUrl: string, imageDataUrl
   return coverage
 }
 
-export async function createMaskPreviewDataUrl(imageDataUrl: string, maskDataUrl: string): Promise<string> {
+// 标注保留彩色笔迹和透明底，校验后再交给编辑接口。
+export async function validateMarkupMatchesImage(markupDataUrl: string, imageDataUrl: string): Promise<void> {
+  if (!/^data:image\/png[;,]/i.test(markupDataUrl)) throw new Error('标注图层必须是透明 PNG')
+  const [markup, source] = await Promise.all([loadImage(markupDataUrl), loadImage(imageDataUrl)])
+  if (markup.naturalWidth !== source.naturalWidth || markup.naturalHeight !== source.naturalHeight) throw new Error('标注尺寸与主图不一致，请重新绘制')
+  if (markup.naturalWidth * markup.naturalHeight > 16777216) throw new Error('标注主图不能超过 16777216 像素')
+  const canvas = document.createElement('canvas')
+  canvas.width = markup.naturalWidth
+  canvas.height = markup.naturalHeight
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  if (!context) throw new Error('当前浏览器不支持 Canvas')
+  context.drawImage(markup, 0, 0)
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+  let hasInk = false
+  let hasTransparency = false
+  for (let index = 3; index < pixels.length; index += 4) {
+    hasInk ||= pixels[index] > 0
+    hasTransparency ||= pixels[index] < 255
+    if (hasInk && hasTransparency) return
+  }
+  throw new Error(hasInk ? '标注图层需要保留透明区域' : '请先绘制标注')
+}
+
+export async function createMaskPreviewDataUrl(imageDataUrl: string, maskDataUrl: string, kind: 'mask' | 'markup' = 'mask'): Promise<string> {
   const [image, mask] = await Promise.all([loadImage(imageDataUrl), loadImage(maskDataUrl)])
   if (image.naturalWidth !== mask.naturalWidth || image.naturalHeight !== mask.naturalHeight) {
     throw new Error('遮罩尺寸与遮罩主图不一致，请重新绘制遮罩')
@@ -86,6 +109,11 @@ export async function createMaskPreviewDataUrl(imageDataUrl: string, maskDataUrl
   if (!ctx) throw new Error('当前浏览器不支持 Canvas')
 
   ctx.drawImage(image, 0, 0)
+
+  if (kind === 'markup') {
+    ctx.drawImage(mask, 0, 0)
+    return canvas.toDataURL('image/png')
+  }
 
   const maskCanvas = document.createElement('canvas')
   maskCanvas.width = mask.naturalWidth

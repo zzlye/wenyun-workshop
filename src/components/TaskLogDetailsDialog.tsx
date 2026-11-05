@@ -13,7 +13,7 @@ import { useLogRefreshGuard } from '../hooks/useLogRefreshGuard'
 
 const buttonClass = 'inline-flex items-center justify-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs hover:bg-gray-100 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/10'
 const queryOptions = { retry: false, retryOnMount: false, staleTime: 20000, gcTime: 60000, refetchInterval: false, refetchOnWindowFocus: false, refetchOnReconnect: false } as const
-const labels: Record<string, string> = { model: '模型', size: '尺寸', quality: '品质', n: '数量', output_format: '输出格式', response_format: '响应格式', background: '背景', moderation: '审核', seconds: '时长', duration: '时长', aspect_ratio: '宽高比', resolution: '分辨率', seed: '种子', negative_prompt: '负面提示词', stream: '流式输出', output_compression: '压缩质量', fps: '帧率', watermark: '水印', generate_audio: '生成音频' }
+const labels: Record<string, string> = { model: '模型', size: '尺寸', quality: '品质', complexity: '复杂度', frame_count: '动画帧数', frame_duration_ms: '每帧时长（毫秒）', n: '数量', output_format: '输出格式', response_format: '响应格式', background: '背景', moderation: '审核', seconds: '时长', duration: '时长', aspect_ratio: '宽高比', resolution: '分辨率', seed: '种子', negative_prompt: '负面提示词', stream: '流式输出', output_compression: '压缩质量', fps: '帧率', watermark: '水印', generate_audio: '生成音频' }
 
 export default function TaskLogDetailsDialog({ task, profile, session, onSessionUpdated, onRequireLogin, onClose }: LogPanelProps & { task: AccountTaskLog; onClose: () => void }) {
   const root = useRef<HTMLDivElement>(null), close = useRef<HTMLButtonElement>(null)
@@ -100,7 +100,7 @@ function TaskMediaPreview({ media, index, profile, session, onSessionUpdated, on
   const kind = { image: '图片', video: '视频', audio: '音频' }[media.kind]
   const save = async () => {
     if (!query.data) return
-    const ext = ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/avif': 'avif', 'image/gif': 'gif', 'video/mp4': 'mp4', 'video/webm': 'webm', 'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/wave': 'wav' } as Record<string, string>)[query.data.type] || 'bin'
+    const ext = ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/avif': 'avif', 'image/gif': 'gif', 'image/svg+xml': 'svg', 'video/mp4': 'mp4', 'video/webm': 'webm', 'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/wave': 'wav' } as Record<string, string>)[query.data.type] || 'bin'
     try { await downloadFile(query.data, `任务${kind}-${index + 1}.${ext}`); setError('') } catch { setError('下载失败，请重试') }
   }
   // 文件需主动点击才下载；关掉详情即取消读取并回收临时地址，不批量加载大图。

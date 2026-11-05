@@ -7,6 +7,7 @@ export type ReferenceImage = {
     storageKey?: string;
     maskDataUrl?: string;
     maskStorageKey?: string;
+    editLayerKind?: "mask" | "markup";
     isMaskTarget?: boolean;
 };
 

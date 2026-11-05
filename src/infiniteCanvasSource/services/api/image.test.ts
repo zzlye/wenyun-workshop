@@ -10,6 +10,16 @@ import { requestEdit, requestGeneration, requestImageQuestion } from "./image";
 describe("canvas image api", () => {
     const initialSettings = useStore.getState().settings;
 
+    it("画布二点六 GIF 保留逐帧尺寸、复杂度及动画参数", async () => {
+        vi.stubEnv("VITE_IMAGE_TASKS_AVAILABLE", "disabled");
+        const model = "专用gpt-image-2.6-sunburst渠道";
+        useStore.setState({ settings: { ...DEFAULT_SETTINGS, profiles: DEFAULT_SETTINGS.profiles.map(profile => ({ ...profile, model, apiKey: "test-key" })) } });
+        const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ data: [{ b64_json: "R0lGODlh" }] })));
+        const result = await requestGeneration({ ...defaultConfig, model, imageModel: model, size: "256x256", quality: "max", imageOutputFormat: "gif", imageComplexity: "low", imageFrameCount: "12", imageFrameDurationMs: "160" }, "循环动画");
+        expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toMatchObject({ model, output_format: "gif", complexity: "low", frame_count: 12, frame_duration_ms: 160, size: "256x256", quality: "max" });
+        expect(result[0].dataUrl).toBe("data:image/gif;base64,R0lGODlh");
+    });
+
     it("画布 mj-v8.2 仅一次提交，保留比例、Raw 和实际多图结果", async () => {
         const model = "mj-v8.2";
         vi.stubEnv("VITE_IMAGE_TASKS_AVAILABLE", "disabled");

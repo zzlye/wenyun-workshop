@@ -410,7 +410,8 @@ export default defineConfig(({ command }) => {
     // 页面使用域名根目录的历史路由，深层地址刷新时仍从根目录加载资源。
     base: '/',
     define: {
-      __APP_VERSION__: JSON.stringify(pkg.version),
+      // 容器独立使用固定版本，桌面构建沿用安装包版本。
+      __APP_VERSION__: JSON.stringify(process.env.APP_VERSION || pkg.version),
       __DEV_PROXY_CONFIG__: JSON.stringify(devProxyConfig),
       'process.env.NEXT_PUBLIC_APP_VERSION': JSON.stringify('v0.1.0'),
       'process.env.NEXT_PUBLIC_APP_RELEASES': JSON.stringify('[]'),

@@ -1075,6 +1075,9 @@ function InfiniteCanvasPage() {
                           quality: sourceMetadata?.quality || effectiveConfig.quality,
                           imageBackground: sourceMetadata?.imageBackground || effectiveConfig.imageBackground,
                           imageOutputFormat: sourceMetadata?.imageOutputFormat ?? effectiveConfig.imageOutputFormat,
+                          imageComplexity: sourceMetadata?.imageComplexity ?? effectiveConfig.imageComplexity,
+                          imageFrameCount: sourceMetadata?.imageFrameCount ?? effectiveConfig.imageFrameCount,
+                          imageFrameDurationMs: sourceMetadata?.imageFrameDurationMs ?? effectiveConfig.imageFrameDurationMs,
                           imageOutputCompression: sourceMetadata?.imageOutputCompression ?? effectiveConfig.imageOutputCompression,
                           imageModeration: sourceMetadata?.imageModeration ?? effectiveConfig.imageModeration,
                           count: sourceMetadata?.count || 1,
@@ -1096,7 +1099,7 @@ function InfiniteCanvasPage() {
             setPendingConnectionCreate(null);
             setConnecting(null);
         },
-        [effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, effectiveConfig.quality, effectiveConfig.imageBackground, effectiveConfig.imageOutputFormat, effectiveConfig.imageOutputCompression, effectiveConfig.imageModeration, setConnecting],
+        [effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, effectiveConfig.quality, effectiveConfig.imageBackground, effectiveConfig.imageOutputFormat, effectiveConfig.imageComplexity, effectiveConfig.imageFrameCount, effectiveConfig.imageFrameDurationMs, effectiveConfig.imageOutputCompression, effectiveConfig.imageModeration, setConnecting],
     );
 
     const cancelPendingConnectionCreate = useCallback(() => {
@@ -3063,7 +3066,7 @@ function InfiniteCanvasPage() {
                     await Promise.all(
                         targetIds.map(async (targetId) => {
                             try {
-                                const requestFingerprint = `${generationType}:${targetId}:${effectivePrompt}:${generationConfig.model}:${generationConfig.size}:${generationConfig.quality}:${generationConfig.imageBackground}:${generationConfig.imageOutputFormat}:${generationConfig.imageOutputCompression}:${generationConfig.imageModeration}`;
+                                const requestFingerprint = `${generationType}:${targetId}:${effectivePrompt}:${generationConfig.model}:${generationConfig.size}:${generationConfig.quality}:${generationConfig.imageBackground}:${generationConfig.imageOutputFormat}:${generationConfig.imageComplexity}:${generationConfig.imageFrameCount}:${generationConfig.imageFrameDurationMs}:${generationConfig.imageOutputCompression}:${generationConfig.imageModeration}`;
                                 const images = referenceImages.length
                                     ? await requestEdit(
                                           { ...generationConfig, count: "1" },
@@ -3341,7 +3344,7 @@ function InfiniteCanvasPage() {
                     return;
                 }
 
-                const requestFingerprint = `retry:${node.id}:${requestPrompt}:${generationConfig.model}:${generationConfig.size}:${generationConfig.quality}:${generationConfig.imageBackground}:${generationConfig.imageOutputFormat}:${generationConfig.imageOutputCompression}:${generationConfig.imageModeration}`;
+                const requestFingerprint = `retry:${node.id}:${requestPrompt}:${generationConfig.model}:${generationConfig.size}:${generationConfig.quality}:${generationConfig.imageBackground}:${generationConfig.imageOutputFormat}:${generationConfig.imageComplexity}:${generationConfig.imageFrameCount}:${generationConfig.imageFrameDurationMs}:${generationConfig.imageOutputCompression}:${generationConfig.imageModeration}`;
                 const images = useReferenceImages
                     ? await requestEdit(
                           generationConfig,
@@ -3370,7 +3373,7 @@ function InfiniteCanvasPage() {
                 const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
                 const imageSize = fitNodeSize(uploadedImage.width, uploadedImage.height, imageConfig.width, imageConfig.height);
                 const generationMetadata = savedImageMetadata?.generationType
-                    ? { generationType: savedImageMetadata.generationType, model: generationConfig.model, size: generationConfig.size, quality: generationConfig.quality, imageBackground: generationConfig.imageBackground, imageOutputFormat: generationConfig.imageOutputFormat, imageOutputCompression: generationConfig.imageOutputCompression, imageModeration: generationConfig.imageModeration, count: savedImageMetadata.count || 1, references: savedImageMetadata.references }
+                    ? { generationType: savedImageMetadata.generationType, model: generationConfig.model, size: generationConfig.size, quality: generationConfig.quality, imageBackground: generationConfig.imageBackground, imageOutputFormat: generationConfig.imageOutputFormat, imageComplexity: generationConfig.imageComplexity, imageFrameCount: generationConfig.imageFrameCount, imageFrameDurationMs: generationConfig.imageFrameDurationMs, imageOutputCompression: generationConfig.imageOutputCompression, imageModeration: generationConfig.imageModeration, count: savedImageMetadata.count || 1, references: savedImageMetadata.references }
                     : buildImageGenerationMetadata(useReferenceImages ? "edit" : "generation", generationConfig, 1, retryReferenceImages || [], requestPrompt);
                 commitGenerationNodes((prev) =>
                     prev.map((item) =>
@@ -4394,6 +4397,9 @@ function buildImageGenerationMetadata(type: CanvasImageGenerationType, config: A
         quality: config.quality,
         imageBackground: config.imageBackground,
         imageOutputFormat: config.imageOutputFormat,
+        imageComplexity: config.imageComplexity,
+        imageFrameCount: config.imageFrameCount,
+        imageFrameDurationMs: config.imageFrameDurationMs,
         imageOutputCompression: config.imageOutputCompression,
         imageModeration: config.imageModeration,
         mjRaw: config.mjRaw,
@@ -4421,6 +4427,7 @@ async function hydrateManualReferenceImages(references?: CanvasNodeMetadata["ref
                 storageKey: image.storageKey,
                 maskDataUrl,
                 maskStorageKey: image.maskStorageKey,
+                editLayerKind: image.editLayerKind,
                 isMaskTarget: image.isMaskTarget,
             };
         }),
@@ -4543,6 +4550,9 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
         quality: node?.metadata?.quality || config.quality || defaultConfig.quality,
         imageBackground: node?.metadata?.imageBackground || config.imageBackground || defaultConfig.imageBackground,
         imageOutputFormat: node?.metadata?.imageOutputFormat ?? config.imageOutputFormat ?? defaultConfig.imageOutputFormat,
+        imageComplexity: node?.metadata?.imageComplexity ?? config.imageComplexity ?? defaultConfig.imageComplexity,
+        imageFrameCount: node?.metadata?.imageFrameCount ?? config.imageFrameCount ?? defaultConfig.imageFrameCount,
+        imageFrameDurationMs: node?.metadata?.imageFrameDurationMs ?? config.imageFrameDurationMs ?? defaultConfig.imageFrameDurationMs,
         imageOutputCompression: node?.metadata?.imageOutputCompression ?? config.imageOutputCompression ?? defaultConfig.imageOutputCompression,
         imageModeration: node?.metadata?.imageModeration ?? config.imageModeration ?? defaultConfig.imageModeration,
         mjRaw: node?.metadata?.mjRaw ?? config.mjRaw,

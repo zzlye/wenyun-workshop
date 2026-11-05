@@ -56,9 +56,9 @@ export function calculateMaskWorkingSize(
   }
 }
 
-export async function prepareMaskTargetDataUrl(dataUrl: string): Promise<PreparedMaskTarget> {
+export async function prepareMaskTargetDataUrl(dataUrl: string, maxEdge = DEFAULT_MASK_WORKING_MAX_EDGE): Promise<PreparedMaskTarget> {
   const image = await loadImage(dataUrl)
-  const size = calculateMaskWorkingSize(image.naturalWidth, image.naturalHeight)
+  const size = calculateMaskWorkingSize(image.naturalWidth, image.naturalHeight, maxEdge)
   const isPng = /^data:image\/png(?:[;,]|$)/i.test(dataUrl)
 
   if (!size.wasResized && isPng) {

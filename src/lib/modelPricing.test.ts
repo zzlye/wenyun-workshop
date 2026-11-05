@@ -1,9 +1,25 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildFixedModelPriceRows, FIXED_IMAGE_MODEL_OPTIONS, getFixedImageRequestModel, getImageSizeTiersForModel, normalizeFixedImageModel, supportsExtendedImageQuality, supportsTransparentImageBackground } from './modelPricing'
+import { buildFixedModelPriceRows, FIXED_IMAGE_MODEL_OPTIONS, getFixedImageRequestModel, getImageSizeTiersForModel, isGptImage26Model, isGptImageModel, normalizeFixedImageModel, supportsExtendedImageQuality, supportsTransparentImageBackground } from './modelPricing'
 import { DEFAULT_SETTINGS, normalizeImageSizeForProfile, normalizeSettings } from './apiProfiles'
 
 describe('fixed image model pricing', () => {
+  it.each(['gpt-image-2.6-flare', 'gpt-image-2.6-sunburst'].flatMap(model => [model, `AZ${model}4k`, `官渠/${model}-满血`, `50x${model.toUpperCase()}渠道`]))('%s 自动识别参数能力且保留完整渠道名', model => {
+    expect(isGptImage26Model(model)).toBe(true)
+    expect(isGptImageModel(model)).toBe(true)
+    expect(supportsExtendedImageQuality(model)).toBe(true)
+    expect(supportsTransparentImageBackground(model)).toBe(true)
+    expect(normalizeFixedImageModel(model)).toBe(model)
+    expect(getFixedImageRequestModel(model)).toBe(model)
+    expect(getImageSizeTiersForModel(model)).toEqual(['1K', '2K', '4K'])
+    expect(normalizeImageSizeForProfile('auto', 'wenyun-site', model)).toBe('auto')
+    expect(normalizeImageSizeForProfile('3840x2160', 'wenyun-site', model)).toBe('3840x2160')
+  })
+
+  it.each(['gpt-image-2', 'gpt-image-2.5-flare', 'gpt-image-2.60-flare', 'gpt-image-2.6-other', 'nano-banana-pro'])('%s 不误判为二点六新模型', model => {
+    expect(isGptImage26Model(model)).toBe(false)
+  })
+
   it('maps legacy vip and super-resolution names to the 4K model', () => {
     expect(getFixedImageRequestModel('gpt-image-2-vip')).toBe('gpt-image-2-4k')
     expect(getFixedImageRequestModel('gpt-image-2-超分')).toBe('gpt-image-2-4k')

@@ -318,7 +318,11 @@ export interface TaskParams {
   background?: 'auto' | 'opaque' | 'transparent'
   size: string
   quality: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
-  output_format: 'png' | 'jpeg' | 'webp'
+  /** 二点六的规划复杂度独立于渲染品质，省略时使用官方默认值。 */
+  complexity?: 'low' | 'medium' | 'high'
+  frame_count?: number
+  frame_duration_ms?: number
+  output_format: 'png' | 'jpeg' | 'webp' | 'svg' | 'gif'
   output_compression: number | null
   moderation: 'auto' | 'low'
   n: number
@@ -343,6 +347,8 @@ export interface InputImage {
 }
 
 export interface MaskDraft {
+  /** 同一编辑层只选择遮罩或透明标注，旧草稿默认按遮罩读取。 */
+  kind?: 'mask' | 'markup'
   targetImageId: string
   maskDataUrl: string
   updatedAt: number
@@ -392,6 +398,7 @@ export interface TaskRecord {
   inputImageIds: string[]
   maskTargetImageId?: string | null
   maskImageId?: string | null
+  editLayerKind?: 'mask' | 'markup'
   /** 输出图片的 image store id 列表 */
   outputImages: string[]
   /** 流式生成的中间步骤图片 id 列表，仅失败时保留供排查/下载 */

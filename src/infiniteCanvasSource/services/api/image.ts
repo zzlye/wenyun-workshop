@@ -100,8 +100,11 @@ function buildTaskParams(config: AiConfig): TaskParams {
         n,
         quality,
         background: normalizeImageBackground(config.imageModel || config.model, config.imageBackground),
-        output_format: config.imageOutputFormat === "jpeg" || config.imageOutputFormat === "webp" ? config.imageOutputFormat : "png",
+        output_format: config.imageOutputFormat === "jpeg" || config.imageOutputFormat === "webp" || config.imageOutputFormat === "gif" || config.imageOutputFormat === "svg" ? config.imageOutputFormat : "png",
         output_compression: config.imageOutputCompression?.trim() ? Number(config.imageOutputCompression) : null,
+        complexity: ["low", "medium", "high"].includes(config.imageComplexity || "") ? config.imageComplexity as TaskParams["complexity"] : undefined,
+        frame_count: config.imageFrameCount ? Number(config.imageFrameCount) : undefined,
+        frame_duration_ms: config.imageFrameDurationMs ? Number(config.imageFrameDurationMs) : undefined,
         moderation: config.imageModeration === "low" ? "low" : "auto",
         // 品质可以交给模型自动判断；旧画布里残留的比例值按 1K 转成具体尺寸，避免预览和实际请求不一致。
         size: config.size === "auto" ? "auto" : resolveRequestSize(quality === "auto" ? "low" : quality, config.size) || DEFAULT_PARAMS.size,
@@ -335,7 +338,8 @@ export async function requestEdit(
             prompt: withSystemPrompt(config, prompt),
             params: buildNormalizedTaskParams(config, settings, inputImageDataUrls.length > 0),
             inputImageDataUrls,
-            maskDataUrl,
+            maskDataUrl: maskImage?.editLayerKind === "markup" ? undefined : maskDataUrl,
+            markupDataUrl: maskImage?.editLayerKind === "markup" ? maskDataUrl : undefined,
             imageTask: taskReference ? { ...taskReference, recoverOnly: true } : imageTask,
             onImageTaskCreated: async task => { await onTaskCreated?.(task); await flushCanvasStorePersistence(); },
         });
