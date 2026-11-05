@@ -48,7 +48,7 @@ COPY --chmod=755 deploy/inject-api-url.sh /docker-entrypoint.d/40-inject-api-url
 # 图片任务服务依赖轮询模块，构建时验证运行镜像可加载完整服务。
 COPY server/image-tasks.mjs /opt/wenyun/image-tasks.mjs
 COPY server/midjourney.mjs /opt/wenyun/midjourney.mjs
-COPY server/gateway-task.mjs server/task-journal.mjs /opt/wenyun/
+COPY server/gateway-task.mjs server/task-journal.mjs server/image-references.mjs /opt/wenyun/
 RUN node --input-type=module -e "import('/opt/wenyun/image-tasks.mjs')"
 COPY --chmod=755 deploy/start-services.sh /opt/wenyun/start-services.sh
 

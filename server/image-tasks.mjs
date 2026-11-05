@@ -3,6 +3,7 @@ import { createServer } from 'node:http'
 import { pathToFileURL } from 'node:url'
 import { finishGatewayTask, gatewayEndpoint, readGatewayTask } from './gateway-task.mjs'
 import { createTaskJournal } from './task-journal.mjs'
+import { createImageReferenceService } from './image-references.mjs'
 
 const ALLOWED_ENDPOINTS = new Set(['/images/generations', '/images/edits', '/midjourney/generations', '/responses'])
 const isAllowedEndpoint = value => ALLOWED_ENDPOINTS.has(value) || /^\/v1beta\/models\/[a-zA-Z0-9._%-]+:generateContent$/.test(value)
@@ -225,12 +226,21 @@ export function createImageTaskServer(options = {}) {
   const logger = options.logger ?? defaultLogger
   const pollIntervalMs = options.pollIntervalMs ?? options.midjourneyPollIntervalMs ?? 5_000
   const journal = createTaskJournal(options.storageDirectory ?? process.env.IMAGE_TASK_STORAGE_DIR, options.journalCodec)
+  const references = createImageReferenceService({
+    storageDirectory: options.storageDirectory ?? process.env.IMAGE_TASK_STORAGE_DIR,
+    publicBaseUrl: options.referencePublicBaseUrl ?? process.env.IMAGE_REFERENCE_PUBLIC_BASE_URL,
+    uploadUrl: options.referenceUploadUrl ?? process.env.IMAGE_REFERENCE_UPLOAD_URL,
+    upstreamBaseUrl,
+    maxStoreBytes: options.referenceMaxStoreBytes,
+    ttlMs: options.referenceTtlMs,
+  })
   let stopping = false
   const tasks = new Map()
   const idempotencyTasks = new Map()
   const activeControllers = new Set()
 
   const cleanupExpiredTasks = () => {
+    void references.cleanup().catch(() => logger({ status: 'reference_cleanup_failed' }))
     const now = Date.now()
     for (const [taskId, task] of tasks) {
       if (task.status === 'pending' || task.status === 'running') continue
@@ -271,6 +281,8 @@ export function createImageTaskServer(options = {}) {
       let upstreamResponse
       let responseBody
       if (!task.gateway) {
+        // MJ 上游只接受公网链接；仅在首次提交前转换，恢复查询绝不重复上传或生成。
+        if (task.endpoint === '/midjourney/generations') task.requestBody = await references.prepare(task.requestBody, task.headers, abortController.signal)
         // 即使浏览器关闭，生成也由网关异步处理；这里只提交一次。
         const headers = new Headers(task.headers)
         headers.set('Prefer', 'respond-async')
@@ -377,6 +389,7 @@ export function createImageTaskServer(options = {}) {
     }
 
     const requestUrl = new URL(request.url ?? '/', 'http://image-tasks.local')
+    if (await references.handle(request, response, readBody, sendJson)) return
     if (request.method === 'OPTIONS' && (requestUrl.pathname === '/image-tasks' || requestUrl.pathname.startsWith('/image-tasks/'))) {
       sendEmpty(response, 204, { Allow: 'POST, GET, DELETE, OPTIONS' })
       return

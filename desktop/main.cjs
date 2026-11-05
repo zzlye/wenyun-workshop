@@ -148,6 +148,8 @@ async function start() {
   const { createImageTaskServer } = await import(pathToFileURL(serverFile).href);
   taskServer = createImageTaskServer({
     upstreamBaseUrl: 'https://api.xn--v5z30ywuk.com/v1',
+    // 本机图片先上传到公网托管端，不能向 MJ 传本机地址或 Base64。
+    referenceUploadUrl: 'https://xn--v5z30ywuk.com/image-tasks/reference-uploads',
     storageDirectory: path.join(profileRoot, 'image-tasks'),
     // 本机保存续查凭据时使用系统加密，安装升级不会抹掉未完成任务。
     journalCodec: {
