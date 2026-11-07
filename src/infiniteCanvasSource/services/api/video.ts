@@ -1,9 +1,8 @@
 // @ts-nocheck
 import axios from "axios";
 
-import { getDataUrlByteSize } from "@/lib/image-utils";
-import { mediaToDataUrl, getMediaBlob } from "@/services/file-storage";
-import { imageToDataUrl, getImageBlob } from "@/services/image-storage";
+import { getMediaBlob } from "@/services/file-storage";
+import { getImageBlob } from "@/services/image-storage";
 import type { AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceAudio, ReferenceImage, ReferenceVideo } from "@/types/image";
@@ -56,9 +55,6 @@ const VIDEO_TOTAL_TIMEOUT_MS = CANVAS_VIDEO_TIMEOUT * 1000;
 // 生成等待窗口与单次查询分开，避免一条卡住的查询阻塞后续完成状态。
 const VIDEO_STATUS_TIMEOUT_MS = 30_000;
 const VIDEO_DOWNLOAD_IDLE_TIMEOUT_MS = 60_000;
-const VIDEO_REFERENCE_MAX_EDGE = 1920;
-const VIDEO_REFERENCE_MAX_INLINE_BYTES = 8 * 1024 * 1024;
-const VIDEO_REFERENCE_JPEG_QUALITY = 0.88;
 
 /**
  * 画布视频节点只调用固定地址的异步视频接口。
@@ -117,11 +113,17 @@ async function buildCanvasVideoPayload(config: AiConfig, prompt: string, referen
     if (selection.generate_audio !== undefined) payload.generate_audio = selection.generate_audio;
     if (capability.configured || mode === "frames") payload.mode = mode;
     if (Object.keys(config.videoExtraParameters ?? {}).length) payload.extra_parameters = config.videoExtraParameters;
-    // 新服务逐个上传本地文件，生成请求只携带素材编号，不同时堆积多份 Base64。
+    // 所有模型统一先上传，生成请求只携带 URL；能力配置不能决定素材传输方式。
     const images: unknown[] = [], videos: unknown[] = [], audios: unknown[] = [];
-    for (const item of references) images.push(capability.configured ? await uploadVideoReference(config,item,"image") : await imageToVideoReferenceUrl(item));
-    for (const item of videoReferences) videos.push(capability.configured ? await uploadVideoReference(config,item,"video") : await videoToReferenceUrl(item));
-    for (const item of audioReferences) audios.push(capability.configured ? await uploadVideoReference(config,item,"audio") : await audioToVideoReferenceUrl(item));
+    const uploaded = new Map<string, string>();
+    const prepare = async (item: ReferenceImage | ReferenceVideo | ReferenceAudio, kind: string) => {
+        const key = `${kind}:${item.storageKey || ("dataUrl" in item && item.dataUrl) || item.url || item.id}`;
+        if (!uploaded.has(key)) uploaded.set(key, await uploadVideoReference(config, item, kind));
+        return uploaded.get(key)!;
+    };
+    for (const item of references) images.push(await prepare(item,"image"));
+    for (const item of videoReferences) videos.push(await prepare(item,"video"));
+    for (const item of audioReferences) audios.push(await prepare(item,"audio"));
     if ([...images,...audios,...videos].some(v => !v)) throw new Error("参考素材读取失败，请重新添加");
     if (mode === "frames") { payload.first_frame = images[0]; if (images.length === 2) payload.last_frame = images[1]; }
     else if (images.length) payload.image_urls = images;
@@ -131,19 +133,37 @@ async function buildCanvasVideoPayload(config: AiConfig, prompt: string, referen
 }
 
 async function uploadVideoReference(config: AiConfig, item: ReferenceImage | ReferenceVideo | ReferenceAudio, kind: string) {
-    if (/^https?:\/\//i.test(item.url || "")) return item.url;
-    let blob: Blob | null = null;
-    if (item.storageKey) blob = await (kind === "image" ? getImageBlob(item.storageKey) : getMediaBlob(item.storageKey));
-    if (!blob) {
-        const url = "dataUrl" in item && item.dataUrl || item.url;
-        if (!url || !/^(data:|blob:)/.test(url)) throw new Error("本地素材已丢失，请重新添加");
-        blob = await (await fetch(url)).blob();
+    const direct = (item.url || "").trim();
+    if (/^https?:\/\//i.test(direct)) {
+        const url = new URL(direct);
+        if (url.username || url.password) throw new Error("参考素材链接不应包含登录凭据");
+        return direct;
     }
+    let blob: Blob | null = null;
+    try {
+        if (item.storageKey) blob = await (kind === "image" ? getImageBlob(item.storageKey) : getMediaBlob(item.storageKey));
+        if (!blob) {
+            const url = "dataUrl" in item && item.dataUrl || item.url;
+            if (!url || !/^(data:|blob:)/.test(url)) throw new Error();
+            const response = await fetch(url);
+            if (!response.ok) throw new Error();
+            blob = await response.blob();
+        }
+    } catch {
+        throw new Error(`参考${kind === "video" ? "视频" : kind === "audio" ? "音频" : "图片"}读取失败，请重新添加素材`);
+    }
+    if (!blob.size || blob.size > 200 * 1024 * 1024) throw new Error("参考素材为空或超过 200MB，请重新添加");
+    const contentType = blob.type || item.type;
+    if (!contentType?.startsWith(`${kind}/`)) throw new Error("参考素材类型不正确，请重新添加");
     const source = resolveVideoApiSource(config);
-    const form = new FormData(); form.append("file", blob, item.name || kind);
-    const response = await axios.post(videoApiUrl(source,"/video/assets"), form, {headers:videoApiHeaders(source), timeout:requestTimeout(source)});
-    if (!response.data?.asset_id) throw new Error("素材上传未返回编号");
-    return {asset_id:response.data.asset_id};
+    const response = await axios.post("/image-tasks/media-reference-uploads", blob, {
+        headers: { ...videoApiHeaders(source), "Content-Type": contentType }, timeout: 180000,
+    });
+    const value = response.data?.url;
+    if (typeof value !== "string" || !/^https?:\/\//i.test(value)) throw new Error("素材上传未返回可用的公网地址");
+    const url = new URL(value);
+    if (url.username || url.password || url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]") throw new Error("素材上传未返回可用的公网地址");
+    return value;
 }
 
 export class VideoTaskPendingError extends Error {
@@ -337,143 +357,6 @@ function requestTimeout(source: VideoApiSource, remainingMs = source.timeout * 1
 
 function refreshRemoteUser(config: AiConfig) {
     if (config.channelMode === "remote") void useUserStore.getState().hydrateUser();
-}
-
-async function imageToVideoReferenceUrl(image: ReferenceImage) {
-    const directUrl = (image.url || "").trim();
-    if (/^https?:\/\//i.test(directUrl)) return directUrl;
-    const dataUrl = await imageToDataUrl(image);
-    return optimizeVideoReferenceDataUrl(dataUrl);
-}
-
-async function audioToVideoReferenceUrl(audio: ReferenceAudio) {
-    const directUrl = (audio.url || "").trim();
-    if (/^https?:\/\//i.test(directUrl)) return directUrl;
-
-    const dataUrl = await mediaToDataUrl(audio);
-    if (!dataUrl) return "";
-    if (!dataUrl.startsWith("data:audio/")) throw new Error("参考音频格式不正确，请上传 MP3 或 WAV 音频");
-    return normalizeVideoReferenceAudioDataUrl(dataUrl);
-}
-
-async function videoToReferenceUrl(video: ReferenceVideo) {
-    const directUrl = (video.url || "").trim();
-    // 公网地址直接引用；本地素材读取实际内容，避免把浏览器 blob 地址发送给服务器。
-    try {
-        const parsed = new URL(directUrl);
-        if (["http:", "https:"].includes(parsed.protocol)) return parsed.href;
-    } catch {
-        // 无效地址与本地 blob 均在创建任务前报告，避免静默丢弃参考后扣费。
-    }
-    try {
-        const dataUrl = await mediaToDataUrl(video);
-        if (dataUrl?.startsWith("data:video/")) return dataUrl;
-    } catch {
-        // 素材读取失败必须中止创建，不能忽略参考视频继续计费。
-    }
-    throw new Error("参考视频读取失败，请重新添加视频素材");
-}
-
-async function normalizeVideoReferenceAudioDataUrl(dataUrl: string) {
-    const audioContextType = typeof AudioContext !== "undefined" ? AudioContext : typeof webkitAudioContext !== "undefined" ? webkitAudioContext : null;
-    if (!audioContextType) return dataUrl;
-
-    const blob = await (await fetch(dataUrl)).blob();
-    const context = new audioContextType();
-    try {
-        const buffer = await context.decodeAudioData(await blob.arrayBuffer());
-        // 本地音频统一转换为 WAV，减少浏览器录音格式被上游拒绝的情况。
-        return audioBufferToWavDataUrl(buffer);
-    } finally {
-        void context.close?.();
-    }
-}
-
-function audioBufferToWavDataUrl(buffer: AudioBuffer) {
-    const channelCount = Math.min(2, buffer.numberOfChannels || 1);
-    const sampleRate = buffer.sampleRate;
-    const frameCount = buffer.length;
-    const dataSize = frameCount * channelCount * 2;
-    const wav = new ArrayBuffer(44 + dataSize);
-    const view = new DataView(wav);
-    writeAscii(view, 0, "RIFF");
-    view.setUint32(4, 36 + dataSize, true);
-    writeAscii(view, 8, "WAVE");
-    writeAscii(view, 12, "fmt ");
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, channelCount, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * channelCount * 2, true);
-    view.setUint16(32, channelCount * 2, true);
-    view.setUint16(34, 16, true);
-    writeAscii(view, 36, "data");
-    view.setUint32(40, dataSize, true);
-
-    const channels = Array.from({ length: channelCount }, (_, index) => buffer.getChannelData(index));
-    let offset = 44;
-    for (let frame = 0; frame < frameCount; frame++) {
-        for (let channel = 0; channel < channelCount; channel++) {
-            const sample = Math.max(-1, Math.min(1, channels[channel][frame] || 0));
-            view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-            offset += 2;
-        }
-    }
-    return blobToDataUrl(new Blob([wav], { type: "audio/wav" }));
-}
-
-function writeAscii(view: DataView, offset: number, value: string) {
-    for (let index = 0; index < value.length; index++) view.setUint8(offset + index, value.charCodeAt(index));
-}
-
-async function optimizeVideoReferenceDataUrl(dataUrl: string) {
-    if (!dataUrl.startsWith("data:image/") || typeof document === "undefined" || typeof Image === "undefined") return dataUrl;
-
-    const image = await loadVideoReferenceImage(dataUrl);
-    const maxEdge = Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height);
-    if (maxEdge <= VIDEO_REFERENCE_MAX_EDGE && getDataUrlByteSize(dataUrl) <= VIDEO_REFERENCE_MAX_INLINE_BYTES) return dataUrl;
-
-    const scale = Math.min(1, VIDEO_REFERENCE_MAX_EDGE / Math.max(1, maxEdge));
-    const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
-    const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d");
-    if (!context) return dataUrl;
-    // 参考图只承担视觉引导，压缩到接口稳定接收的尺寸后再提交。
-    context.fillStyle = "#fff";
-    context.fillRect(0, 0, width, height);
-    context.drawImage(image, 0, 0, width, height);
-    const blob = await canvasToVideoReferenceBlob(canvas);
-    return blobToDataUrl(blob);
-}
-
-function loadVideoReferenceImage(dataUrl: string) {
-    return new Promise<HTMLImageElement>((resolve, reject) => {
-        const image = new Image();
-        image.onload = () => resolve(image);
-        image.onerror = () => reject(new Error("视频参考图读取失败，请重新上传或替换这张图片后重试"));
-        image.src = dataUrl;
-    });
-}
-
-function canvasToVideoReferenceBlob(canvas: HTMLCanvasElement) {
-    return new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob((blob) => {
-            if (!blob) reject(new Error("视频参考图压缩失败"));
-            else resolve(blob);
-        }, "image/jpeg", VIDEO_REFERENCE_JPEG_QUALITY);
-    });
-}
-
-function blobToDataUrl(blob: Blob) {
-    return new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(new Error("视频参考文件读取失败"));
-        reader.readAsDataURL(blob);
-    });
 }
 
 function unwrapVideoTask(payload: VideoApiResponse): VideoTask {

@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { finishGatewayTask, gatewayEndpoint, readGatewayTask } from './gateway-task.mjs'
 import { createTaskJournal } from './task-journal.mjs'
 import { createImageReferenceService } from './image-references.mjs'
+import { createMediaReferenceService } from './media-references.mjs'
 
 const ALLOWED_ENDPOINTS = new Set(['/images/generations', '/images/edits', '/midjourney/generations', '/responses'])
 const isAllowedEndpoint = value => ALLOWED_ENDPOINTS.has(value) || /^\/v1beta\/models\/[a-zA-Z0-9._%-]+:generateContent$/.test(value)
@@ -234,6 +235,12 @@ export function createImageTaskServer(options = {}) {
     maxStoreBytes: options.referenceMaxStoreBytes,
     ttlMs: options.referenceTtlMs,
   })
+  const mediaReferences = createMediaReferenceService({
+    storageDirectory: options.storageDirectory ?? process.env.IMAGE_TASK_STORAGE_DIR,
+    publicBaseUrl: options.referencePublicBaseUrl ?? process.env.IMAGE_REFERENCE_PUBLIC_BASE_URL,
+    uploadUrl: options.referenceUploadUrl ?? process.env.IMAGE_REFERENCE_UPLOAD_URL,
+    upstreamBaseUrl,
+  })
   let stopping = false
   const tasks = new Map()
   const idempotencyTasks = new Map()
@@ -241,6 +248,7 @@ export function createImageTaskServer(options = {}) {
 
   const cleanupExpiredTasks = () => {
     void references.cleanup().catch(() => logger({ status: 'reference_cleanup_failed' }))
+    void mediaReferences.cleanup().catch(() => logger({ status: 'media_reference_cleanup_failed' }))
     const now = Date.now()
     for (const [taskId, task] of tasks) {
       if (task.status === 'pending' || task.status === 'running') continue
@@ -389,6 +397,7 @@ export function createImageTaskServer(options = {}) {
     }
 
     const requestUrl = new URL(request.url ?? '/', 'http://image-tasks.local')
+    if (await mediaReferences.handle(request, response, sendJson)) return
     if (await references.handle(request, response, readBody, sendJson)) return
     if (request.method === 'OPTIONS' && (requestUrl.pathname === '/image-tasks' || requestUrl.pathname.startsWith('/image-tasks/'))) {
       sendEmpty(response, 204, { Allow: 'POST, GET, DELETE, OPTIONS' })

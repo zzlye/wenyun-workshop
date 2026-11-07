@@ -77,9 +77,10 @@ describe("统一视频请求协议", () => {
         expect(axios.post).not.toHaveBeenCalled();
     });
 
-    it("本地视频内容通过统一数组提交，不把 blob 地址传给渠道", async () => {
+    it("本地视频先上传，统一数组仅提交公网地址", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { url: "https://cdn.example/local.mp4" } });
         await requestVideoGeneration(config, "参考视频", [], [], [{ ...video("local"), url: "data:video/mp4;base64,dmlkZW8=" }]);
-        expect((axios.post as Mock).mock.calls[0][1].video_urls).toEqual(["data:video/mp4;base64,dmlkZW8="]);
+        expect((axios.post as Mock).mock.calls[1][1].video_urls).toEqual(["https://cdn.example/local.mp4"]);
     });
 
     it("恢复任务即使提示词和原素材已移除也只查询已有编号", async () => {
@@ -100,9 +101,10 @@ describe("统一视频请求协议", () => {
         expect((axios.post as Mock).mock.calls[0][1]).toEqual({ model: config.videoModel, prompt: "测试", duration: 30, resolution: "720p", aspect_ratio: "16:9" });
     });
 
-    it("本地音频保留数组形式，不套用原先的音频时长限制", async () => {
+    it("本地音频先上传，保留数组形式和原素材时长", async () => {
+        (axios.post as Mock).mockResolvedValueOnce({ data: { url: "https://cdn.example/local.wav" } });
         await requestVideoGeneration({ ...config, videoModel: "seedance-2.0-720p" }, "测试", [], [{ ...audio("local"), url: "data:audio/wav;base64,YXVkaW8=" }]);
-        expect((axios.post as Mock).mock.calls[0][1].audio_urls).toEqual(["data:audio/wav;base64,YXVkaW8="]);
+        expect((axios.post as Mock).mock.calls[1][1].audio_urls).toEqual(["https://cdn.example/local.wav"]);
     });
 
     it.each([true, false])("生成音频开关 %s 以布尔值发送，不受参考音频影响", async (enabled) => {

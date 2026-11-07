@@ -58,18 +58,18 @@ it("首尾帧保持输入顺序，第三张图片明确拒绝且无生成请求"
     await expect(requestVideoGeneration({ ...config, videoMode: "frames" }, "", images)).rejects.toThrow("一张或两张");
     expect(axios.post).not.toHaveBeenCalled();
 });
-it("本地图片经上传返回素材编号，再单次创建视频任务", async () => {
+it("本地图片经上传返回公网地址，再单次创建视频任务", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(new Blob(["png"], { type: "image/png" }))));
     vi.mocked(axios.post)
-        .mockResolvedValueOnce({ data: { asset_id: "va_saved" } })
+        .mockResolvedValueOnce({ data: { url: "https://cdn.test/reference.png" } })
         .mockResolvedValueOnce({ data: { id: "saved", status: "completed" } });
     await requestVideoGeneration(config, "图生视频", [
         { id: "i", name: "image.png", type: "image/png", dataUrl: "data:image/png;base64,aQ==" },
     ]);
-    expect(vi.mocked(axios.post).mock.calls[0][0]).toContain("/video/assets");
-    expect(vi.mocked(axios.post).mock.calls[0][1]).toBeInstanceOf(FormData);
-    expect(vi.mocked(axios.post).mock.calls[0][2]?.timeout).toBe(1800000);
-    expect(vi.mocked(axios.post).mock.calls[1][1]).toMatchObject({ image_urls: [{ asset_id: "va_saved" }] });
+    expect(vi.mocked(axios.post).mock.calls[0][0]).toBe("/image-tasks/media-reference-uploads");
+    expect(vi.mocked(axios.post).mock.calls[0][1]).toBeInstanceOf(Blob);
+    expect(vi.mocked(axios.post).mock.calls[0][2]?.timeout).toBe(180000);
+    expect(vi.mocked(axios.post).mock.calls[1][1]).toMatchObject({ image_urls: ["https://cdn.test/reference.png"] });
 });
 it("能力网络错误保留输入并阻止创建，不当作旧模型回退", async () => {
     vi.mocked(fetchVideoCapabilities).mockRejectedValue(new Error("网络中断"));

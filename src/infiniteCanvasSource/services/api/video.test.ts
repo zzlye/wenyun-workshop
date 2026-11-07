@@ -154,7 +154,7 @@ describe("画布视频异步接口", () => {
             vquality: "480",
             size: "4:3",
         }, "人物在雨中回头", [
-            { id: "character", name: "角色", type: "image/png", dataUrl: "data:image/png;base64,Y2hhcmFjdGVy" },
+            { id: "character", name: "角色", type: "image/png", dataUrl: "", url: "https://cdn.example.com/Y2hhcmFjdGVy.png" },
         ], [
             { id: "audio", name: "参考音频", type: "audio/mpeg", url: "https://cdn.example.com/music.mp3" },
         ]);
@@ -167,7 +167,7 @@ describe("画布视频异步接口", () => {
                 aspect_ratio: "4:3",
                 duration: 8,
                 resolution: "480p",
-                image_urls: ["data:image/png;base64,Y2hhcmFjdGVy"],
+                image_urls: ["https://cdn.example.com/Y2hhcmFjdGVy.png"],
                 audio_urls: ["https://cdn.example.com/music.mp3"],
             },
             expect.any(Object),
@@ -187,8 +187,8 @@ describe("画布视频异步接口", () => {
             videoSeconds: "15",
             size: "9:16",
         }, "从站立到奔跑", [
-            { id: "first", name: "首帧", type: "image/png", dataUrl: "data:image/png;base64,Zmlyc3Q=" },
-            { id: "last", name: "尾帧", type: "image/png", dataUrl: "data:image/png;base64,bGFzdA==" },
+            { id: "first", name: "首帧", type: "image/png", dataUrl: "", url: "https://cdn.example.com/Zmlyc3Q=.png" },
+            { id: "last", name: "尾帧", type: "image/png", dataUrl: "", url: "https://cdn.example.com/bGFzdA==.png" },
         ]);
 
         expect(axios.post).toHaveBeenCalledWith(
@@ -197,7 +197,7 @@ describe("画布视频异步接口", () => {
                 model: "kling-3.0-omni-720p",
                 aspect_ratio: "9:16",
                 duration: 15,
-                image_urls: ["data:image/png;base64,Zmlyc3Q=", "data:image/png;base64,bGFzdA=="],
+                image_urls: ["https://cdn.example.com/Zmlyc3Q=.png", "https://cdn.example.com/bGFzdA==.png"],
             }),
             expect.any(Object),
         );
@@ -207,7 +207,7 @@ describe("画布视频异步接口", () => {
     it.each([1, 2])("渠道要求对象时仍只提交一次并保留 %s 张参考图", async count => {
         const error = {isAxiosError:true,response:{status:422,data:{message:'input_reference must be an object containing image_url'}}};
         (axios.post as Mock).mockRejectedValueOnce(error);
-        const refs = Array.from({length:count},(_,i) => ({id:String(i),name:'参考',type:'image/png',dataUrl:`data:image/png;base64,cmVm`}));
+        const refs = Array.from({length:count},(_,i) => ({id:String(i),name:'参考',type:'image/png',dataUrl:'',url:`https://cdn.example.com/cmVm.png`}));
         await expect(requestVideoGeneration({...defaultConfig,videoApiKey:'video-key'},'完整素材',refs)).rejects.toThrow('input_reference must be an object');
         expect(axios.post).toHaveBeenCalledTimes(1);
         expect((axios.post as Mock).mock.calls[0][1].image_urls).toHaveLength(count);
@@ -224,8 +224,8 @@ describe("画布视频异步接口", () => {
             videoSeconds: "15",
             size: "1024x768",
         }, "保持人物外貌一致并参考音乐节奏", [
-            { id: "image-1", name: "主图", type: "image/png", dataUrl: "data:image/png;base64,bWFpbg==" },
-            { id: "image-2", name: "参考图", type: "image/png", dataUrl: "data:image/png;base64,cmVm" },
+            { id: "image-1", name: "主图", type: "image/png", dataUrl: "", url: "https://cdn.example.com/bWFpbg==.png" },
+            { id: "image-2", name: "参考图", type: "image/png", dataUrl: "", url: "https://cdn.example.com/cmVm.png" },
         ], [
             { id: "audio-1", name: "音乐", type: "audio/mpeg", url: "https://cdn.example.com/music.mp3", duration: 10 },
         ]);
@@ -236,7 +236,7 @@ describe("画布视频异步接口", () => {
                 model: CANVAS_VIDEO_MODEL,
                 aspect_ratio: "4:3",
                 duration: 15,
-                image_urls: ["data:image/png;base64,bWFpbg==", "data:image/png;base64,cmVm"],
+                image_urls: ["https://cdn.example.com/bWFpbg==.png", "https://cdn.example.com/cmVm.png"],
                 audio_urls: ["https://cdn.example.com/music.mp3"],
             }),
             expect.any(Object),
@@ -254,7 +254,7 @@ describe("画布视频异步接口", () => {
             videoSeconds: "29",
             size: "4:3",
         }, "参考主体并按节奏运动", [
-            { id: "image-25", name: "主体", type: "image/png", dataUrl: "data:image/png;base64,c3ViamVjdA==" },
+            { id: "image-25", name: "主体", type: "image/png", dataUrl: "", url: "https://cdn.example.com/c3ViamVjdA==.png" },
         ], [
             { id: "audio-25", name: "节奏", type: "audio/mpeg", url: "https://cdn.example.com/beat.mp3", duration: 10 },
         ]);
@@ -346,10 +346,10 @@ describe("画布视频异步接口", () => {
             id: `image-${index}`,
             name: `图片${index}`,
             type: "image/png",
-            dataUrl: "data:image/png;base64,dGVzdA==",
+            dataUrl: "", url: "https://cdn.example.com/dGVzdA==.png",
         }));
         await requestVideoGeneration(config, "测试视频", images);
-        expect((axios.post as Mock).mock.calls[1][1].image_urls).toEqual(images.map((image) => image.dataUrl));
+        expect((axios.post as Mock).mock.calls[1][1].image_urls).toEqual(images.map((image) => image.url));
     });
 
     it("Kling 不再套用旧的两张参考图限制", async () => {
@@ -359,7 +359,7 @@ describe("画布视频异步接口", () => {
             id: `kling-image-${index}`,
             name: `图片${index}`,
             type: "image/png",
-            dataUrl: "data:image/png;base64,dGVzdA==",
+            dataUrl: "", url: "https://cdn.example.com/dGVzdA==.png",
         }));
 
         await requestVideoGeneration({
@@ -367,7 +367,7 @@ describe("画布视频异步接口", () => {
             videoApiKey: "video-key",
             videoModel: "kling-3.0-omni-720p",
         }, "测试视频", images);
-        expect((axios.post as Mock).mock.calls[0][1].image_urls).toEqual(images.map((image) => image.dataUrl));
+        expect((axios.post as Mock).mock.calls[0][1].image_urls).toEqual(images.map((image) => image.url));
     });
 
     it("缺少 Key 时直接提示配置", async () => {

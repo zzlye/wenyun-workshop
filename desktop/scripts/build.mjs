@@ -38,7 +38,7 @@ const config = {
     { from: path.join(repo, 'canvas-agent/package.json'), to: 'canvas-agent/package.json' },
     { from: path.join(repo, 'canvas-agent/LICENSE'), to: 'canvas-agent/LICENSE' },
     { from: path.join(repo, 'canvas-agent/agent-instructions.md'), to: 'canvas-agent/agent-instructions.md' },
-    { from: path.join(repo, 'server'), to: 'server', filter: ['image-tasks.mjs', 'image-references.mjs', 'midjourney.mjs', 'gateway-task.mjs', 'task-journal.mjs'] },
+    { from: path.join(repo, 'server'), to: 'server', filter: ['image-tasks.mjs', 'image-references.mjs', 'media-references.mjs', 'midjourney.mjs', 'gateway-task.mjs', 'task-journal.mjs'] },
   ],
   win: { target: [{ target: 'nsis', arch: ['x64'] }], signExecutable: false, icon: iconFile, artifactName: 'Wenyun-${version}-Setup-x64.exe' },
   nsis: {
